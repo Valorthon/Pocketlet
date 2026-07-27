@@ -1,6 +1,6 @@
 # Pocketlet
 
-[![CI](https://github.com/SaltinStillWaters/pocketlet/actions/workflows/ci.yml/badge.svg)](https://github.com/SaltinStillWaters/pocketlet/actions/workflows/ci.yml)
+[![CI](https://github.com/Valorthon/pocketlet/actions/workflows/ci.yml/badge.svg)](https://github.com/Valorthon/pocketlet/actions/workflows/ci.yml)
 
 Pocketlet is a web-based wallet for the Philippine market that feels like a traditional e-wallet (GCash, Maya) but settles on the Stellar blockchain. V1 runs on Stellar Testnet, supports USDC and XLM, and uses passkey-based abstracted custody with a Soroban smart wallet.
 

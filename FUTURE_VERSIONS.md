@@ -116,8 +116,15 @@ These are intentional simplifications in the current V1 testnet implementation t
 - **Future work:** Replace the mock with a real Stellar DEX path-payment contract or AMM pool and add slippage/quote handling in the frontend.
 
 ### Remaining V1 issues
-- PIN confirmation for payments and swaps (issue #13)
-- Lost passkey recovery UI and waiting-period enforcement (issue #14)
+All tracked V1 MVP sub-issues have been implemented:
+
+- ~~Scaffold monorepo with pnpm workspace (issue #5)~~ ✅ Completed
+- ~~Implement Soroban smart wallet contract with passkey signer (issue #6)~~ ✅ Completed
+- ~~Implement email + passkey authentication flow (issue #8)~~ ✅ Completed
+- ~~Implement smart wallet deployment and receive screen (issue #9)~~ ✅ Completed
 - ~~P2P transfers by username, phone, or raw address (issue #10)~~ ✅ Completed
-- Transaction history and on-chain details view (issue #12)
-- End-to-end testnet testing and documentation (issue #15)
+- ~~Implement USDC ↔ XLM swaps via Stellar DEX (issue #11)~~ ✅ Completed
+- ~~Implement transaction history and details view (issue #12)~~ ✅ Completed
+- ~~Implement PIN confirmation for payments and swaps (issue #13)~~ ✅ Completed
+- ~~Implement lost passkey recovery flow (issue #14)~~ ✅ Completed
+- ~~End-to-end testnet testing and documentation update (issue #15)~~ ✅ Completed
