@@ -102,18 +102,44 @@ For each deferred feature, this document will be updated with implementation not
 
 These are intentional simplifications in the current V1 testnet implementation that must be hardened before mainnet or a production launch.
 
+**Tracking issue:** #25
+
 ### Email verification
+- **Issue:** #18
 - **Current behavior:** The signup API returns the verification code in the JSON response so testing works without a mail server.
 - **Future work:** Integrate a transactional email provider (e.g., Resend, SendGrid, AWS SES) and remove the code from the API response.
 
 ### Platform deployer key
+- **Issue:** #19
 - **Current behavior:** If `PLATFORM_SECRET_KEY` is not set, the server generates a random testnet keypair and funds it automatically on startup.
 - **Why it exists:** The deployer pays for smart-wallet WASM upload and contract deployment and acts as the `recovery_admin` for lost-passkey recovery.
 - **Future work:** Require a fixed, funded, persistent deployer account in production and store its secret in a secrets manager.
 
 ### DEX swap integration
+- **Issue:** #20
 - **Current behavior:** The smart wallet accepts a DEX contract address and calls `swap(...)`. The unit tests use a tiny `mock_dex` contract.
 - **Future work:** Replace the mock with a real Stellar DEX path-payment contract or AMM pool and add slippage/quote handling in the frontend.
+
+### Smart wallet authorization
+- **Issue:** #21
+- **Current behavior:** The wallet contract's `transfer` function does not call `require_auth()`, so it relies entirely on the platform relayer's off-chain session + PIN checks. The `swap` function does enforce authorization.
+- **Why it exists:** Removing on-chain auth was a testnet shortcut to get XLM transfers working through the relayer flow.
+- **Future work:** Add consistent on-chain authorization to `transfer` (or route transfers through an authenticated relayer entrypoint) before mainnet.
+
+### Custody of wallet owner secret keys
+- **Issue:** #22
+- **Current behavior:** The wallet owner's Ed25519 secret key is generated server-side during deployment and stored in `apps/web/.data/users.json`.
+- **Future work:** Move key generation and storage to a secure enclave, HSM, MPC service, or encrypted secrets manager. Do not store plaintext private keys alongside user records.
+
+### Development-only secrets and defaults
+- **Issue:** #23
+- **Current behavior:** `.env.example` ships with `SESSION_SECRET=change-me-in-production`, `WEBAUTHN_RP_ID=localhost`, and `WEBAUTHN_ORIGIN=http://localhost:3000`. The session signing secret also falls back to a hardcoded dev value in code.
+- **Future work:** Require production-grade secrets at startup (fail fast if missing), enforce HTTPS origins for WebAuthn, and document rotation procedures.
+
+### Local file-based storage
+- **Issue:** #24
+- **Current behavior:** Users, deployer secrets, and the cached DEX contract ID are stored in `.data/*.json` files on disk.
+- **Future work:** Replace file storage with a real database for user records and a secrets manager for sensitive keys.
 
 ### Remaining V1 issues
 All tracked V1 MVP sub-issues have been implemented:
