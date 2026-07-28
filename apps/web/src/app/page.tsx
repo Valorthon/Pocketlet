@@ -6,6 +6,7 @@ export default function LandingPage() {
       <h1 className="mb-4 text-4xl font-bold text-pocketlet-600">Pocketlet</h1>
       <p className="mb-8 max-w-md text-gray-600">
         A simple, passkey-powered wallet for USDC and XLM on Stellar testnet.
+        Built for anyone who earns and moves money across borders.
       </p>
       <div className="flex gap-4">
         <Link
