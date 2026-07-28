@@ -1,6 +1,6 @@
 # Future Versions Roadmap
 
-This document records features that were intentionally deferred from V1 and the rationale behind each decision. Items are grouped by target version, but priorities may shift as the product and market evolve.
+This document records features that were intentionally deferred from V1 and the rationale behind each decision. V1 is positioned as a global wallet for USDC and XLM. V2 focuses on the Philippines market (PHP stablecoin, fiat rails, QR Ph). V3 expands to multi-stablecoin support and additional regional markets. Priorities may shift as the product and market evolve.
 
 ---
 
@@ -39,6 +39,10 @@ This document records features that were intentionally deferred from V1 and the 
 * **What:** Get quoted exchange rates when paying a PHP QR code with a USDC balance.
 * **Why deferred:** Tied to QR Ph off-ramp and Anchor integration.
 
+### Merchant Dashboard
+* **What:** A separate interface for merchants to receive and reconcile crypto-settled QR Ph payments.
+* **Why deferred:** Tied to QR Ph merchant launch.
+
 ---
 
 ## V2 — Federation & Public Addressing
@@ -62,27 +66,37 @@ This document records features that were intentionally deferred from V1 and the 
 
 ---
 
-## V2+ — Platform Maturity
-
-### Mainnet Deployment
-* **What:** Move from Stellar Testnet to Mainnet.
-* **Why deferred:** Requires security audits, fee sponsorship budget, liquidity planning, and regulatory clarity.
-
-### Tagalog / Filipino Localization
-* **What:** Full Tagalog/Filipino language support in the app.
-* **Why deferred:** English-only launch reduces initial complexity. Localization can be added once core flows are validated.
+## V1+ — Global Platform Maturity
 
 ### Biometric Authentication
+* **Tracking issue:** #26
 * **What:** Use device biometrics (fingerprint/face) in addition to or instead of PIN for transaction confirmation.
 * **Why deferred:** PIN is sufficient for V1. Biometrics can be layered on later.
 
 ### Push Notifications
+* **Tracking issue:** #27
 * **What:** Notify users of incoming payments, successful swaps, and security events.
 * **Why deferred:** PWA push notifications require additional setup and are not critical for core V1 flows.
 
-### Merchant Dashboard
-* **What:** A separate interface for merchants to receive and reconcile crypto-settled QR Ph payments.
-* **Why deferred:** Tied to QR Ph merchant launch.
+---
+
+## V3 — Multi-Stablecoin Support & Regional Expansion
+
+### Multi-Stablecoin Balances
+* **What:** Hold and transact in multiple stablecoins beyond USDC (e.g., USDT, EURC, other fiat-backed tokens on Stellar).
+* **Why deferred:** V1 intentionally keeps the asset model simple (USDC + XLM) to validate the core wallet experience before introducing asset registries, per-asset decimals, and multi-pair swap routing.
+
+### Configurable Asset Registry
+* **What:** A runtime or environment-driven registry of supported assets per network/region, including symbol, name, contract ID, decimals, and display metadata.
+* **Why deferred:** Requires a stable architecture for network-aware configuration and UI asset selection before adding more tokens.
+
+### Cross-Asset Swaps
+* **What:** Swap between any supported stablecoin pair (not only USDC ↔ XLM), integrated with a real Stellar DEX/AMM.
+* **Why deferred:** The bundled `mock_dex` is 1:1 and only suitable for testnet demo swaps. Real cross-asset swaps need quote handling, slippage protection, and liquidity evaluation.
+
+### Additional Regional Markets
+* **What:** Expand fiat on-ramp/off-ramp and localized payment methods beyond the Philippines (e.g., SEPA, PIX, local bank transfers).
+* **Why deferred:** Each region requires separate Anchor or PSP partnerships, compliance review, and localization.
 
 ---
 
@@ -90,11 +104,11 @@ This document records features that were intentionally deferred from V1 and the 
 
 V1 is intentionally narrow so the team can:
 1. Launch a working abstracted wallet on Stellar Testnet.
-2. Validate passkey-based custody and P2P transfer UX.
+2. Validate passkey-based custody and P2P transfer UX globally.
 3. Prove USDC ↔ XLM swap flows before adding fiat complexity.
-4. Build a clean contract and SDK foundation that makes V2 integrations (Anchor, QR Ph, PHPC) easier to add.
+4. Build a clean contract and SDK foundation that makes V2 integrations (Anchor, QR Ph, PHPC) and V3 multi-stablecoin expansion easier to add.
 
-For each deferred feature, this document will be updated with implementation notes as planning for V2 begins.
+For each deferred feature, this document will be updated with implementation notes as planning for V2 and V3 begins.
 
 ---
 

@@ -77,7 +77,7 @@ export default function TransactionsPage() {
           <div className="rounded-2xl bg-white p-8 text-center shadow-lg">
             <p className="text-gray-600">No transactions yet.</p>
             <p className="mt-2 text-sm text-gray-500">
-              Send or receive USDC/XLM to see activity here.
+              Send or receive USDC or XLM to see activity here.
             </p>
           </div>
         ) : (

@@ -1,16 +1,16 @@
 ## 1. Product Overview
-Pocketlet is a web-based wallet designed for the Philippine market that looks and acts like a traditional e-wallet (e.g., GCash, Maya), but uses the Stellar blockchain as its settlement layer. The wallet abstracts the complexities of crypto (gas fees, complex addresses, key management) while allowing users to hold and move stable digital dollars globally.
+Pocketlet is a web-based wallet designed for anyone who earns and moves money across borders. It looks and acts like a familiar money app, but uses the Stellar blockchain as its settlement layer. The wallet abstracts the complexities of crypto (gas fees, complex addresses, key management) while allowing users to hold and move stable digital dollars globally.
 
 ### Core Value Proposition
 * **Invisible Crypto:** Users hold and spend USD (via USDC) without realizing they are interacting with a blockchain.
 * **Abstracted Custody:** Users sign up with email and authenticate with a passkey. A Soroban smart contract wallet is deployed on their behalf — no seed phrase required.
-* **Global Payments, Local Feel:** Users can receive international payments in USDC and eventually convert to local PHP spending power through planned fiat off-ramps.
+* **Global Payments, Simple Feel:** Users can receive international payments in USDC and move stable value globally without managing crypto complexity.
 
 ---
 
 ## 2. Target Audience (V1)
-* **Demographic:** Freelancers, gig workers, and early-adopters in the Philippines who receive international payments but need local spending power.
-* **Pain Point:** High remittance fees and the friction of converting crypto to PHP to pay for everyday goods.
+* **Demographic:** Freelancers, gig workers, and early-adopters globally who receive international payments and want a simple way to hold and move stable digital dollars.
+* **Pain Point:** High remittance fees, slow settlement, and the friction of managing crypto wallets, keys, and gas fees.
 
 ---
 
@@ -23,7 +23,7 @@ Pocketlet is a web-based wallet designed for the Philippine market that looks an
 * **Self-Custody Export:** Deferred to V2.
 
 ### 3.2. Deposits (V1)
-* **No Fiat On-Ramp in V1:** Direct PHP-to-USDC on-ramp via a Stellar Anchor is deferred to V2.
+* **No Fiat On-Ramp in V1:** Direct fiat-to-stablecoin on-ramps via Stellar Anchors are deferred to later versions. V2 will focus on Philippine Peso (PHP) rails.
 * **External Deposit:** Users receive USDC or XLM by sharing their Stellar address or a generated QR code. Funds are received directly into their smart wallet.
 
 ### 3.3. Peer-to-Peer (P2P) Transfers
@@ -45,7 +45,7 @@ Pocketlet is a web-based wallet designed for the Philippine market that looks an
 * **Technology Interface:** Pocketlet V1 operates purely as a technology interface. It does not custody user funds in a regulated e-money capacity, does not perform KYC, and does not process fiat.
 * **User-Funded Wallets:** Users control their own Soroban smart wallets. The platform never holds pooled user funds.
 * **Fiat On/Off-Ramp Delegation:** All fiat on-ramp, off-ramp, KYC, and settlement will be handled by licensed Stellar Anchors or payment service providers in V2.
-* **Data Privacy:** User email and phone data is stored in accordance with the Philippine Data Privacy Act (PDPA). No government IDs are collected in V1.
+* **Data Privacy:** User email and phone data is stored in accordance with applicable data privacy regulations. No government IDs are collected in V1.
 
 ---
 
@@ -116,20 +116,21 @@ Pocketlet is a web-based wallet designed for the Philippine market that looks an
 
 ## 10. Future Versions
 
-Detailed roadmap for V2 and beyond is documented in [`FUTURE_VERSIONS.md`](./FUTURE_VERSIONS.md).
+Detailed roadmap for V1+, V2, and V3 is documented in [`FUTURE_VERSIONS.md`](./FUTURE_VERSIONS.md).
+
+V2 focuses on the Philippines market (PHP stablecoin, fiat rails, QR Ph). V3 expands the product to support multiple stablecoins and additional regional markets.
 
 High-level deferred features include:
-* PHP stablecoin (PHPC) support
-* Fiat on-ramp via licensed Stellar Anchor
-* QR Ph merchant scan-and-pay off-ramp
+* Fiat on-ramp via licensed Stellar Anchor (V2 — Philippines)
+* PHP stablecoin (PHPC) support (V2)
+* QR Ph merchant scan-and-pay off-ramp (V2)
 * Self-custody seed export
 * SEP-2 federation server
-* Mainnet deployment
-* Tagalog localization
+* Multi-stablecoin support (V3)
 
 ---
 
 ## 11. Open Questions / Notes
-* V1 remains on Stellar Testnet. Mainnet readiness and deployment budget will be planned before V2.
+* V1 remains on Stellar Testnet. Mainnet deployment is out of scope for the current roadmap.
 * The exact waiting period for passkey recovery will be defined during implementation (recommended: 24-72 hours).
 * Passkey credential behavior (device-bound vs. synced via Apple/Google) depends on the user's device and platform.

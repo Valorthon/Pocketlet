@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Pocketlet',
-  description: 'A simple USDC/XLM wallet for the Philippines',
+  description: 'A simple web wallet for holding and sending digital dollars globally.',
 };
 
 export const viewport: Viewport = {
