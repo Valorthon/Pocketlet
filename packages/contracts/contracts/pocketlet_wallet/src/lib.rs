@@ -69,10 +69,9 @@ impl PocketletWallet {
         env.storage().instance().get(&DataKey::RecoveryAdmin)
     }
 
-    /// Transfer `amount` of `token` from this wallet to `to`. The platform
-    /// relayer is responsible for authenticating the user off-chain (session +
-    /// PIN); this contract trusts the relayer because the relayer deploys and
-    /// funds wallets and pays transaction fees.
+    /// Transfer `amount` of `token` from this wallet to `to`. Requires the
+    /// wallet owner (or an authorized relayer) to authorize the call via the
+    /// custom-account `__check_auth` interface.
     pub fn transfer(
         env: Env,
         token: Address,
@@ -82,6 +81,7 @@ impl PocketletWallet {
         if amount <= 0 {
             return Err(WalletError::InvalidAmount);
         }
+        env.current_contract_address().require_auth();
         let token_client = TokenClient::new(&env, &token);
         token_client.transfer(&env.current_contract_address(), &to, &amount);
         Ok(())

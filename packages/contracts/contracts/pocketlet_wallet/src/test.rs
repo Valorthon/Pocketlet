@@ -73,6 +73,22 @@ fn test_transfer_moves_tokens() {
 }
 
 #[test]
+fn test_transfer_without_auth_fails() {
+    let env = Env::default();
+    // Do not mock auths; the contract should reject the unauthorized transfer.
+
+    let platform = Address::generate(&env);
+    let owner = BytesN::random(&env);
+    let (_, wallet) = deploy_wallet(&env, &owner, &platform);
+
+    let (token_id, _) = deploy_token(&env, &platform, "USDC", "USDC");
+
+    let recipient = Address::generate(&env);
+    let result = wallet.try_transfer(&token_id, &recipient, &300i128);
+    assert!(result.is_err(), "transfer without authorization must fail");
+}
+
+#[test]
 fn test_swap_via_mock_dex() {
     let env = Env::default();
     env.mock_all_auths();
