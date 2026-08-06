@@ -107,7 +107,7 @@ Key variables:
 | `NEXT_PUBLIC_STELLAR_HORIZON_URL` | Horizon REST endpoint | `https://horizon-testnet.stellar.org` |
 | `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE` | Stellar network passphrase | Testnet |
 | `NEXT_PUBLIC_USDC_CONTRACT_ID` | Circle testnet USDC SAC | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` |
-| `PLATFORM_SECRET_KEY` | Platform deployer secret key | generated & funded automatically on testnet |
+| `PLATFORM_SECRET_KEY` | Platform deployer secret key (required on public network) | generated & funded automatically on testnet |
 | `DEX_CONTRACT_ID` | DEX contract for swaps | auto-deployed from `mock_dex.wasm` on testnet |
 | `RECOVERY_WAITING_PERIOD_MS` | Lost-passkey recovery waiting period | 24 hours (set to `60000` for quick testing) |
 | `WEBAUTHN_RP_ID` | WebAuthn relying party ID | `localhost` |

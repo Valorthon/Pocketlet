@@ -188,7 +188,7 @@ These are intentional simplifications in the current V1 testnet implementation t
 - **Issue:** #19
 - **Current behavior:** If `PLATFORM_SECRET_KEY` is not set, the server generates a random testnet keypair and funds it automatically on startup.
 - **Why it exists:** The deployer pays for smart-wallet WASM upload and contract deployment and acts as the `recovery_admin` for lost-passkey recovery.
-- **Future work:** Require a fixed, funded, persistent deployer account in production and store its secret in a secrets manager.
+- **Resolution:** On the Stellar public network, `PLATFORM_SECRET_KEY` is now required and the app fails fast if it is missing. The testnet auto-generation path remains for local development and testnet testing.
 
 ### DEX swap integration
 - **Issue:** #20
