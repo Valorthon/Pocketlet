@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
 import { hashPin, verifyPin } from './pin';
+import { migratePlaintextKey } from '../wallet/keys';
 
 export interface Credential {
   id: string;
@@ -17,7 +18,6 @@ export interface User {
   pendingChallenge?: string;
   credential?: Credential;
   contractId?: string;
-  ownerSecretKey?: string;
   stellarAddress?: string;
   pinHash?: string;
   pinResetCode?: string;
@@ -49,11 +49,28 @@ function loadUsers(): Record<string, User> {
     return {};
   }
   const raw = readFileSync(file, 'utf-8');
+  let users: Record<string, User>;
   try {
-    return JSON.parse(raw) as Record<string, User>;
+    users = JSON.parse(raw) as Record<string, User>;
   } catch {
     return {};
   }
+
+  // Migrate any plaintext owner secret keys left over from before issue #22
+  // into the encrypted key store. This keeps users.json free of private keys.
+  let migrated = false;
+  for (const user of Object.values(users)) {
+    const legacyUser = user as User & { ownerSecretKey?: string };
+    if (migratePlaintextKey(legacyUser)) {
+      delete legacyUser.ownerSecretKey;
+      migrated = true;
+    }
+  }
+  if (migrated) {
+    saveUsers(users);
+  }
+
+  return users;
 }
 
 function saveUsers(users: Record<string, User>): void {
@@ -227,7 +244,6 @@ export function setCredential(email: string, credential: Credential): User {
 
 export interface WalletInfo {
   contractId: string;
-  ownerSecretKey: string;
   stellarAddress: string;
 }
 
@@ -239,7 +255,6 @@ export function setWallet(email: string, wallet: WalletInfo): User {
     throw new Error('User not found');
   }
   user.contractId = wallet.contractId;
-  user.ownerSecretKey = wallet.ownerSecretKey;
   user.stellarAddress = wallet.stellarAddress;
   saveUsers(users);
   return user;

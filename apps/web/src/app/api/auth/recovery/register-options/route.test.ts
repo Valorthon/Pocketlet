@@ -12,6 +12,7 @@ import {
   setRecoveryInitiated,
   verifyRecoveryCode,
 } from '@/lib/auth/store';
+import { keyStorage } from '@/lib/wallet/keys';
 import { createRecoveryToken } from '@/lib/auth/recovery-token';
 
 let dataDir: string;
@@ -50,9 +51,9 @@ function createEligibleUser(email: string) {
   });
   setWallet(email, {
     contractId: 'CABC',
-    ownerSecretKey: 'SABC',
     stellarAddress: 'CABC',
   });
+  keyStorage.store(email, 'SABC');
 }
 
 describe('POST /api/auth/recovery/register-options', () => {

@@ -1,4 +1,5 @@
 import type { User } from './store';
+import { keyStorage } from '../wallet/keys';
 
 export const RECOVERY_CODE_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 export const RECOVERY_MAX_ATTEMPTS = 3;
@@ -50,7 +51,7 @@ export function isEligibleForRecovery(user: User | undefined): boolean {
     user.emailVerified === true &&
     Boolean(user.credential) &&
     Boolean(user.contractId) &&
-    Boolean(user.ownerSecretKey)
+    keyStorage.has(user.email)
   );
 }
 

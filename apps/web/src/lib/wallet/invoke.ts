@@ -10,6 +10,7 @@ import {
 } from '@stellar/stellar-sdk';
 import { RPC_URL, NETWORK_PASSPHRASE, getPlatformKeypair, fundAccount, pollTransaction } from './deploy';
 import type { User } from '@/lib/auth/store';
+import { keyStorage } from './keys';
 
 const AUTH_ENTRY_VALIDITY_LEDGERS = 12;
 
@@ -58,8 +59,9 @@ export function calculateMinBuyAmount(sellAmount: bigint, slippageBps: number): 
  * Build, sign, and submit a wallet contract invocation on behalf of a user.
  *
  * The platform deployer account pays the network fee and rents. The wallet
- * owner secret key (stored server-side) signs the custom-account authorization
- * payload so the contract's `__check_auth` can verify it.
+ * owner secret key (stored server-side in an encrypted key store) signs the
+ * custom-account authorization payload so the contract's `__check_auth` can
+ * verify it.
  */
 export async function invokeWalletContract(
   user: User,
@@ -69,7 +71,8 @@ export async function invokeWalletContract(
   if (!user.contractId) {
     throw new Error('Wallet not deployed');
   }
-  if (!user.ownerSecretKey) {
+  const ownerSecretKey = keyStorage.retrieve(user.email);
+  if (!ownerSecretKey) {
     throw new Error('Wallet owner key not found');
   }
 
@@ -98,7 +101,7 @@ export async function invokeWalletContract(
   }
 
   const validUntil = sim.latestLedger + AUTH_ENTRY_VALIDITY_LEDGERS;
-  const ownerKeypair = Keypair.fromSecret(user.ownerSecretKey);
+  const ownerKeypair = Keypair.fromSecret(ownerSecretKey);
 
   const signedAuth = await Promise.all(
     sim.result.auth.map(async (entry) => {

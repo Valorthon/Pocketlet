@@ -110,6 +110,7 @@ Key variables:
 | `PLATFORM_SECRET_KEY` | Platform deployer secret key (required on public network) | generated & funded automatically on testnet |
 | `DEX_CONTRACT_ID` | DEX contract for swaps | auto-deployed from `mock_dex.wasm` on testnet |
 | `RECOVERY_WAITING_PERIOD_MS` | Lost-passkey recovery waiting period | 24 hours (set to `60000` for quick testing) |
+| `OWNER_KEY_MASTER_KEY` | AES-256 master key for encrypting wallet owner secrets (required on public network) | generated & saved to `.data/owner_key_master` on testnet |
 | `WEBAUTHN_RP_ID` | WebAuthn relying party ID | `localhost` |
 | `WEBAUTHN_ORIGIN` | WebAuthn origin | `http://localhost:3000` |
 | `SESSION_SECRET` | JWT session signing secret | `change-me-in-production` |
@@ -137,7 +138,7 @@ See [`TESTNET.md`](./TESTNET.md) for a step-by-step guide to test the full V1 fl
 ## Architecture Overview
 
 - **Smart wallet contract** (`packages/contracts/contracts/pocketlet_wallet`) — a `CustomAccountInterface` contract that stores a passkey-derived Ed25519 owner and a platform recovery admin. Supports `transfer`, `swap`, and `rotate_owner`.
-- **Owner key** — generated server-side at wallet deployment, stored per user, and used to sign the custom-account authorization payload.
+- **Owner key** — generated server-side at wallet deployment, encrypted at rest with `OWNER_KEY_MASTER_KEY`, and used to sign the custom-account authorization payload. The encrypted secrets are kept in `apps/web/.data/owner_keys.json`, separate from user records.
 - **Platform deployer** — pays for WASM upload, contract deployment, and network fees. It is also the wallet's `recovery_admin`.
 - **DEX** — on testnet, the bundled `mock_dex.wasm` is deployed automatically when `DEX_CONTRACT_ID` is unset. In production, point to a real Stellar DEX/AMM.
 - **Balances** — read from the Stellar Asset Contract (SAC) for USDC and XLM.
@@ -160,6 +161,8 @@ pnpm run typecheck          # Run TypeScript type checking on the web app
 - V1 is a testnet technology interface. It does not custody funds, perform KYC, or process fiat.
 - User funds live in their own Soroban smart wallet.
 - The platform deployer key can rotate the wallet owner after email verification. In production, store `PLATFORM_SECRET_KEY` in a secrets manager.
+- Wallet owner Ed25519 secret keys are generated server-side and encrypted at rest with AES-256-GCM. The encryption key is provided by `OWNER_KEY_MASTER_KEY`. On testnet, a random key is generated automatically if the env var is missing; on public network the env var is required and the app fails fast without it.
+- V1 uses a software encrypted file store for owner keys. This satisfies the immediate requirement of not storing plaintext private keys alongside user records, but it is not a true HSM, MPC, or hardware-backed secrets manager. Before production, evaluate substituting the `KeyStorage` interface with a KMS, HSM, or MPC service.
 - Email verification returns the code in the API response for testnet convenience. Replace with a real transactional email provider before production.
 
 ## Screenshots

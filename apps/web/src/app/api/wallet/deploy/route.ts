@@ -9,10 +9,10 @@ import {
   getPlatformKeypair,
   RPC_URL,
 } from '@/lib/wallet/deploy';
+import { keyStorage } from '@/lib/wallet/keys';
 
 interface WalletInfo {
   contractId: string;
-  ownerSecretKey: string;
   stellarAddress: string;
 }
 
@@ -52,10 +52,10 @@ export async function POST(request: NextRequest) {
 
     const walletInfo: WalletInfo = {
       contractId: contractAddress,
-      ownerSecretKey: ownerKeypair.secret(),
       stellarAddress: contractAddress,
     };
 
+    keyStorage.store(user.email, ownerKeypair.secret());
     const updated = setWallet(user.email, walletInfo);
     return NextResponse.json({
       email: updated.email,
