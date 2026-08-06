@@ -199,7 +199,7 @@ These are intentional simplifications in the current V1 testnet implementation t
 - **Issue:** #21
 - **Current behavior:** The wallet contract's `transfer` function does not call `require_auth()`, so it relies entirely on the platform relayer's off-chain session + PIN checks. The `swap` function does enforce authorization.
 - **Why it exists:** Removing on-chain auth was a testnet shortcut to get XLM transfers working through the relayer flow.
-- **Future work:** Add consistent on-chain authorization to `transfer` (or route transfers through an authenticated relayer entrypoint) before mainnet.
+- **Resolution:** `transfer` now calls `env.current_contract_address().require_auth()`, so the wallet's `__check_auth` validates the owner signature before a transfer can move funds. The relayer still attaches the owner signature via `authorizeEntry` in `invokeWalletContract`, so end-to-end testnet flows remain intact.
 
 ### Custody of wallet owner secret keys
 - **Issue:** #22
