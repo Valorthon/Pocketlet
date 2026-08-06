@@ -19,6 +19,17 @@ export const NETWORK_PASSPHRASE =
 export const HORIZON_URL =
   process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ?? 'https://horizon-testnet.stellar.org';
 
+/**
+ * Returns true when the configured Stellar network is the public/mainnet network.
+ * The deployer key must be explicitly supplied in this environment.
+ */
+export function isProductionNetwork(): boolean {
+  return (
+    (process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET) ===
+    Networks.PUBLIC
+  );
+}
+
 const WASM_PATH = join(
   process.cwd(),
   '..',
@@ -172,6 +183,13 @@ function loadOrCreateDeployerSecret(): string {
     return fromEnv;
   }
 
+  if (isProductionNetwork()) {
+    throw new Error(
+      'PLATFORM_SECRET_KEY is required on the Stellar public network. ' +
+        'Provide a fixed, funded deployer account secret via a secrets manager.'
+    );
+  }
+
   const dataDir = getDataDir();
   if (!existsSync(dataDir)) {
     mkdirSync(dataDir, { recursive: true });
@@ -204,7 +222,8 @@ function loadOrCreateDeployerSecret(): string {
  *   1. `PLATFORM_SECRET_KEY` environment variable
  *   2. `apps/web/.data/platform_secret` (auto-generated once in testnet)
  *
- * In production, always set `PLATFORM_SECRET_KEY` via a secrets manager.
+ * On the Stellar public network, `PLATFORM_SECRET_KEY` must be set via a
+ * secrets manager; the function will throw if it is missing.
  */
 export function getPlatformKeypair(): Keypair {
   const secret = loadOrCreateDeployerSecret();
@@ -219,7 +238,17 @@ function getAxiosErrorDetail(err: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Ensures the given account has a starting balance.
+ *
+ * On testnet this requests funds from Friendbot. On the public network the
+ * deployer is expected to be funded before the app starts, so this is a no-op.
+ */
 export async function fundAccount(publicKey: string): Promise<void> {
+  if (isProductionNetwork()) {
+    return;
+  }
+
   try {
     const server = new rpc.Server(RPC_URL);
     await server.requestAirdrop(publicKey);
