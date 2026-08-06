@@ -203,8 +203,9 @@ These are intentional simplifications in the current V1 testnet implementation t
 
 ### Custody of wallet owner secret keys
 - **Issue:** #22
-- **Current behavior:** The wallet owner's Ed25519 secret key is generated server-side during deployment and stored in `apps/web/.data/users.json`.
-- **Future work:** Move key generation and storage to a secure enclave, HSM, MPC service, or encrypted secrets manager. Do not store plaintext private keys alongside user records.
+- **Previous behavior:** The wallet owner's Ed25519 secret key was generated server-side during deployment and stored in plaintext inside `apps/web/.data/users.json`.
+- **Resolution:** Owner secret keys are now encrypted at rest with AES-256-GCM and stored in a separate `owner_keys.json` file, no longer alongside user records. The encryption key is supplied by `OWNER_KEY_MASTER_KEY`; on the Stellar public network this env var is required and the app fails fast if it is missing. On testnet, a random master key is generated automatically for local development.
+- **Trade-off:** V1 ships with a software encrypted file store (`lib/wallet/keys.ts`) rather than a hardware HSM, MPC service, or cloud KMS. This closes the plaintext-storage gap while keeping the server-side signing / abstracted-passkey model intact. Before a production launch, replace the `KeyStorage` interface implementation with a backend backed by a real HSM, KMS, or MPC service.
 
 ### Development-only secrets and defaults
 - **Issue:** #23

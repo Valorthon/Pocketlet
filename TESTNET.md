@@ -181,6 +181,6 @@ pnpm run typecheck
 
 ## Notes
 
-- Testnet accounts are occasionally reset. If balances or deployments disappear, delete `apps/web/.data/users.json`, `apps/web/.data/platform_secret`, and `apps/web/.data/dex_contract_id` to start fresh.
+- Testnet accounts are occasionally reset. If balances or deployments disappear, delete `apps/web/.data/users.json`, `apps/web/.data/owner_keys.json`, `apps/web/.data/owner_key_master`, `apps/web/.data/platform_secret`, and `apps/web/.data/dex_contract_id` to start fresh.
 - The current DEX integration is a testnet mock. Production swaps will use a real Stellar DEX path-payment or AMM contract.
 - Email verification returns the code in the API response for testnet convenience. Do not use this behavior in production.

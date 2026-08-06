@@ -11,6 +11,7 @@ import {
   setWallet,
   getUserByEmail,
 } from '@/lib/auth/store';
+import { keyStorage } from '@/lib/wallet/keys';
 
 let dataDir: string;
 
@@ -34,9 +35,9 @@ function createEligibleUser(email: string) {
   });
   setWallet(email, {
     contractId: 'CABC',
-    ownerSecretKey: 'SABC',
     stellarAddress: 'CABC',
   });
+  keyStorage.store(email, 'SABC');
 }
 
 describe('POST /api/auth/recovery/initiate', () => {

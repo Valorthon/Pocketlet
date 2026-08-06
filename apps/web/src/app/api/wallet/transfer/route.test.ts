@@ -14,6 +14,7 @@ import {
 } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
+import { keyStorage } from '@/lib/wallet/keys';
 
 let dataDir: string;
 let cookieJar: Record<string, string> = {};
@@ -67,9 +68,9 @@ async function createSender(email: string) {
   });
   setWallet(email, {
     contractId: 'CSENDER',
-    ownerSecretKey: 'SSENDER',
     stellarAddress: SENDER_ADDRESS,
   });
+  keyStorage.store(email, 'SSENDER');
   setPin(email, '123456');
   return createSessionToken({ email });
 }
@@ -84,9 +85,9 @@ async function createRecipient(email: string, username?: string, phone?: string)
   });
   setWallet(email, {
     contractId: 'CRECIPIENT',
-    ownerSecretKey: 'SRECIPIENT',
     stellarAddress: RECIPIENT_ADDRESS,
   });
+  keyStorage.store(email, 'SRECIPIENT');
   if (username || phone) {
     setProfile(email, { username, phone });
   }

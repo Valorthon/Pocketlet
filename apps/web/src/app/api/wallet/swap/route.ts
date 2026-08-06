@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { getUserByEmail, verifyPinForUser } from '@/lib/auth/store';
+import { keyStorage } from '@/lib/wallet/keys';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import { getDexContractId } from '@/lib/wallet/deploy';
 import {
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
 
   const user = getUserByEmail(session.email);
-  if (!user || !user.contractId || !user.ownerSecretKey) {
+  if (!user || !user.contractId || !keyStorage.has(user.email)) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
 

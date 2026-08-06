@@ -12,14 +12,26 @@ import {
   countRecentInitiations,
   isValidEmail,
 } from './recovery';
+import { keyStorage } from '../wallet/keys';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+let dataDir: string;
 
 describe('recovery helpers', () => {
   beforeEach(() => {
     delete process.env.RECOVERY_WAITING_PERIOD_MS;
+    dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-recovery-'));
+    process.env.POCKETLET_DATA_DIR = dataDir;
+    delete process.env.OWNER_KEY_MASTER_KEY;
   });
 
   afterEach(() => {
     delete process.env.RECOVERY_WAITING_PERIOD_MS;
+    delete process.env.POCKETLET_DATA_DIR;
+    delete process.env.OWNER_KEY_MASTER_KEY;
+    rmSync(dataDir, { recursive: true, force: true });
   });
 
   it('defaults the waiting period to 24 hours', () => {
@@ -78,13 +90,13 @@ describe('recovery helpers', () => {
     expect(isEligibleForRecovery({ email: 'a@b.com', emailVerified: false, createdAt: '' })).toBe(
       false
     );
+    keyStorage.store('recoverable@example.com', 'S123');
     expect(
       isEligibleForRecovery({
-        email: 'a@b.com',
+        email: 'recoverable@example.com',
         emailVerified: true,
         credential: { id: 'id', publicKey: 'pk', counter: 0 },
         contractId: 'C123',
-        ownerSecretKey: 'S123',
         createdAt: '',
       })
     ).toBe(true);

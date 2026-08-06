@@ -17,6 +17,7 @@ import {
   verifyRecoveryToken,
 } from '@/lib/auth/recovery-token';
 import { rotateWalletOwner } from '@/lib/wallet/recover';
+import { keyStorage } from '@/lib/wallet/keys';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,9 +101,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       transports: credential.transports ?? undefined,
     });
 
+    keyStorage.store(user.email, newOwnerKeypair.secret());
     setWallet(user.email, {
       contractId: user.contractId,
-      ownerSecretKey: newOwnerKeypair.secret(),
       stellarAddress: user.contractId,
     });
 
