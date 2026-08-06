@@ -164,6 +164,17 @@ pnpm run typecheck          # Run TypeScript type checking on the web app
 - Wallet owner Ed25519 secret keys are generated server-side and encrypted at rest with AES-256-GCM. The encryption key is provided by `OWNER_KEY_MASTER_KEY`. On testnet, a random key is generated automatically if the env var is missing; on public network the env var is required and the app fails fast without it.
 - V1 uses a software encrypted file store for owner keys. This satisfies the immediate requirement of not storing plaintext private keys alongside user records, but it is not a true HSM, MPC, or hardware-backed secrets manager. Before production, evaluate substituting the `KeyStorage` interface with a KMS, HSM, or MPC service.
 - Email verification returns the code in the API response for testnet convenience. Replace with a real transactional email provider before production.
+- On the Stellar public network, `SESSION_SECRET` is required, and `WEBAUTHN_ORIGIN` must be HTTPS with a real `WEBAUTHN_RP_ID` (not `localhost`). The app fails fast on startup if these production requirements are not met.
+
+### Secrets rotation
+
+Before production, establish a rotation cadence for these environment secrets:
+
+- `SESSION_SECRET` — rotates session signing keys. Changing this invalidates all existing signed sessions and recovery tokens, forcing users to sign in again.
+- `OWNER_KEY_MASTER_KEY` — rotates the AES-256 key used to encrypt wallet owner secret keys at rest. Changing it requires re-encrypting every entry in `owner_keys.json` (or the backing KMS/HSM) before the new key can be used, because the app derives decryption keys from this secret at runtime.
+- `PLATFORM_SECRET_KEY` — rotates the deployer/recovery admin Stellar keypair. Because the deployer public key is baked into each smart wallet as the `recovery_admin`, rotation requires either migrating every existing wallet to a new admin or maintaining the old keypair in a secure offline signer for recovery operations.
+
+Store all three in a secrets manager (e.g. AWS Secrets Manager, HashiCorp Vault, or 1Password Secrets Automation). For `SESSION_SECRET`, generate a fresh random value of at least 32 bytes (e.g. `openssl rand -hex 32`). Rotate during a low-traffic window and monitor for failed authentication as a signal that old sessions have expired.
 
 ## Screenshots
 
