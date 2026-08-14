@@ -12,7 +12,6 @@ Read this file, `SPEC.md`, `FUTURE_VERSIONS.md`, `README.md`, and `TESTNET.md` b
 
 ```
 /apps/web              Next.js frontend (PWA, App Router)
-/packages/contracts    Soroban (Rust) smart contracts
 /packages/config       Shared ESLint, TypeScript, Tailwind config
 ```
 
@@ -25,18 +24,19 @@ Use `pnpm --filter <workspace-name>` to target packages. For example, add a depe
 - Global state goes in Zustand. Keep local UI state in hooks or props.
 - Hide blockchain details in normal UI: public keys, gas fees, and crypto jargon should only appear in the "Transaction Details" view. Self-custody views are planned for V2.
 
-## Smart Contract Standards (`/packages/contracts`)
+## Passkey Kit Standards (`/apps/web/src/lib/wallet`)
 
-- Rust with `soroban-sdk`. Use `require_auth` for account abstraction (email/passkey login), not Ed25519 seed phrases.
-- V1 contracts do not integrate off-chain Anchors. Follow SEP-10 (auth), SEP-24 (on/off-ramp), and SEP-38 (quotes) only when implementing V2 fiat/Anchor features.
-- Target `wasm32v1-none` and use `stellar contract build` for optimized WASM output.
+- Self-custodial passkey smart accounts via [`passkey-kit`](https://github.com/stellar/passkey-kit). The platform never holds user signing keys.
+- Browser code imports from `passkey-kit` and `passkey-kit/storage`. Server-only code imports from `passkey-kit/server` so relayer secrets stay out of the client bundle.
+- Fee sponsorship is handled by the OpenZeppelin Channels hosted relayer on testnet; production uses a self-hosted relayer with its API key stored in a secrets manager.
+- V1 does not integrate off-chain Anchors. Follow SEP-10 (auth), SEP-24 (on/off-ramp), and SEP-38 (quotes) only when implementing V2 fiat/Anchor features.
 
 ## Execution Workflow
 
-1. Read `SPEC.md`, `FUTURE_VERSIONS.md`, `README.md`, `TESTNET.md`, and this file.
+1. Read `SPEC.md` and `FUTURE_VERSIONS.md` first.
 2. State a brief plan before writing large code blocks.
 3. Use `pnpm --filter <workspace>` for package-specific installs and scripts.
-4. Add tests for critical logic: `cargo test` for Rust, `vitest` for TypeScript.
+4. Add tests for critical logic with `vitest` for TypeScript.
 5. Verify by running the package's lint, typecheck, and test commands in the intended order.
 
 ## Trust

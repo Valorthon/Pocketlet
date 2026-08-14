@@ -54,6 +54,22 @@ export function validateProductionConfig(): void {
         'localhost is not allowed because passkeys are origin-bound.'
     );
   }
+
+  const relayerBaseUrl = process.env.PASSKEY_RELAYER_BASE_URL?.trim();
+  if (!relayerBaseUrl) {
+    throw new Error(
+      'PASSKEY_RELAYER_BASE_URL is required in production. ' +
+        'Set the OpenZeppelin Channels relayer base URL via a secrets manager.'
+    );
+  }
+
+  const relayerApiKey = process.env.PASSKEY_RELAYER_API_KEY?.trim();
+  if (!relayerApiKey) {
+    throw new Error(
+      'PASSKEY_RELAYER_API_KEY is required in production. ' +
+        'Set the OpenZeppelin Channels relayer API key via a secrets manager.'
+    );
+  }
 }
 
 export const RP_NAME = process.env.WEBAUTHN_RP_NAME ?? 'Pocketlet';

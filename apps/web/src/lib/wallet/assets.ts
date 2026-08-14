@@ -1,7 +1,5 @@
 import { Asset } from '@stellar/stellar-sdk';
-import {
-  NETWORK_PASSPHRASE,
-} from './deploy';
+import { NETWORK_PASSPHRASE } from './network';
 
 /**
  * Circle's official testnet USDC asset:
