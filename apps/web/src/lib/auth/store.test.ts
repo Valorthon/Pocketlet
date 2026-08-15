@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -28,7 +28,6 @@ import {
   getUserByPhone,
   setProfile,
 } from './store';
-import { keyStorage } from '../wallet/keys';
 
 let dataDir: string;
 
@@ -51,25 +50,6 @@ describe('auth store', () => {
 
     const found = getUserByEmail('ALICE@EXAMPLE.COM');
     expect(found).toEqual(user);
-  });
-
-  it('migrates plaintext owner secret keys into the encrypted store', () => {
-    const users = {
-      'legacy@example.com': {
-        email: 'legacy@example.com',
-        emailVerified: true,
-        createdAt: new Date().toISOString(),
-        ownerSecretKey: 'SLEGACY',
-      },
-    };
-    writeFileSync(join(dataDir, 'users.json'), JSON.stringify(users, null, 2));
-
-    const user = getUserByEmail('legacy@example.com');
-    expect(user).toBeDefined();
-    expect(keyStorage.retrieve('legacy@example.com')).toBe('SLEGACY');
-
-    const rawUsers = readFileSync(join(dataDir, 'users.json'), 'utf-8');
-    expect(rawUsers).not.toContain('SLEGACY');
   });
 
   it('verifies an email', () => {

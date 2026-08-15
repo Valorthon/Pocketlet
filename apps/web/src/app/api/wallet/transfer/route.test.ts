@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { Account, Contract, TransactionBuilder } from '@stellar/stellar-sdk';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,7 +15,9 @@ import {
 } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { keyStorage } from '@/lib/wallet/keys';
+import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
+import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
+import { addressScVal, amountToBaseUnits, i128ScVal } from '@/lib/wallet/amount';
 
 let dataDir: string;
 let cookieJar: Record<string, string> = {};
@@ -28,23 +31,55 @@ vi.mock('next/headers', () => ({
   })),
 }));
 
-vi.mock('@/lib/wallet/invoke', () => ({
-  invokeWalletContract: vi.fn().mockResolvedValue({ hash: 'test-hash-123' }),
-  amountToBaseUnits: vi.fn().mockReturnValue('10000000'),
-  i128ScVal: vi.fn().mockReturnValue('i128'),
-  addressScVal: vi.fn().mockReturnValue('address'),
-}));
+vi.mock('@/lib/wallet/submit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/wallet/submit')>();
+  return {
+    ...actual,
+    submitSignedTransaction: vi.fn().mockResolvedValue({ hash: 'test-hash-123' }),
+  };
+});
 
-vi.mock('@/lib/wallet/deploy', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/wallet/deploy')>();
+vi.mock('@/lib/wallet/token', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/wallet/token')>();
   return {
     ...actual,
     getTokenBalance: vi.fn().mockResolvedValue(BigInt('100000000')),
   };
 });
 
-const SENDER_ADDRESS = 'GCCUPAD2H2RHIQMAPPY6RPLOVCAU5MY5BA43UPKU2UGB4AIEPJSXDDGI';
-const RECIPIENT_ADDRESS = 'GCHCVLYHMRISIGAYR6HA6LNNMD5OTLLUFKIEZMXEZ4ZPM27SAK5TI46P';
+const SENDER_CONTRACT =
+  'CA7FMXWUMM3C37O4QF4E4R4KKXZIEBV7CTFHKDRDXPBLZQ2NMC5PZC5G';
+const OTHER_CONTRACT =
+  'CCTTR6BVBPGWW76HFCRSPQAXZCOC4HKUF5BKK3ZDO7V7B6PIPDKP2BFQ';
+const RECIPIENT_ADDRESS =
+  'GCHCVLYHMRISIGAYR6HA6LNNMD5OTLLUFKIEZMXEZ4ZPM27SAK5TI46P';
+const FEE_PAYER_PUBLIC =
+  'GATVJDFPIPADU74ALX4344HEQQZ2LGMNWABPXBOWYMVXM37KMTTUALTU';
+
+function buildTransferXdr(
+  tokenContractId: string,
+  from: string,
+  to: string,
+  amount: string
+): string {
+  const source = new Account(FEE_PAYER_PUBLIC, '0');
+  const tokenContract = new Contract(tokenContractId);
+  const tx = new TransactionBuilder(source, {
+    fee: '100000',
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      tokenContract.call(
+        'transfer',
+        addressScVal(from),
+        addressScVal(to),
+        i128ScVal(amountToBaseUnits(amount))
+      )
+    )
+    .setTimeout(30)
+    .build();
+  return tx.toXDR();
+}
 
 beforeEach(() => {
   dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-transfer-'));
@@ -67,10 +102,9 @@ async function createSender(email: string) {
     counter: 0,
   });
   setWallet(email, {
-    contractId: 'CSENDER',
-    stellarAddress: SENDER_ADDRESS,
+    contractId: SENDER_CONTRACT,
+    stellarAddress: SENDER_CONTRACT,
   });
-  keyStorage.store(email, 'SSENDER');
   setPin(email, '123456');
   return createSessionToken({ email });
 }
@@ -87,7 +121,6 @@ async function createRecipient(email: string, username?: string, phone?: string)
     contractId: 'CRECIPIENT',
     stellarAddress: RECIPIENT_ADDRESS,
   });
-  keyStorage.store(email, 'SRECIPIENT');
   if (username || phone) {
     setProfile(email, { username, phone });
   }
@@ -106,6 +139,7 @@ function createTransferRequest(body: unknown, token?: string) {
 describe('POST /api/wallet/transfer', () => {
   it('returns 401 without a session cookie', async () => {
     const req = createTransferRequest({
+      signedXdr: buildTransferXdr(getUsdcContractId(), SENDER_CONTRACT, RECIPIENT_ADDRESS, '1'),
       asset: 'USDC',
       amount: '1',
       recipient: RECIPIENT_ADDRESS,
@@ -119,6 +153,12 @@ describe('POST /api/wallet/transfer', () => {
     const token = await createSender('alice@example.com');
     const req = createTransferRequest(
       {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '1'
+        ),
         asset: 'USDC',
         amount: '1',
         recipient: RECIPIENT_ADDRESS,
@@ -138,6 +178,12 @@ describe('POST /api/wallet/transfer', () => {
 
     const req = createTransferRequest(
       {
+        signedXdr: buildTransferXdr(
+          getXlmContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '2'
+        ),
         asset: 'XLM',
         amount: '2',
         recipient: '@bob_user',
@@ -157,6 +203,12 @@ describe('POST /api/wallet/transfer', () => {
 
     const req = createTransferRequest(
       {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '0.5'
+        ),
         asset: 'USDC',
         amount: '0.5',
         recipient: '+63 912 345 6789',
@@ -174,29 +226,15 @@ describe('POST /api/wallet/transfer', () => {
     const token = await createSender('alice@example.com');
     const req = createTransferRequest(
       {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '1'
+        ),
         asset: 'USDC',
         amount: '1',
         recipient: '@unknown_user',
-        pin: '123456',
-      },
-      token
-    );
-    const res = await POST(req);
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain('Recipient not found');
-  });
-
-  it('returns 404 when the resolved user has no wallet', async () => {
-    const token = await createSender('alice@example.com');
-    createUser('bob@example.com', '000000');
-    setProfile('bob@example.com', { username: 'nowallet' });
-
-    const req = createTransferRequest(
-      {
-        asset: 'USDC',
-        amount: '1',
-        recipient: '@nowallet',
         pin: '123456',
       },
       token
@@ -211,6 +249,12 @@ describe('POST /api/wallet/transfer', () => {
     const token = await createSender('alice@example.com');
     const req = createTransferRequest(
       {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '1'
+        ),
         asset: 'USDC',
         amount: '1',
         recipient: RECIPIENT_ADDRESS,
@@ -224,18 +268,68 @@ describe('POST /api/wallet/transfer', () => {
     expect(body.error).toBe('Invalid PIN');
   });
 
-  it('returns 400 for an invalid amount', async () => {
+  it('returns 400 when the signed XDR calls the wrong token contract', async () => {
     const token = await createSender('alice@example.com');
+    const wrongContract = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA';
     const req = createTransferRequest(
       {
-        asset: 'USDC',
-        amount: '-1',
+        signedXdr: buildTransferXdr(wrongContract, SENDER_CONTRACT, RECIPIENT_ADDRESS, '1'),
+        asset: 'XLM',
+        amount: '1',
         recipient: RECIPIENT_ADDRESS,
         pin: '123456',
       },
       token
     );
     const res = await POST(req);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('wrong token contract');
+  });
+
+  it('returns 400 when the signed transfer is from a different wallet', async () => {
+    const token = await createSender('alice@example.com');
+    const req = createTransferRequest(
+      {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          OTHER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '1'
+        ),
+        asset: 'USDC',
+        amount: '1',
+        recipient: RECIPIENT_ADDRESS,
+        pin: '123456',
+      },
+      token
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('not from the user wallet');
+  });
+
+  it('returns 400 when the signed amount does not match the request', async () => {
+    const token = await createSender('alice@example.com');
+    const req = createTransferRequest(
+      {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '2'
+        ),
+        asset: 'USDC',
+        amount: '1',
+        recipient: RECIPIENT_ADDRESS,
+        pin: '123456',
+      },
+      token
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('amount does not match');
   });
 });

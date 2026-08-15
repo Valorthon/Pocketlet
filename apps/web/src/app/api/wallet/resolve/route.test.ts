@@ -13,7 +13,6 @@ import {
 } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { keyStorage } from '@/lib/wallet/keys';
 
 let dataDir: string;
 let cookieJar: Record<string, string> = {};
@@ -51,7 +50,6 @@ async function createUserWithWallet(email: string, username?: string, phone?: st
     contractId: 'CRECIPIENT',
     stellarAddress: 'GCHCVLYHMRISIGAYR6HA6LNNMD5OTLLUFKIEZMXEZ4ZPM27SAK5TI46P',
   });
-  keyStorage.store(email, 'SRECIPIENT');
   if (username || phone) {
     setProfile(email, { username, phone });
   }

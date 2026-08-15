@@ -7,18 +7,16 @@ const originalEnv = {
   SESSION_SECRET: process.env.SESSION_SECRET,
   WEBAUTHN_RP_ID: process.env.WEBAUTHN_RP_ID,
   WEBAUTHN_ORIGIN: process.env.WEBAUTHN_ORIGIN,
-  PASSKEY_RELAYER_BASE_URL: process.env.PASSKEY_RELAYER_BASE_URL,
-  PASSKEY_RELAYER_API_KEY: process.env.PASSKEY_RELAYER_API_KEY,
+  FEE_PAYER_SECRET_KEY: process.env.FEE_PAYER_SECRET_KEY,
 };
 
-function clearRelayerEnv(): void {
-  delete process.env.PASSKEY_RELAYER_BASE_URL;
-  delete process.env.PASSKEY_RELAYER_API_KEY;
+function clearFeePayerEnv(): void {
+  delete process.env.FEE_PAYER_SECRET_KEY;
 }
 
-function setValidRelayerEnv(): void {
-  process.env.PASSKEY_RELAYER_BASE_URL = 'https://channels.example.com/mainnet';
-  process.env.PASSKEY_RELAYER_API_KEY = 'secret-api-key';
+function setValidFeePayerEnv(): void {
+  process.env.FEE_PAYER_SECRET_KEY =
+    'SBI2ATXEXZNK7L53NN4AWQMVCZB2HVULL3LKM7FYVZWL25IUHJOE65YS';
 }
 
 beforeAll(() => {
@@ -27,7 +25,7 @@ beforeAll(() => {
   delete process.env.SESSION_SECRET;
   delete process.env.WEBAUTHN_RP_ID;
   delete process.env.WEBAUTHN_ORIGIN;
-  clearRelayerEnv();
+  clearFeePayerEnv();
 });
 
 afterAll(() => {
@@ -37,8 +35,7 @@ afterAll(() => {
   process.env.SESSION_SECRET = originalEnv.SESSION_SECRET;
   process.env.WEBAUTHN_RP_ID = originalEnv.WEBAUTHN_RP_ID;
   process.env.WEBAUTHN_ORIGIN = originalEnv.WEBAUTHN_ORIGIN;
-  process.env.PASSKEY_RELAYER_BASE_URL = originalEnv.PASSKEY_RELAYER_BASE_URL;
-  process.env.PASSKEY_RELAYER_API_KEY = originalEnv.PASSKEY_RELAYER_API_KEY;
+  process.env.FEE_PAYER_SECRET_KEY = originalEnv.FEE_PAYER_SECRET_KEY;
 });
 
 async function importConfig() {
@@ -87,7 +84,7 @@ describe('auth config', () => {
     process.env.SESSION_SECRET = 'strong-production-secret-32-characters';
     process.env.WEBAUTHN_RP_ID = 'example.com';
     process.env.WEBAUTHN_ORIGIN = 'http://example.com';
-    setValidRelayerEnv();
+    setValidFeePayerEnv();
     await expect(importConfig()).rejects.toThrow(
       'WEBAUTHN_ORIGIN must be a valid HTTPS URL'
     );
@@ -98,32 +95,20 @@ describe('auth config', () => {
     process.env.SESSION_SECRET = 'strong-production-secret-32-characters';
     process.env.WEBAUTHN_RP_ID = 'localhost';
     process.env.WEBAUTHN_ORIGIN = 'https://example.com';
-    setValidRelayerEnv();
+    setValidFeePayerEnv();
     await expect(importConfig()).rejects.toThrow(
       'WEBAUTHN_RP_ID must be a real domain'
     );
   });
 
-  it('throws in production when PASSKEY_RELAYER_BASE_URL is missing', async () => {
+  it('throws in production when FEE_PAYER_SECRET_KEY is missing', async () => {
     process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.PUBLIC;
     process.env.SESSION_SECRET = 'strong-production-secret-32-characters';
     process.env.WEBAUTHN_RP_ID = 'example.com';
     process.env.WEBAUTHN_ORIGIN = 'https://example.com';
-    clearRelayerEnv();
+    clearFeePayerEnv();
     await expect(importConfig()).rejects.toThrow(
-      'PASSKEY_RELAYER_BASE_URL is required in production'
-    );
-  });
-
-  it('throws in production when PASSKEY_RELAYER_API_KEY is missing', async () => {
-    process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.PUBLIC;
-    process.env.SESSION_SECRET = 'strong-production-secret-32-characters';
-    process.env.WEBAUTHN_RP_ID = 'example.com';
-    process.env.WEBAUTHN_ORIGIN = 'https://example.com';
-    process.env.PASSKEY_RELAYER_BASE_URL = 'https://channels.example.com/mainnet';
-    delete process.env.PASSKEY_RELAYER_API_KEY;
-    await expect(importConfig()).rejects.toThrow(
-      'PASSKEY_RELAYER_API_KEY is required in production'
+      'FEE_PAYER_SECRET_KEY is required in production'
     );
   });
 
@@ -132,7 +117,7 @@ describe('auth config', () => {
     process.env.SESSION_SECRET = 'strong-production-secret-32-characters';
     process.env.WEBAUTHN_RP_ID = 'example.com';
     process.env.WEBAUTHN_ORIGIN = 'https://example.com';
-    setValidRelayerEnv();
+    setValidFeePayerEnv();
     const mod = await importConfig();
     expect(mod.SESSION_SECRET).toBe('strong-production-secret-32-characters');
     expect(mod.RP_ID).toBe('example.com');

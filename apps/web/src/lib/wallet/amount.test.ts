@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { amountToBaseUnits, calculateMinBuyAmount } from './invoke';
+import {
+  amountToBaseUnits,
+  calculateMinBuyAmount,
+  i128ScVal,
+  addressScVal,
+} from './amount';
+import { Address } from '@stellar/stellar-sdk';
 
 describe('amountToBaseUnits', () => {
   it('converts an integer amount', () => {
@@ -34,5 +40,21 @@ describe('calculateMinBuyAmount', () => {
 
   it('applies 0.5% slippage', () => {
     expect(calculateMinBuyAmount(100_000_000n, 50)).toBe(99_500_000n);
+  });
+});
+
+describe('i128ScVal', () => {
+  it('round-trips through i128ToBigInt', () => {
+    const value = 123_456_789n;
+    const scVal = i128ScVal(value);
+    expect(scVal.i128().lo().toBigInt() + (scVal.i128().hi().toBigInt() << 64n)).toBe(value);
+  });
+});
+
+describe('addressScVal', () => {
+  it('encodes a Stellar address', () => {
+    const addr = 'GATVJDFPIPADU74ALX4344HEQQZ2LGMNWABPXBOWYMVXM37KMTTUALTU';
+    const scVal = addressScVal(addr);
+    expect(Address.fromScVal(scVal).toString()).toBe(addr);
   });
 });

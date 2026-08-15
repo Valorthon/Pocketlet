@@ -1,7 +1,7 @@
 'use client';
 
-import { startRegistration } from '@simplewebauthn/browser';
 import { useState } from 'react';
+import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -52,38 +52,30 @@ export default function SignupPage() {
     }
   };
 
-  const registerPasskey = async () => {
+  const registerPasskeyAndDeploy = async () => {
     setLoading(true);
     setError(null);
+
     try {
       if (!window.PublicKeyCredential) {
         setError('Passkeys are not supported on this device or browser.');
         return;
       }
-      const optionsRes = await fetch('/api/auth/register-options', {
+
+      const kit = createPasskeyKit();
+      const result = await kit.createWallet('Pocketlet', email);
+
+      const deployRes = await fetch('/api/wallet/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({
+          response: result.rawResponse,
+          keyIdBase64: result.keyIdBase64,
+          contractId: result.contractId,
+          signedTx: result.signedTx,
+        }),
       });
-      const options = await optionsRes.json();
-      if (!optionsRes.ok) {
-        setError(options.error ?? 'Failed to start passkey registration');
-        return;
-      }
 
-      const attestation = await startRegistration({ optionsJSON: options });
-      const verifyRes = await fetch('/api/auth/register-verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, response: attestation }),
-      });
-      const verifyData = (await verifyRes.json()) as { error?: string; verified?: boolean };
-      if (!verifyRes.ok) {
-        setError(verifyData.error ?? 'Failed to verify passkey');
-        return;
-      }
-
-      const deployRes = await fetch('/api/wallet/deploy', { method: 'POST' });
       const deployData = (await deployRes.json()) as {
         error?: string;
         contractId?: string;
@@ -93,6 +85,7 @@ export default function SignupPage() {
         setError(deployData.error ?? 'Wallet deployment failed');
         return;
       }
+
       window.location.href = '/pin/setup';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Passkey registration failed');
@@ -176,14 +169,14 @@ export default function SignupPage() {
         {step === 'passkey' && (
           <div className="space-y-4">
             <p className="text-sm text-gray-600">
-              Your email is verified. Register a passkey to secure your wallet.
+              Your email is verified. Register a passkey to create and secure your wallet.
             </p>
             <button
-              onClick={registerPasskey}
+              onClick={registerPasskeyAndDeploy}
               disabled={loading}
               className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
-              {loading ? 'Registering...' : 'Register passkey'}
+              {loading ? 'Registering...' : 'Register passkey and create wallet'}
             </button>
           </div>
         )}

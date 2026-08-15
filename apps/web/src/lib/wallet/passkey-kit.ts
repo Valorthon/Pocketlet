@@ -1,6 +1,7 @@
 import { PasskeyKit, SACClient } from 'passkey-kit';
 import { IndexedDBStorage } from 'passkey-kit/storage';
 import { Asset } from '@stellar/stellar-sdk';
+import { Client as SacClient } from 'sac-sdk';
 import { RPC_URL, NETWORK_PASSPHRASE } from './network';
 import { getUsdcContractId } from './assets';
 
@@ -58,4 +59,19 @@ export function getUsdcSACClient() {
 export function getXlmSACClient() {
   const sac = createSACClient();
   return sac.getSACClient(Asset.native().contractId(NETWORK_PASSPHRASE));
+}
+
+/**
+ * Create a SEP-41 token client for a specific wallet source.
+ *
+ * The returned client uses the smart-wallet contract as the transaction source
+ * so that `transfer(...)` auth entries are authorized by the wallet signer.
+ */
+export function createTokenClient(tokenContractId: string, walletContractId: string): SacClient {
+  return new SacClient({
+    contractId: tokenContractId,
+    networkPassphrase: NETWORK_PASSPHRASE,
+    rpcUrl: RPC_URL,
+    publicKey: walletContractId,
+  });
 }

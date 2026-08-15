@@ -4,7 +4,7 @@ import { Horizon } from '@stellar/stellar-sdk';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { getUserByEmail } from '@/lib/auth/store';
-import { HORIZON_URL } from '@/lib/wallet/deploy';
+import { HORIZON_URL } from '@/lib/wallet/network';
 import { getUsdcContractId } from '@/lib/wallet/assets';
 import { buildTransactionDetails } from '@/lib/wallet/transactions';
 

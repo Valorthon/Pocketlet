@@ -2,7 +2,6 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
 import { hashPin, verifyPin } from './pin';
-import { migratePlaintextKey } from '../wallet/keys';
 
 export interface Credential {
   id: string;
@@ -54,20 +53,6 @@ function loadUsers(): Record<string, User> {
     users = JSON.parse(raw) as Record<string, User>;
   } catch {
     return {};
-  }
-
-  // Migrate any plaintext owner secret keys left over from before issue #22
-  // into the encrypted key store. This keeps users.json free of private keys.
-  let migrated = false;
-  for (const user of Object.values(users)) {
-    const legacyUser = user as User & { ownerSecretKey?: string };
-    if (migratePlaintextKey(legacyUser)) {
-      delete legacyUser.ownerSecretKey;
-      migrated = true;
-    }
-  }
-  if (migrated) {
-    saveUsers(users);
   }
 
   return users;

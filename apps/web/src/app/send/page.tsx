@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import PinModal from '@/components/PinModal';
+import { createPasskeyKit, createTokenClient } from '@/lib/wallet/passkey-kit';
+import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
+import { amountToBaseUnits } from '@/lib/wallet/amount';
 
 interface TransferForm {
   asset: 'USDC' | 'XLM';
@@ -18,6 +21,10 @@ interface ResolvedRecipient {
   type: 'address' | 'username' | 'phone';
   address: string;
   display: string;
+}
+
+function getTokenContractId(asset: 'USDC' | 'XLM'): string {
+  return asset === 'USDC' ? getUsdcContractId() : getXlmContractId();
 }
 
 export default function SendPage() {
@@ -90,10 +97,35 @@ export default function SendPage() {
     setError(null);
 
     try {
+      if (!resolved) {
+        throw new Error('Recipient not resolved');
+      }
+
+      const kit = createPasskeyKit();
+      await kit.connectWallet();
+
+      if (!kit.contractId) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tokenContractId = getTokenContractId(form.asset);
+      const tokenClient = createTokenClient(tokenContractId, kit.contractId);
+
+      const baseAmount = amountToBaseUnits(form.amount);
+      const tx = await tokenClient.transfer({
+        from: kit.contractId,
+        to: resolved.address,
+        amount: baseAmount,
+      });
+
+      await kit.sign(tx);
+      const signedXdr = tx.toXDR();
+
       const res = await fetch('/api/wallet/transfer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          signedXdr,
           asset: form.asset,
           amount: form.amount,
           recipient: form.recipient.trim(),

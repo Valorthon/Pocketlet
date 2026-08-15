@@ -1,23 +1,42 @@
-import { Keypair, rpc } from '@stellar/stellar-sdk';
+import { verifyRegistrationResponse } from '@simplewebauthn/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserByEmail, setWallet } from '@/lib/auth/store';
+import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
-import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import {
-  deployWallet,
-  fundAccount,
-  getPlatformKeypair,
-  RPC_URL,
-} from '@/lib/wallet/deploy';
-import { keyStorage } from '@/lib/wallet/keys';
+import { SESSION_COOKIE_NAME, ORIGIN, RP_ID } from '@/lib/auth/config';
+import { getUserByEmail, setCredential, setWallet } from '@/lib/auth/store';
+import { submitSignedTransaction } from '@/lib/wallet/submit';
 
-interface WalletInfo {
+export interface DeployRequest {
+  /** Raw WebAuthn registration response from passkey-kit.createWallet. */
+  response: unknown;
+  /** Base64URL-encoded credential id from passkey-kit.createWallet. */
+  keyIdBase64: string;
+  /** Deterministic smart-wallet contract address. */
   contractId: string;
-  stellarAddress: string;
+  /** Base64 XDR of the authorized deploy carrier, ready for fee-payer submission. */
+  signedTx: string;
+}
+
+/**
+ * The passkey-kit client generates its own WebAuthn challenge during
+ * `createWallet`. We verify the registration response cryptographically and
+ * check origin/RPID, but we do not enforce a server-known challenge here.
+ * The deploy transaction itself is signed by the passkey and validated on-chain.
+ */
+async function verifyPasskeyRegistrationResponse(
+  response: unknown
+): Promise<ReturnType<typeof verifyRegistrationResponse>> {
+  return verifyRegistrationResponse({
+    response: response as never,
+    expectedChallenge: () => true,
+    expectedOrigin: ORIGIN,
+    expectedRPID: RP_ID,
+    requireUserVerification: true,
+  });
 }
 
 export async function POST(request: NextRequest) {
-  const cookieStore = request.cookies;
+  const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!token) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -29,8 +48,11 @@ export async function POST(request: NextRequest) {
   }
 
   const user = getUserByEmail(session.email);
-  if (!user || !user.credential) {
-    return NextResponse.json({ error: 'User not found or passkey not registered' }, { status: 404 });
+  if (!user || !user.emailVerified) {
+    return NextResponse.json(
+      { error: 'User not found or email not verified' },
+      { status: 404 }
+    );
   }
 
   if (user.contractId) {
@@ -41,26 +63,60 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  let body: DeployRequest;
   try {
-    const server = new rpc.Server(RPC_URL);
-    const deployer = getPlatformKeypair();
-    await fundAccount(deployer.publicKey());
+    body = (await request.json()) as DeployRequest;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
 
-    const ownerKeypair = Keypair.random();
-    const ownerPublicKey = Buffer.from(ownerKeypair.rawPublicKey());
-    const contractAddress = await deployWallet(server, deployer, ownerPublicKey);
+  const { response, keyIdBase64, contractId, signedTx } = body;
 
-    const walletInfo: WalletInfo = {
-      contractId: contractAddress,
-      stellarAddress: contractAddress,
-    };
+  if (!response || !keyIdBase64 || !contractId || !signedTx) {
+    return NextResponse.json(
+      { error: 'response, keyIdBase64, contractId, and signedTx are required' },
+      { status: 400 }
+    );
+  }
 
-    keyStorage.store(user.email, ownerKeypair.secret());
-    const updated = setWallet(user.email, walletInfo);
+  try {
+    const verification = await verifyPasskeyRegistrationResponse(response);
+
+    if (!verification.verified || !verification.registrationInfo) {
+      return NextResponse.json(
+        { error: 'Passkey verification failed' },
+        { status: 401 }
+      );
+    }
+
+    const credential = verification.registrationInfo.credential;
+    if (credential.id !== keyIdBase64) {
+      return NextResponse.json(
+        { error: 'Credential id does not match wallet key id' },
+        { status: 400 }
+      );
+    }
+
+    setCredential(user.email, {
+      id: credential.id,
+      publicKey: Buffer.from(credential.publicKey).toString('base64url'),
+      counter: credential.counter,
+      transports: credential.transports ?? undefined,
+    });
+
+    const { hash } = await submitSignedTransaction(signedTx);
+    console.log('Wallet deployed:', { contractId, hash });
+
+    setWallet(user.email, {
+      contractId,
+      stellarAddress: contractId,
+    });
+
     return NextResponse.json({
-      email: updated.email,
-      contractId: updated.contractId,
-      stellarAddress: updated.stellarAddress,
+      email: user.email,
+      contractId,
+      stellarAddress: contractId,
+      hash,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Wallet deployment failed';

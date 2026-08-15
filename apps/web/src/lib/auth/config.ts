@@ -55,19 +55,11 @@ export function validateProductionConfig(): void {
     );
   }
 
-  const relayerBaseUrl = process.env.PASSKEY_RELAYER_BASE_URL?.trim();
-  if (!relayerBaseUrl) {
+  const feePayerSecret = process.env.FEE_PAYER_SECRET_KEY?.trim();
+  if (!feePayerSecret) {
     throw new Error(
-      'PASSKEY_RELAYER_BASE_URL is required in production. ' +
-        'Set the OpenZeppelin Channels relayer base URL via a secrets manager.'
-    );
-  }
-
-  const relayerApiKey = process.env.PASSKEY_RELAYER_API_KEY?.trim();
-  if (!relayerApiKey) {
-    throw new Error(
-      'PASSKEY_RELAYER_API_KEY is required in production. ' +
-        'Set the OpenZeppelin Channels relayer API key via a secrets manager.'
+      'FEE_PAYER_SECRET_KEY is required in production. ' +
+        'Set the fee payer account secret via a secrets manager.'
     );
   }
 }

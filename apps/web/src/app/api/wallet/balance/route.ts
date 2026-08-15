@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { getUserByEmail } from '@/lib/auth/store';
-import { getTokenBalance } from '@/lib/wallet/deploy';
+import { getTokenBalance } from '@/lib/wallet/token';
 import { getXlmContractId, getUsdcContractId } from '@/lib/wallet/assets';
 
 export async function GET() {

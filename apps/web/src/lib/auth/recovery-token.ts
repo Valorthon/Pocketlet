@@ -4,9 +4,22 @@ import {
   RP_ID,
   SESSION_SECRET,
 } from './config';
-import { getRecoveryWaitingPeriodMs } from './recovery';
 
 export const RECOVERY_COOKIE_NAME = 'pocketlet_recovery';
+
+const DEFAULT_RECOVERY_WAITING_PERIOD_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export function getRecoveryWaitingPeriodMs(): number {
+  const configured = process.env.RECOVERY_WAITING_PERIOD_MS;
+  if (!configured) {
+    return DEFAULT_RECOVERY_WAITING_PERIOD_MS;
+  }
+  const parsed = Number(configured);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return DEFAULT_RECOVERY_WAITING_PERIOD_MS;
+  }
+  return parsed;
+}
 
 export interface RecoveryTokenPayload {
   email: string;
