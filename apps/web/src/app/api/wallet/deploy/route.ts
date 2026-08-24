@@ -1,9 +1,15 @@
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
+import { Keypair } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME, ORIGIN, RP_ID } from '@/lib/auth/config';
-import { getUserByEmail, setCredential, setWallet } from '@/lib/auth/store';
+import {
+  getUserByEmail,
+  setCredential,
+  setRecoveryPublicKey,
+  setWallet,
+} from '@/lib/auth/store';
 import { submitSignedTransaction } from '@/lib/wallet/submit';
 
 export interface DeployRequest {
@@ -15,6 +21,8 @@ export interface DeployRequest {
   contractId: string;
   /** Base64 XDR of the authorized deploy carrier, ready for fee-payer submission. */
   signedTx: string;
+  /** Recovery Ed25519 public key (G...) derived from the BIP39 phrase. */
+  recoveryPublicKey: string;
 }
 
 /**
@@ -55,10 +63,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (user.contractId) {
+  if (user.walletContractId) {
     return NextResponse.json({
       email: user.email,
-      contractId: user.contractId,
+      contractId: user.walletContractId,
       stellarAddress: user.stellarAddress,
     });
   }
@@ -70,11 +78,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { response, keyIdBase64, contractId, signedTx } = body;
+  const { response, keyIdBase64, contractId, signedTx, recoveryPublicKey } = body;
 
-  if (!response || !keyIdBase64 || !contractId || !signedTx) {
+  if (!response || !keyIdBase64 || !contractId || !signedTx || !recoveryPublicKey) {
     return NextResponse.json(
-      { error: 'response, keyIdBase64, contractId, and signedTx are required' },
+      {
+        error:
+          'response, keyIdBase64, contractId, signedTx, and recoveryPublicKey are required',
+      },
+      { status: 400 }
+    );
+  }
+
+  try {
+    Keypair.fromPublicKey(recoveryPublicKey);
+  } catch {
+    return NextResponse.json(
+      { error: 'recoveryPublicKey must be a valid Stellar public key' },
       { status: 400 }
     );
   }
@@ -108,9 +128,12 @@ export async function POST(request: NextRequest) {
     console.log('Wallet deployed:', { contractId, hash });
 
     setWallet(user.email, {
-      contractId,
+      walletContractId: contractId,
       stellarAddress: contractId,
+      primaryPasskeyKeyId: credential.id,
     });
+
+    setRecoveryPublicKey(user.email, recoveryPublicKey);
 
     return NextResponse.json({
       email: user.email,

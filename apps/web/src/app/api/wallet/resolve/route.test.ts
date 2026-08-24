@@ -47,8 +47,9 @@ async function createUserWithWallet(email: string, username?: string, phone?: st
     counter: 0,
   });
   setWallet(email, {
-    contractId: 'CRECIPIENT',
+    walletContractId: 'CRECIPIENT',
     stellarAddress: 'GCHCVLYHMRISIGAYR6HA6LNNMD5OTLLUFKIEZMXEZ4ZPM27SAK5TI46P',
+    primaryPasskeyKeyId: 'cred-id',
   });
   if (username || phone) {
     setProfile(email, { username, phone });

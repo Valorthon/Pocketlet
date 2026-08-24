@@ -14,6 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/hashes": "^2.3.0",
     "@scure/bip32": "^2.3.0",
     "@simplewebauthn/browser": "^13.1.0",
     "@simplewebauthn/server": "^13.1.0",
@@ -22,8 +23,8 @@
     "bip39": "^3.1.0",
     "jose": "^6.2.3",
     "lucide-react": "^0.469.0",
-    "passkey-kit": "^0.16.2",
     "next": "14.2.28",
+    "passkey-kit": "^0.16.2",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

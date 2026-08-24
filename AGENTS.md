@@ -28,7 +28,7 @@ Use `pnpm --filter <workspace-name>` to target packages. For example, add a depe
 
 - Self-custodial passkey smart accounts via [`passkey-kit`](https://github.com/stellar/passkey-kit). The platform never holds user signing keys.
 - Browser code imports from `passkey-kit` and `passkey-kit/storage`. Server-only code imports from `passkey-kit/server` so relayer secrets stay out of the client bundle.
-- Fee sponsorship is handled by the OpenZeppelin Channels hosted relayer on testnet; production uses a self-hosted relayer with its API key stored in a secrets manager.
+- Testnet V1 uses a server-held fee payer that submits signed transactions directly to Soroban RPC. OpenZeppelin Channels fee sponsorship is deferred until the relayer supports CAP-0071-02 V2 address credentials; production will use a self-hosted relayer with its API key stored in a secrets manager.
 - V1 does not integrate off-chain Anchors. Follow SEP-10 (auth), SEP-24 (on/off-ramp), and SEP-38 (quotes) only when implementing V2 fiat/Anchor features.
 
 ## Execution Workflow

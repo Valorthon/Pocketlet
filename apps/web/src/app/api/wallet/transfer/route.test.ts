@@ -102,8 +102,9 @@ async function createSender(email: string) {
     counter: 0,
   });
   setWallet(email, {
-    contractId: SENDER_CONTRACT,
+    walletContractId: SENDER_CONTRACT,
     stellarAddress: SENDER_CONTRACT,
+    primaryPasskeyKeyId: 'cred-id',
   });
   setPin(email, '123456');
   return createSessionToken({ email });
@@ -118,8 +119,9 @@ async function createRecipient(email: string, username?: string, phone?: string)
     counter: 0,
   });
   setWallet(email, {
-    contractId: 'CRECIPIENT',
+    walletContractId: 'CRECIPIENT',
     stellarAddress: RECIPIENT_ADDRESS,
+    primaryPasskeyKeyId: 'cred-id-2',
   });
   if (username || phone) {
     setProfile(email, { username, phone });

@@ -16,22 +16,24 @@ export interface User {
   verificationCode?: string;
   pendingChallenge?: string;
   credential?: Credential;
-  contractId?: string;
+
+  // Passkey smart wallet
+  walletContractId?: string;
   stellarAddress?: string;
+  primaryPasskeyKeyId?: string;
+
+  // Recovery phrase + optional backup passkey
+  recoveryPublicKey?: string;
+  recoveryPhraseConfirmed?: boolean;
+  hasBackupPasskey?: boolean;
+  backupPasskeyKeyId?: string;
+
   pinHash?: string;
   pinResetCode?: string;
   createdAt: string;
   updatedAt?: string;
   username?: string;
   phone?: string;
-
-  // Lost-passkey recovery state
-  recoveryInitiatedAt?: string;
-  recoveryCode?: string;
-  recoveryCodeExpiresAt?: string;
-  recoveryVerifiedAt?: string;
-  recoveryAttempts?: number;
-  recoveryLockedUntil?: string;
 }
 
 function getDataDir(): string {
@@ -228,8 +230,9 @@ export function setCredential(email: string, credential: Credential): User {
 }
 
 export interface WalletInfo {
-  contractId: string;
+  walletContractId: string;
   stellarAddress: string;
+  primaryPasskeyKeyId: string;
 }
 
 export function setWallet(email: string, wallet: WalletInfo): User {
@@ -239,8 +242,50 @@ export function setWallet(email: string, wallet: WalletInfo): User {
   if (!user) {
     throw new Error('User not found');
   }
-  user.contractId = wallet.contractId;
+  user.walletContractId = wallet.walletContractId;
   user.stellarAddress = wallet.stellarAddress;
+  user.primaryPasskeyKeyId = wallet.primaryPasskeyKeyId;
+  saveUsers(users);
+  return user;
+}
+
+export function setRecoveryPublicKey(email: string, publicKey: string): User {
+  const users = loadUsers();
+  const normalized = normalizeEmail(email);
+  const user = users[normalized];
+  if (!user) {
+    throw new Error('User not found');
+  }
+  user.recoveryPublicKey = publicKey;
+  saveUsers(users);
+  return user;
+}
+
+export function markRecoveryPhraseConfirmed(email: string): User {
+  const users = loadUsers();
+  const normalized = normalizeEmail(email);
+  const user = users[normalized];
+  if (!user) {
+    throw new Error('User not found');
+  }
+  user.recoveryPhraseConfirmed = true;
+  saveUsers(users);
+  return user;
+}
+
+export interface BackupPasskeyInfo {
+  keyIdBase64: string;
+}
+
+export function setBackupPasskey(email: string, info: BackupPasskeyInfo): User {
+  const users = loadUsers();
+  const normalized = normalizeEmail(email);
+  const user = users[normalized];
+  if (!user) {
+    throw new Error('User not found');
+  }
+  user.hasBackupPasskey = true;
+  user.backupPasskeyKeyId = info.keyIdBase64;
   saveUsers(users);
   return user;
 }
@@ -311,111 +356,4 @@ export function clearPinResetCode(email: string): User {
   return user;
 }
 
-export function setRecoveryInitiated(
-  email: string,
-  code: string,
-  expiresAt: string
-): User {
-  const users = loadUsers();
-  const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
-    throw new Error('User not found');
-  }
-  user.recoveryInitiatedAt = new Date().toISOString();
-  user.recoveryCode = code;
-  user.recoveryCodeExpiresAt = expiresAt;
-  user.recoveryAttempts = 0;
-  delete user.recoveryVerifiedAt;
-  saveUsers(users);
-  return user;
-}
 
-export function recordRecoveryAttempt(email: string): User {
-  const users = loadUsers();
-  const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
-    throw new Error('User not found');
-  }
-  const attempts = (user.recoveryAttempts ?? 0) + 1;
-  user.recoveryAttempts = attempts;
-  if (attempts >= 3) {
-    const lockoutUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    user.recoveryLockedUntil = lockoutUntil;
-  }
-  saveUsers(users);
-  return user;
-}
-
-export function isRecoveryLocked(email: string): boolean {
-  const user = getUserByEmail(email);
-  if (!user?.recoveryLockedUntil) {
-    return false;
-  }
-  return new Date(user.recoveryLockedUntil).getTime() > Date.now();
-}
-
-export function verifyRecoveryCode(email: string, code: string): User {
-  const user = getUserByEmail(email);
-  if (!user) {
-    throw new Error('User not found');
-  }
-  if (isRecoveryLocked(email)) {
-    throw new Error('Recovery is locked. Try again later.');
-  }
-  if (!user.recoveryCode || !user.recoveryCodeExpiresAt) {
-    throw new Error('No active recovery request');
-  }
-  if (new Date(user.recoveryCodeExpiresAt).getTime() <= Date.now()) {
-    recordRecoveryAttempt(email);
-    throw new Error('Recovery code expired');
-  }
-  if (user.recoveryCode !== code) {
-    recordRecoveryAttempt(email);
-    throw new Error('Invalid recovery code');
-  }
-
-  const users = loadUsers();
-  const normalized = normalizeEmail(email);
-  const stored = users[normalized];
-  if (!stored) {
-    throw new Error('User not found');
-  }
-  stored.recoveryVerifiedAt = new Date().toISOString();
-  delete stored.recoveryCode;
-  delete stored.recoveryCodeExpiresAt;
-  delete stored.recoveryAttempts;
-  saveUsers(users);
-  return stored;
-}
-
-export function isRecoveryReady(email: string, now = Date.now()): boolean {
-  const user = getUserByEmail(email);
-  if (!user?.recoveryVerifiedAt) {
-    return false;
-  }
-  const waitingPeriodMs = Number(process.env.RECOVERY_WAITING_PERIOD_MS ?? 24 * 60 * 60 * 1000);
-  return new Date(user.recoveryVerifiedAt).getTime() + waitingPeriodMs <= now;
-}
-
-export function getRecoveryVerifiedAt(email: string): string | undefined {
-  return getUserByEmail(email)?.recoveryVerifiedAt;
-}
-
-export function clearRecoveryState(email: string): User {
-  const users = loadUsers();
-  const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
-    throw new Error('User not found');
-  }
-  delete user.recoveryInitiatedAt;
-  delete user.recoveryCode;
-  delete user.recoveryCodeExpiresAt;
-  delete user.recoveryVerifiedAt;
-  delete user.recoveryAttempts;
-  delete user.recoveryLockedUntil;
-  saveUsers(users);
-  return user;
-}

@@ -21,7 +21,7 @@ export async function GET() {
   }
 
   const user = getUserByEmail(session.email);
-  if (!user || !user.contractId) {
+  if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
 
@@ -29,7 +29,7 @@ export async function GET() {
   try {
     const txPage = await server
       .transactions()
-      .forAccount(user.contractId)
+      .forAccount(user.walletContractId)
       .order('desc')
       .limit(20)
       .call();
@@ -38,7 +38,7 @@ export async function GET() {
     for (const tx of txPage.records) {
       const ops = await server.operations().forTransaction(tx.hash).call();
       details.push(
-        buildTransactionDetails(tx, ops.records, user.contractId, getUsdcContractId())
+        buildTransactionDetails(tx, ops.records, user.walletContractId, getUsdcContractId())
       );
     }
 

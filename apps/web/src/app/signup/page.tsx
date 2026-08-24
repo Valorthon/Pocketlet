@@ -1,7 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
+import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
+import {
+  generateRecoveryPhrase,
+  getRecoveryPublicKey,
+  splitRecoveryPhrase,
+} from '@/lib/wallet/recovery';
+
+const ONBOARDING_PHRASE_KEY = 'pocketlet:onboarding:recoveryPhrase';
+const ONBOARDING_KEY_ID_KEY = 'pocketlet:onboarding:keyIdBase64';
+const ONBOARDING_CONTRACT_ID_KEY = 'pocketlet:onboarding:contractId';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -65,6 +74,11 @@ export default function SignupPage() {
       const kit = createPasskeyKit();
       const result = await kit.createWallet('Pocketlet', email);
 
+      // Generate the recovery phrase client-side. The phrase itself never
+      // leaves the browser; only its derived public key is sent to the server.
+      const recoveryPhrase = generateRecoveryPhrase();
+      const recoveryPublicKey = getRecoveryPublicKey(recoveryPhrase);
+
       const deployRes = await fetch('/api/wallet/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -73,6 +87,7 @@ export default function SignupPage() {
           keyIdBase64: result.keyIdBase64,
           contractId: result.contractId,
           signedTx: result.signedTx,
+          recoveryPublicKey,
         }),
       });
 
@@ -86,7 +101,48 @@ export default function SignupPage() {
         return;
       }
 
-      window.location.href = '/pin/setup';
+      // Connect the newly deployed wallet so we can administer signers.
+      await kit.connectWallet({ keyId: result.keyIdBase64 });
+
+      // Register the recovery Ed25519 signer immediately after deploy.
+      const addSignerTx = await kit.addEd25519(
+        recoveryPublicKey,
+        undefined,
+        SignerStore.Persistent
+      );
+      await kit.sign(addSignerTx);
+      const signedXdr = addSignerTx.toXDR();
+
+      const submitRes = await fetch('/api/wallet/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signedXdr }),
+      });
+
+      const submitData = (await submitRes.json()) as { error?: string; hash?: string };
+      if (!submitRes.ok) {
+        setError(submitData.error ?? 'Failed to register recovery signer');
+        return;
+      }
+
+      // Stash onboarding state in sessionStorage so the recovery-phrase page
+      // can display the phrase once without persisting it on the server.
+      window.sessionStorage.setItem(ONBOARDING_PHRASE_KEY, recoveryPhrase);
+      window.sessionStorage.setItem(ONBOARDING_KEY_ID_KEY, result.keyIdBase64);
+      window.sessionStorage.setItem(
+        ONBOARDING_CONTRACT_ID_KEY,
+        result.contractId
+      );
+
+      // Basic check that the stored phrase is retrievable before navigating.
+      const stored = window.sessionStorage.getItem(ONBOARDING_PHRASE_KEY);
+      const storedWords = stored ? splitRecoveryPhrase(stored) : [];
+      if (storedWords.length !== 12) {
+        setError('Failed to save recovery phrase. Please try again.');
+        return;
+      }
+
+      window.location.href = '/recovery-phrase';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Passkey registration failed');
     } finally {

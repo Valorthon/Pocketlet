@@ -19,20 +19,20 @@ export async function GET() {
   }
 
   const user = getUserByEmail(session.email);
-  if (!user || !user.contractId) {
+  if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
 
   try {
     const [xlmBalance, usdcBalance] = await Promise.all([
-      getTokenBalance(getXlmContractId(), user.contractId),
-      getTokenBalance(getUsdcContractId(), user.contractId),
+      getTokenBalance(getXlmContractId(), user.walletContractId),
+      getTokenBalance(getUsdcContractId(), user.walletContractId),
     ]);
 
     return NextResponse.json({
       xlm: xlmBalance.toString(),
       usdc: usdcBalance.toString(),
-      contractId: user.contractId,
+      contractId: user.walletContractId,
       stellarAddress: user.stellarAddress,
     });
   } catch (err) {

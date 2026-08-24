@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
   }
 
   const user = getUserByEmail(session.email);
-  if (!user || !user.contractId) {
+  if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
 
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
     const tokenContractId = getTokenContractId(asset);
     const baseAmount = amountToBaseUnits(amount);
 
-    const balance = await getTokenBalance(tokenContractId, user.contractId);
+    const balance = await getTokenBalance(tokenContractId, user.walletContractId);
     if (baseAmount > balance) {
       return NextResponse.json(
         { error: `Insufficient ${asset} balance` },
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
 
     validateSignedTransfer(
       signedXdr,
-      user.contractId,
+      user.walletContractId,
       tokenContractId,
       resolved.address,
       baseAmount

@@ -1,9 +1,11 @@
-import { PasskeyKit, SACClient } from 'passkey-kit';
+import { PasskeyKit, SACClient, SignerStore } from 'passkey-kit';
 import { IndexedDBStorage } from 'passkey-kit/storage';
 import { Asset } from '@stellar/stellar-sdk';
 import { Client as SacClient } from 'sac-sdk';
 import { RPC_URL, NETWORK_PASSPHRASE } from './network';
 import { getUsdcContractId } from './assets';
+
+export { SignerStore };
 
 /**
  * Canonical v1 passkey-kit smart-wallet WASM hash.
