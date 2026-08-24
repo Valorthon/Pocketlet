@@ -13,7 +13,7 @@ Pocketlet is a simple web wallet for holding and sending digital dollars globall
 - **USDC ↔ XLM swaps** — *deferred to a future version* while the DEX integration is rebuilt for the passkey-kit wallet.
 - **PIN confirmation** — required for all payments.
 - **Transaction details** — view fees, operation details, and on-chain hash.
-- **Lost-passkey recovery** — email-based recovery with a waiting period and new passkey registration.
+- **Lost-passkey recovery** — email verification plus a waiting period, then restore access with the BIP39 recovery phrase or a backup passkey.
 
 ## Project Structure
 
@@ -21,11 +21,12 @@ This is a pnpm monorepo:
 
 ```
 .
-├── apps/web                    Next.js 14 PWA frontend (App Router)
+├── apps/web                    Next.js 14 frontend (App Router)
 ├── packages/config             Shared ESLint, TypeScript, Tailwind config
 ├── SPEC.md                     V1 product spec
 ├── FUTURE_VERSIONS.md          V2, V3, and deferred feature roadmap
 ├── TESTNET.md                  End-to-end testnet testing guide
+├── COMPETITIVE_ANALYSIS.md     Market and competitor notes
 └── README.md                   This file
 ```
 
@@ -43,7 +44,7 @@ Swaps are currently disabled in the UI. A DEX integration will be added in a fut
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 20+ (LTS recommended)
+- [Node.js](https://nodejs.org/) 22+ (LTS recommended)
 - [pnpm](https://pnpm.io/) 11.13.1+ (the monorepo uses `packageManager: pnpm@11.13.1`)
 - A Stellar Testnet wallet (e.g., [Laboratory](https://laboratory.stellar.org/#testnet), [LOBSTR](https://lobstr.co/), or a testnet-funded account) for end-to-end testing
 
@@ -97,7 +98,9 @@ Key variables:
 | `RECOVERY_WAITING_PERIOD_MS` | Lost-passkey recovery waiting period | 24 hours (set to `60000` for quick testing) |
 | `WEBAUTHN_RP_ID` | WebAuthn relying party ID | `localhost` |
 | `WEBAUTHN_ORIGIN` | WebAuthn origin | `http://localhost:3000` |
+| `NEXT_PUBLIC_PASSKEY_RP_ID` | Optional passkey-kit RP ID override | falls back to `WEBAUTHN_RP_ID` |
 | `SESSION_SECRET` | JWT session signing secret | `change-me-in-production` |
+| `POCKETLET_DATA_DIR` | Optional directory for `.data` storage | `.data` in the working directory |
 
 ## Run the App
 

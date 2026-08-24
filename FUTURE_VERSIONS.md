@@ -79,6 +79,10 @@ This document records features that were intentionally deferred from V1 and the 
 * **What:** Notify users of incoming payments, successful swaps, and security events.
 * **Why deferred:** PWA push notifications require additional setup and are not critical for core V1 flows.
 
+### Progressive Web App (PWA)
+* **What:** Package the web app as an installable PWA with a web app manifest, service worker, offline caching, and home-screen icons.
+* **Why deferred:** V1 focuses on validating the core wallet flows in the browser. A full PWA layer (manifest, icons, service worker, offline handling) can be added once the feature set is stable.
+
 ---
 
 ## V3 — Multi-Stablecoin Support & Regional Expansion

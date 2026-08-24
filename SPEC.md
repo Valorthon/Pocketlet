@@ -83,10 +83,10 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 ## 8. Technical Architecture (V1 Web App)
 
 ### Frontend
-* **Framework:** Next.js 14+ with App Router, optimized as a Progressive Web App (PWA) for mobile browsers.
+* **Framework:** Next.js 14+ with App Router, mobile-optimized layout.
 * **Language:** TypeScript only. No `any` or `@ts-ignore`.
 * **Styling:** Tailwind CSS.
-* **State Management:** Zustand for global state; local UI state in hooks or props.
+* **State Management:** UI state in React hooks/props or server-derived state; global client store only when multiple pages need shared, client-only data.
 
 ### Blockchain Layer (Stellar / Soroban)
 * **Network:** Stellar Testnet for V1.
