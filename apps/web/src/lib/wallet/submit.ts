@@ -12,6 +12,40 @@ import {
 import { NETWORK_PASSPHRASE, RPC_URL } from './network';
 import { fundAccount, getFeePayerKeypair } from './fee-payer';
 
+function getOperationResultCode(
+  op: xdr.OperationResult
+): { name: string; value: number | string } | null {
+  const switchResult = op.switch?.();
+  if (!switchResult) {
+    return null;
+  }
+  return {
+    name: switchResult.name,
+    value: switchResult.value,
+  };
+}
+
+function getInvokeHostFunctionResultCode(
+  op: xdr.OperationResult
+): { name: string; value: number | string } | null {
+  const tr = op.tr?.();
+  if (!tr) {
+    return null;
+  }
+  const hostResult = tr.invokeHostFunctionResult?.();
+  if (!hostResult) {
+    return null;
+  }
+  const switchResult = hostResult.switch?.();
+  if (!switchResult) {
+    return null;
+  }
+  return {
+    name: switchResult.name,
+    value: switchResult.value,
+  };
+}
+
 function formatFailedResult(
   tx: rpc.Api.GetFailedTransactionResponse
 ): string {
@@ -19,53 +53,28 @@ function formatFailedResult(
     return 'no result XDR';
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const resultAny = tx.resultXdr as any;
-  const resultUnion =
-    typeof resultAny.result === 'function' ? resultAny.result() : resultAny.result;
+  const resultUnion = tx.resultXdr.result();
+  const txSwitch = resultUnion.switch();
+  const txCode = txSwitch.name ?? txSwitch.value ?? 'unknown';
 
-  const txCode =
-    resultUnion?.switch?.().name ?? resultUnion?.switch?.().value ?? 'unknown';
+  const opResults = resultUnion.results?.() ?? [];
 
-  const opResults =
-    typeof resultUnion?.results === 'function'
-      ? resultUnion.results()
-      : resultUnion?.results;
+  const opCodes = opResults.map((op, idx) => {
+    const opCode = getOperationResultCode(op);
+    const hostCode = getInvokeHostFunctionResultCode(op);
 
-  const opCodes = Array.isArray(opResults)
-    ? opResults.map((op: unknown, idx: number) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const opAny = op as any;
-        const opCode =
-          opAny?.switch?.().name ?? opAny?.switch?.().value ?? 'unknown';
-
-        const hostResult = opAny?.tr?.()?.invokeHostFunctionResult?.();
-        if (hostResult) {
-          const hostCode =
-            hostResult?.switch?.().name ?? hostResult?.switch?.().value ?? 'unknown';
-          return `op${idx}=${opCode},host=${hostCode}`;
-        }
-
-        return `op${idx}=${opCode}`;
-      })
-    : [];
+    if (opCode && hostCode) {
+      return `op${idx}=${opCode.name},host=${hostCode.name}`;
+    }
+    if (opCode) {
+      return `op${idx}=${opCode.name}`;
+    }
+    return `op${idx}=unknown`;
+  });
 
   return opCodes.length
     ? `tx=${txCode}; ${opCodes.join('; ')}`
     : `tx=${txCode}`;
-}
-
-function resultXdrToBase64(
-  resultXdr: rpc.Api.GetFailedTransactionResponse['resultXdr']
-): string {
-  if (!resultXdr) return '';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const anyResult = resultXdr as any;
-  if (typeof anyResult.toXDR === 'function') {
-    return anyResult.toXDR('base64');
-  }
-  if (typeof resultXdr === 'string') return resultXdr;
-  return '';
 }
 
 export async function pollTransaction(
@@ -84,7 +93,6 @@ export async function pollTransaction(
         detail,
         txHash: tx.txHash,
         ledger: tx.ledger,
-        resultXdr: resultXdrToBase64(tx.resultXdr),
       });
       throw new Error(`Transaction failed: ${detail}`);
     }
@@ -114,9 +122,15 @@ export function parseSorobanTransaction(signedXdr: string): Transaction {
   return envelope;
 }
 
+interface InvokeHostFunctionOperation {
+  type: 'invokeHostFunction';
+  func: xdr.HostFunction;
+  auth?: xdr.SorobanAuthorizationEntry[];
+}
+
 function isInvokeHostFunctionOp(
   op: OperationRecord
-): op is Operation.InvokeHostFunction {
+): op is OperationRecord & InvokeHostFunctionOperation {
   return op.type === 'invokeHostFunction';
 }
 
@@ -137,8 +151,7 @@ export function getInvokeContractDetails(
     return null;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const invokeArgs = hostFunction.invokeContract?.() as any;
+  const invokeArgs = hostFunction.invokeContract?.();
   if (!invokeArgs) {
     return null;
   }
@@ -169,13 +182,12 @@ export function getInvokeContractArgs(op: OperationRecord): xdr.ScVal[] | null {
     return null;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const invokeArgs = hostFunction.invokeContract?.() as any;
+  const invokeArgs = hostFunction.invokeContract?.();
   if (!invokeArgs) {
     return null;
   }
 
-  return (invokeArgs.args?.() as xdr.ScVal[] | undefined) ?? null;
+  return invokeArgs.args?.() ?? [];
 }
 
 /**
@@ -207,7 +219,11 @@ function getAddressCredentials(
  * Return the wallet addresses that appear in an invoke_host_function
  * operation's address-bound authorization entries.
  */
-export function getAuthEntryAddresses(op: Operation.InvokeHostFunction): string[] {
+export function getAuthEntryAddresses(op: OperationRecord): string[] {
+  if (!isInvokeHostFunctionOp(op)) {
+    return [];
+  }
+
   const addresses = new Set<string>();
 
   for (const entry of op.auth ?? []) {
@@ -225,7 +241,11 @@ export function getAuthEntryAddresses(op: Operation.InvokeHostFunction): string[
  * Return true if any auth entry in the operation uses source-account
  * authorization, which would require the transaction source account to sign.
  */
-export function hasSourceAccountAuth(op: Operation.InvokeHostFunction): boolean {
+export function hasSourceAccountAuth(op: OperationRecord): boolean {
+  if (!isInvokeHostFunctionOp(op)) {
+    return false;
+  }
+
   return (
     op.auth?.some(
       (entry) => entry.credentials().switch().name === 'sorobanCredentialsSourceAccount'

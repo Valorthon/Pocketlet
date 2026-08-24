@@ -6,8 +6,8 @@ Pocketlet is a simple web wallet for holding and sending digital dollars globall
 
 ## Features
 
-- **Email + passkey signup** — no seed phrase required.
-- **Abstracted custody** — each user gets a Soroban smart wallet controlled by a passkey-derived Ed25519 signer.
+- **Email + passkey signup** — authenticate with a device passkey; a BIP39 recovery phrase is generated client-side for backup recovery.
+- **Abstracted custody** — each user gets a Soroban smart wallet controlled by a WebAuthn/Passkey signer.
 - **Receive USDC/XLM** — share a Stellar address or QR code.
 - **P2P transfers** — send USDC or XLM to any Stellar address (Pocketlet users by username/phone, or raw addresses).
 - **USDC ↔ XLM swaps** — *deferred to a future version* while the DEX integration is rebuilt for the passkey-kit wallet.

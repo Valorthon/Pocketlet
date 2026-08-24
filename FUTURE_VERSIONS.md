@@ -58,7 +58,8 @@ This document records features that were intentionally deferred from V1 and the 
 
 ### Seed Phrase Export UI
 * **What:** A dedicated UI for advanced users to view/export their wallet's recovery seed phrase at any time after onboarding.
-* **Why deferred:** A recovery phrase is already generated during V1 onboarding and can be used for recovery (see issue #33). A standalone export/view flow is deferred to V2 to keep the V1 onboarding UX simple.
+* **V1 status:** Every V1 user already receives a BIP39 recovery phrase during onboarding and can use it for lost-passkey recovery (see issue #33). The phrase is generated client-side and never touches the server.
+* **Why deferred:** A standalone export/view flow is deferred to V2 to keep the V1 onboarding UX simple.
 
 ### Self-Custody Import
 * **What:** Allow users to import an existing Stellar account via seed phrase or hardware wallet.
@@ -105,8 +106,10 @@ This document records features that were intentionally deferred from V1 and the 
 V1 is intentionally narrow so the team can:
 1. Launch a working abstracted wallet on Stellar Testnet.
 2. Validate passkey-based custody and P2P transfer UX globally.
-3. Prove USDC ↔ XLM swap flows before adding fiat complexity.
-4. Build a clean contract and SDK foundation that makes V2 integrations (Anchor, QR Ph, PHPC) and V3 multi-stablecoin expansion easier to add.
+3. Validate SAC token transfers and fee-payer submission with passkey-kit smart accounts.
+4. Build a clean SDK foundation that makes V2 integrations (Anchor, QR Ph, PHPC) and V3 multi-stablecoin expansion easier to add.
+
+USDC ↔ XLM swaps were stubbed in the passkey-kit migration because the passkey-kit smart account cannot authorize classic `PathPayment` operations. Swaps will be reintroduced in a future version once a real Stellar DEX/AMM integration is rebuilt around SAC or Soroban DEX flows.
 
 For each deferred feature, this document will be updated with implementation notes as planning for V2 and V3 begins.
 
@@ -224,15 +227,15 @@ These are intentional simplifications in the current V1 testnet implementation t
 - ~~P2P transfers by username, phone, or raw address (issue #10)~~ ✅ Completed
 - ~~Implement transaction history and details view (issue #12)~~ ✅ Completed
 - ~~Implement PIN confirmation for payments (issue #13)~~ ✅ Completed
-- ~~Migrate to self-custodial passkey smart accounts using passkey-kit (issue #33)~~ 🔄 In progress
+- ~~Migrate to self-custodial passkey smart accounts using passkey-kit (issue #33)~~ ✅ Completed
   - Phase 0 — Validation ✅
   - Phase 1 — Foundation replacement ✅
   - Phase 2 — Auth & onboarding ✅
   - Phase 3 — Balances & receive ✅
   - Phase 4 — Transfers ✅
-  - Phase 5 — Swaps: stub/hide ✅ Completed
-  - Phase 6 — Recovery flows ✅ Completed
-  - Phase 7 — Cleanup, tests & docs (pending)
-  - Phase 8 — Mainnet readiness (pending)
+  - Phase 5 — Swaps: stub/hide ✅
+  - Phase 6 — Recovery flows ✅
+  - Phase 7 — Cleanup, tests & docs ✅
+  - Phase 8 — Mainnet readiness 🔄 Pending
 - ~~Implement USDC ↔ XLM swaps via Stellar DEX (issue #11)~~ ⏸️ Stubbed/hidden; see issue #33 Phase 5
 - ~~End-to-end testnet testing and documentation update (issue #15)~~ 🔄 Docs updated for passkey-kit migration

@@ -125,7 +125,6 @@ export async function POST(request: NextRequest) {
     });
 
     const { hash } = await submitSignedTransaction(signedTx);
-    console.log('Wallet deployed:', { contractId, hash });
 
     setWallet(user.email, {
       walletContractId: contractId,

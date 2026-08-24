@@ -32,9 +32,10 @@ RECOVERY_WAITING_PERIOD_MS=60000
 2. Enter a valid email address and submit.
 3. The app returns the verification code in the response (testnet shortcut). Enter it.
 4. Register a passkey when prompted (browser/device biometrics).
-5. Verify the `/home` page loads and shows the wallet balance card.
+5. Save the 12-word recovery phrase shown on the **Recovery phrase** screen; you will need it for recovery testing.
+6. Verify the `/home` page loads and shows the wallet balance card.
 
-**Expected:** A user is created with `emailVerified=true`, `credential` set, and the smart wallet can be deployed.
+**Expected:** A user is created with `emailVerified=true`, `credential` set, `recoveryPublicKey` set, and the smart wallet can be deployed.
 
 ### 2. Deploy the Smart Wallet
 

@@ -2,12 +2,14 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   Account,
   Address,
+  Asset,
   Contract,
   Keypair,
   Operation,
   SorobanDataBuilder,
   Transaction,
   TransactionBuilder,
+  type OperationRecord,
   rpc,
   xdr,
 } from '@stellar/stellar-sdk';
@@ -16,6 +18,9 @@ import {
   hasSourceAccountAuth,
   parseSorobanTransaction,
   getInvokeContractDetails,
+  getInvokeContractArgs,
+  scValToAddress,
+  pollTransaction,
   submitSignedTransaction,
 } from './submit';
 import { NETWORK_PASSPHRASE } from './network';
@@ -116,7 +121,7 @@ function buildSourceAccountAuthEntry(): xdr.SorobanAuthorizationEntry {
 
 function buildInvokeOperation(
   auth: xdr.SorobanAuthorizationEntry[]
-): Operation.InvokeHostFunction {
+): OperationRecord {
   const op = Operation.invokeHostFunction({
     func: xdr.HostFunction.hostFunctionTypeInvokeContract(
       new xdr.InvokeContractArgs({
@@ -142,7 +147,7 @@ function buildInvokeOperation(
     .setTimeout(30)
     .build();
 
-  return tx.operations[0] as Operation.InvokeHostFunction;
+  return tx.operations[0];
 }
 
 describe('parseSorobanTransaction', () => {
@@ -192,6 +197,60 @@ describe('getInvokeContractDetails', () => {
     const details = getInvokeContractDetails(tx.operations[0]);
     expect(details).not.toBeNull();
     expect(details?.functionName).toBe('transfer');
+  });
+
+  it('returns null for a non-invoke operation', () => {
+    const source = new Account(FEE_PAYER_PUBLIC, '0');
+    const tx = new TransactionBuilder(source, {
+      fee: '100000',
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+          amount: '1',
+          asset: Asset.native(),
+        })
+      )
+      .setTimeout(30)
+      .build();
+    expect(getInvokeContractDetails(tx.operations[0])).toBeNull();
+  });
+});
+
+describe('getInvokeContractArgs', () => {
+  it('returns the invoke_contract args', () => {
+    const tx = buildTestInvokeTransaction();
+    const args = getInvokeContractArgs(tx.operations[0]);
+    expect(args).not.toBeNull();
+    expect(args).toHaveLength(3);
+  });
+
+  it('returns null for a non-invoke operation', () => {
+    const source = new Account(FEE_PAYER_PUBLIC, '0');
+    const tx = new TransactionBuilder(source, {
+      fee: '100000',
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+          amount: '1',
+          asset: Asset.native(),
+        })
+      )
+      .setTimeout(30)
+      .build();
+    expect(getInvokeContractArgs(tx.operations[0])).toBeNull();
+  });
+});
+
+describe('scValToAddress', () => {
+  it('converts an Address ScVal to its string form', () => {
+    const address =
+      'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+    const scVal = new Address(address).toScVal();
+    expect(scValToAddress(scVal)).toBe(address);
   });
 });
 
@@ -283,6 +342,40 @@ describe('submitSignedTransaction', () => {
     getAccountSpy.mockRestore();
     simulateSpy.mockRestore();
     sendSpy.mockRestore();
+    getTransactionSpy.mockRestore();
+  });
+});
+
+describe('pollTransaction', () => {
+  it('returns a successful transaction response', async () => {
+    const server = new rpc.Server('https://soroban-testnet.stellar.org');
+    const getTransactionSpy = vi
+      .spyOn(rpc.Server.prototype, 'getTransaction')
+      .mockResolvedValue({
+        status: 'SUCCESS',
+        txHash: 'test-hash-123',
+        ledger: 100,
+      } as unknown as rpc.Api.GetSuccessfulTransactionResponse);
+
+    const result = await pollTransaction(server, 'test-hash-123');
+
+    expect(result.status).toBe('SUCCESS');
+    expect(result.txHash).toBe('test-hash-123');
+    getTransactionSpy.mockRestore();
+  });
+
+  it('times out when the transaction never resolves', async () => {
+    const server = new rpc.Server('https://soroban-testnet.stellar.org');
+    const getTransactionSpy = vi
+      .spyOn(rpc.Server.prototype, 'getTransaction')
+      .mockResolvedValue({
+        status: 'NOT_FOUND',
+      } as unknown as rpc.Api.GetTransactionResponse);
+
+    await expect(pollTransaction(server, 'test-hash-123', 2)).rejects.toThrow(
+      'Transaction polling timed out'
+    );
+
     getTransactionSpy.mockRestore();
   });
 });

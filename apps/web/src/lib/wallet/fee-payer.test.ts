@@ -49,7 +49,6 @@ describe('getFeePayerKeypair', () => {
   let tempDir: string;
   let originalPassphrase: string | undefined;
   let originalSecret: string | undefined;
-  let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'pocketlet-fee-payer-test-'));
@@ -57,11 +56,9 @@ describe('getFeePayerKeypair', () => {
     originalPassphrase = process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE;
     originalSecret = process.env.FEE_PAYER_SECRET_KEY;
     delete process.env.FEE_PAYER_SECRET_KEY;
-    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    warnSpy.mockRestore();
     if (originalPassphrase !== undefined) {
       process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = originalPassphrase;
     } else {
@@ -108,7 +105,6 @@ describe('getFeePayerKeypair', () => {
     const secretFile = join(tempDir, 'fee_payer_secret');
     expect(existsSync(secretFile)).toBe(true);
     expect(readFileSync(secretFile, 'utf-8').trim()).toBe(kp1.secret());
-    expect(warnSpy).toHaveBeenCalled();
   });
 
   it('throws on public network when FEE_PAYER_SECRET_KEY is missing', async () => {
@@ -124,16 +120,19 @@ describe('getFeePayerKeypair', () => {
 describe('fundAccount', () => {
   let originalPassphrase: string | undefined;
   let requestAirdropSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     originalPassphrase = process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE;
     requestAirdropSpy = vi
       .spyOn(rpc.Server.prototype, 'requestAirdrop')
       .mockResolvedValue(new Account(PUBLIC_KEY, '0'));
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     requestAirdropSpy.mockRestore();
+    errorSpy.mockRestore();
     if (originalPassphrase !== undefined) {
       process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = originalPassphrase;
     } else {
@@ -155,5 +154,28 @@ describe('fundAccount', () => {
     const { fundAccount } = await import('./fee-payer');
     await fundAccount(PUBLIC_KEY);
     expect(requestAirdropSpy).toHaveBeenCalledWith(PUBLIC_KEY);
+  });
+
+  it('ignores already-funded Friendbot errors', async () => {
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;
+    requestAirdropSpy.mockRejectedValue(
+      new Error('account already funded by friendbot')
+    );
+    vi.resetModules();
+    const { fundAccount } = await import('./fee-payer');
+    await expect(fundAccount(PUBLIC_KEY)).resolves.toBeUndefined();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('logs real Friendbot failures', async () => {
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;
+    requestAirdropSpy.mockRejectedValue(new Error('friendbot unreachable'));
+    vi.resetModules();
+    const { fundAccount } = await import('./fee-payer');
+    await expect(fundAccount(PUBLIC_KEY)).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Friendbot funding attempt failed:',
+      'friendbot unreachable'
+    );
   });
 });
