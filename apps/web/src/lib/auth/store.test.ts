@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,6 +26,10 @@ import {
   setRecoveryPublicKey,
   markRecoveryPhraseConfirmed,
   setBackupPasskey,
+  setRecoveryInitiated,
+  verifyRecoveryCode,
+  isRecoveryLocked,
+  clearRecoveryState,
 } from './store';
 
 let dataDir: string;
@@ -121,9 +126,43 @@ describe('auth store', () => {
 
   it('stores backup passkey info', () => {
     createUser('backup@example.com', '000000');
-    const user = setBackupPasskey('backup@example.com', { keyIdBase64: 'backup-key-id' });
+    const credential = {
+      id: 'backup-key-id',
+      publicKey: 'backup-pubkey',
+      counter: 0,
+      transports: ['hybrid'] as AuthenticatorTransportFuture[],
+    };
+    const user = setBackupPasskey('backup@example.com', { credential });
     expect(user.hasBackupPasskey).toBe(true);
-    expect(user.backupPasskeyKeyId).toBe('backup-key-id');
+    expect(user.backupCredential).toEqual(credential);
+  });
+
+  it('manages recovery state', () => {
+    createUser('recovery@example.com', '000000');
+    const expiresAt = new Date(Date.now() + 60000).toISOString();
+    const user = setRecoveryInitiated('recovery@example.com', '123456', expiresAt);
+    expect(user.recoveryCode).toBe('123456');
+    expect(user.recoveryCodeExpiresAt).toBe(expiresAt);
+    expect(user.recoveryAttempts).toBe(0);
+
+    const verified = verifyRecoveryCode('recovery@example.com', '123456');
+    expect(verified.recoveryVerifiedAt).toBeDefined();
+    expect(verified.recoveryCode).toBeUndefined();
+
+    const cleared = clearRecoveryState('recovery@example.com');
+    expect(cleared.recoveryVerifiedAt).toBeUndefined();
+  });
+
+  it('locks recovery after too many failed attempts', () => {
+    createUser('locked@example.com', '000000');
+    const expiresAt = new Date(Date.now() + 60000).toISOString();
+    setRecoveryInitiated('locked@example.com', '123456', expiresAt);
+
+    expect(() => verifyRecoveryCode('locked@example.com', '000000')).toThrow('Invalid recovery code');
+    expect(() => verifyRecoveryCode('locked@example.com', '000000')).toThrow('Invalid recovery code');
+    expect(() => verifyRecoveryCode('locked@example.com', '000000')).toThrow('Invalid recovery code');
+    expect(() => verifyRecoveryCode('locked@example.com', '000000')).toThrow('Recovery is locked');
+    expect(isRecoveryLocked('locked@example.com')).toBe(true);
   });
 });
 

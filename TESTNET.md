@@ -106,14 +106,16 @@ USDC ↔ XLM swaps are temporarily disabled in this passkey-kit migration. The `
 3. Enter the user's email and submit.
 4. The recovery code is returned in the response (testnet shortcut). Enter it.
 5. Wait for the configured waiting period (1 minute if `RECOVERY_WAITING_PERIOD_MS=60000`).
-6. Register a new passkey when prompted.
-7. Log in with the new passkey.
+6. Enter the 12-word recovery phrase saved during onboarding.
+7. Register a new passkey when prompted.
+8. Log in with the new passkey.
 
 **Expected:**
 
-- The recovery admin rotates the smart wallet owner on-chain.
-- The old passkey no longer works.
+- The recovery phrase signs a transaction that adds the new passkey as a signer.
+- The lost primary passkey is removed from the wallet signers.
 - The new passkey works for login.
+- The recovery phrase remains available as a backup signer.
 
 ### 9. Verify Transaction Details
 

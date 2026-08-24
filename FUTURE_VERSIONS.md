@@ -231,7 +231,7 @@ These are intentional simplifications in the current V1 testnet implementation t
   - Phase 3 — Balances & receive ✅
   - Phase 4 — Transfers ✅
   - Phase 5 — Swaps: stub/hide ✅ Completed
-  - Phase 6 — Recovery flows (pending)
+  - Phase 6 — Recovery flows ✅ Completed
   - Phase 7 — Cleanup, tests & docs (pending)
   - Phase 8 — Mainnet readiness (pending)
 - ~~Implement USDC ↔ XLM swaps via Stellar DEX (issue #11)~~ ⏸️ Stubbed/hidden; see issue #33 Phase 5

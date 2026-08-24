@@ -20,6 +20,20 @@ vi.mock('next/headers', () => ({
   })),
 }));
 
+vi.mock('@simplewebauthn/server', () => ({
+  verifyRegistrationResponse: vi.fn().mockResolvedValue({
+    verified: true,
+    registrationInfo: {
+      credential: {
+        id: 'backup-key-id',
+        publicKey: Buffer.from('backup-public-key'),
+        counter: 0,
+        transports: [],
+      },
+    },
+  }),
+}));
+
 beforeEach(() => {
   dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-backup-passkey-'));
   process.env.POCKETLET_DATA_DIR = dataDir;
@@ -44,7 +58,10 @@ function createBackupRequest(body: unknown, token?: string) {
 
 describe('POST /api/wallet/backup-passkey', () => {
   it('returns 401 without a session cookie', async () => {
-    const req = createBackupRequest({ keyIdBase64: 'backup-key-id' });
+    const req = createBackupRequest({
+      keyIdBase64: 'backup-key-id',
+      response: { id: 'backup-key-id' },
+    });
     const res = await POST(req);
     expect(res.status).toBe(401);
   });
@@ -59,13 +76,19 @@ describe('POST /api/wallet/backup-passkey', () => {
     });
     const token = await createSessionToken({ email: 'alice@example.com' });
 
-    const req = createBackupRequest({ keyIdBase64: 'backup-key-id' }, token);
+    const req = createBackupRequest(
+      {
+        keyIdBase64: 'backup-key-id',
+        response: { id: 'backup-key-id' },
+      },
+      token
+    );
     const res = await POST(req);
     expect(res.status).toBe(200);
 
     const user = getUserByEmail('alice@example.com');
     expect(user?.hasBackupPasskey).toBe(true);
-    expect(user?.backupPasskeyKeyId).toBe('backup-key-id');
+    expect(user?.backupCredential?.id).toBe('backup-key-id');
   });
 
   it('rejects a missing keyIdBase64', async () => {

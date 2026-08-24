@@ -83,7 +83,10 @@ export default function BackupPasskeyPage() {
       const recordRes = await fetch('/api/wallet/backup-passkey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyIdBase64: backup.keyId }),
+        body: JSON.stringify({
+          keyIdBase64: backup.keyId,
+          response: backup.rawResponse,
+        }),
       });
 
       const recordData = (await recordRes.json()) as { error?: string };

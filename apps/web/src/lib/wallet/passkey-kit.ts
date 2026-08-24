@@ -1,11 +1,18 @@
-import { PasskeyKit, SACClient, SignerStore } from 'passkey-kit';
+import {
+  PasskeyKit,
+  SACClient,
+  SignerStore,
+  PasskeyClient,
+  SignerKey,
+  Ed25519Signer,
+} from 'passkey-kit';
 import { IndexedDBStorage } from 'passkey-kit/storage';
 import { Asset } from '@stellar/stellar-sdk';
 import { type AssembledTransaction } from '@stellar/stellar-sdk/contract';
 import { RPC_URL, NETWORK_PASSPHRASE } from './network';
 import { getUsdcContractId } from './assets';
 
-export { SignerStore };
+export { SignerStore, PasskeyClient, SignerKey, Ed25519Signer };
 
 /**
  * Canonical v1 passkey-kit smart-wallet WASM hash.
@@ -34,6 +41,25 @@ export function createPasskeyKit(): PasskeyKit {
     walletWasmHash: WALLET_WASM_HASH,
     rpId: RP_ID,
     storage: new IndexedDBStorage(),
+  });
+}
+
+/**
+ * Connect a PasskeyKit instance to a known smart-wallet contract address
+ * without performing a WebAuthn ceremony.
+ *
+ * This is used during lost-passkey recovery: the user has no accessible
+ * passkey, but can sign admin transactions with their BIP39-derived Ed25519
+ * recovery key via `Ed25519Signer`.
+ */
+export function connectPasskeyKitByContractId(
+  kit: PasskeyKit,
+  contractId: string
+): void {
+  kit.wallet = new PasskeyClient({
+    contractId,
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
   });
 }
 
