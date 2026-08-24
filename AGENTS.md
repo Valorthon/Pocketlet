@@ -4,7 +4,7 @@ Read this file, `SPEC.md`, `FUTURE_VERSIONS.md`, `README.md`, and `TESTNET.md` b
 
 ## Primary Directives
 
-- **Read `SPEC.md` and `FUTURE_VERSIONS.md` first.** V1 is scoped to testnet, abstracted passkey custody, USDC/XLM only, and P2P + DEX swaps. V1 is positioned as a global wallet; fiat/Anchor/QR Ph features are deferred to V2 (Philippines) and multi-stablecoin support is deferred to V3.
+- **Read `SPEC.md` and `FUTURE_VERSIONS.md` first.** V1 is scoped to testnet, abstracted passkey custody, USDC/XLM only, and P2P transfers. DEX swaps are stubbed/hidden in this migration and deferred to a future version. V1 is positioned as a global wallet; fiat/Anchor/QR Ph features are deferred to V2 (Philippines) and multi-stablecoin support is deferred to V3.
 - **Package manager is `pnpm`.** Do not use `npm`, `yarn`, or `bun`. Use `pnpm install` and `pnpm run <script>`.
 - **Verify before assuming structure.** The monorepo (`pnpm-workspace.yaml`, `apps/`, and `packages/`) is present. If a file conflicts with these instructions, trust the executable source and update this file.
 

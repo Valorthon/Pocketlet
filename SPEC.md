@@ -3,7 +3,7 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 
 ### Core Value Proposition
 * **Invisible Crypto:** Users hold and spend USD (via USDC) without realizing they are interacting with a blockchain.
-* **Abstracted Custody:** Users sign up with email and authenticate with a passkey. A Soroban smart contract wallet is deployed on their behalf — no seed phrase required.
+* **Abstracted Self-Custody:** Users sign up with email and authenticate with a passkey. A Soroban smart contract wallet is deployed on their behalf. A BIP39 recovery phrase is generated client-side for backup recovery.
 * **Global Payments, Simple Feel:** Users can receive international payments in USDC and move stable value globally without managing crypto complexity.
 
 ---
@@ -17,10 +17,12 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 ## 3. Core Features (V1 MVP)
 
 ### 3.1. Account Creation & Custody (Soroban Powered)
-* **Default:** Abstracted Custody. Users sign up with an email and authenticate with a passkey. A Soroban smart contract wallet is deployed on their behalf.
-* **Smart Wallet:** One lightweight Soroban smart wallet per user. The passkey acts as the primary signer.
+* **Default:** Abstracted Self-Custody. Users sign up with an email and authenticate with a passkey. A Soroban smart contract wallet is deployed on their behalf.
+* **Smart Wallet:** One lightweight passkey-kit smart wallet per user. The passkey acts as the primary signer.
+* **Recovery Phrase:** A BIP39 recovery phrase (Stellar derivation path `m/44'/148'/0'`) is generated client-side during onboarding and is never sent to the server.
+* **Backup Passkey:** Users may register an optional backup passkey.
 * **Fee Sponsorship:** The platform covers standard Stellar network fees on behalf of the user during sponsored operations. The total cost is recovered transparently through the transaction fee displayed to the user.
-* **Self-Custody Export:** Deferred to V2.
+* **Self-Custody Export UI:** A dedicated seed-phrase export view is deferred to V2.
 
 ### 3.2. Deposits (V1)
 * **No Fiat On-Ramp in V1:** Direct fiat-to-stablecoin on-ramps via Stellar Anchors are deferred to later versions. V2 will focus on Philippine Peso (PHP) rails.
@@ -31,13 +33,13 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 * **Send to Non-Users:** If the recipient is not a Pocketlet user, the sender can paste a raw Stellar address.
 * **Confirmation:** All sends require PIN confirmation.
 
-### 3.4. Crypto Swaps
-* **Supported Pair:** Users can swap between **USDC** and **XLM** utilizing Stellar's native Decentralized Exchange (DEX).
-* **Quote Display:** The app shows the expected output, price impact, and total fees before confirmation.
-* **Confirmation:** All swaps require PIN confirmation.
+### 3.4. Crypto Swaps (Deferred)
+* **Status:** USDC ↔ XLM swaps are temporarily disabled in the passkey-kit migration and deferred to a future version.
+* **Planned behavior:** Users will be able to swap between **USDC** and **XLM** utilizing Stellar's native Decentralized Exchange (DEX), with expected output, price impact, and total fees shown before confirmation.
+* **Confirmation:** All swaps will require PIN confirmation.
 
 ### 3.5. Transaction Details
-* Users have a dedicated "Transaction Details" view where they can see the exact network fee breakdown, DEX swap details (if applicable), and on-chain hash for transparency.
+* Users have a dedicated "Transaction Details" view where they can see the exact network fee breakdown, swap details (when swaps are enabled), and on-chain hash for transparency.
 
 ---
 
@@ -50,10 +52,10 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 ---
 
 ## 5. Custody Model
-* **Default Model:** Abstracted custody via a Soroban smart wallet controlled by a WebAuthn/Passkey signer.
+* **Default Model:** Abstracted self-custody via a passkey-kit Soroban smart wallet controlled by a WebAuthn/Passkey signer. The platform never holds user signing keys.
 * **One Wallet Per User:** Each user gets their own smart contract wallet deployment for isolation and simplicity.
-* **Recovery:** If a user loses their passkey, they can initiate recovery using their registered email. After a waiting period, they can register a new passkey. If both the passkey and email access are lost, the account is unrecoverable.
-* **Self-Custody:** Seed phrase export and full self-custody are deferred to V2.
+* **Recovery:** Users receive a BIP39 recovery phrase (Stellar derivation path `m/44'/148'/0'`) during onboarding and may register an optional backup passkey. If the primary passkey is lost, recovery can be performed with the seed phrase or backup passkey. The recovery phrase never touches the server.
+* **Full Self-Custody UI:** A dedicated seed-phrase export view and external-key import are deferred to V2.
 
 ---
 
@@ -61,19 +63,19 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 * **User-Pays Model:** All transaction-related costs are baked into the transaction and paid by the user.
 * **Included Fees:**
     * Stellar network fees for transfers and smart contract invocations.
-    * DEX swap spread and slippage for USDC ↔ XLM conversions.
+    * DEX swap spread and slippage for USDC ↔ XLM conversions (when swaps are enabled).
     * Any platform markup, if applicable, shown before confirmation.
-* **Fee Display:** Total estimated fees are shown on the confirmation screen before the user approves any payment or swap.
+* **Fee Display:** Total estimated fees are shown on the confirmation screen before the user approves any payment.
 * **Fiat Fees:** Anchor on-ramp and off-ramp fees will be added in V2 and displayed transparently.
 
 ---
 
 ## 7. Security & Recovery
-* **PIN Confirmation:** A PIN is required to confirm all payments and swaps.
+* **PIN Confirmation:** A PIN is required to confirm all payments.
 * **Passkey Authentication:** Login and sensitive actions are secured via device-bound or synced passkeys.
-* **Email Verification:** Email verification is required for account creation and passkey recovery.
-* **Lost Passkey Recovery:** Email-based recovery with a waiting period and new passkey registration.
-* **Unrecoverable State:** If a user loses both their passkey and email access, the account cannot be recovered.
+* **Email Verification:** Email verification is required for account creation and recovery flows.
+* **Lost Passkey Recovery:** Users can recover with their BIP39 recovery phrase or an optional backup passkey. Email verification may still be used as a recovery channel where configured.
+* **Unrecoverable State:** If a user loses their passkey, backup passkey, and recovery phrase, the account cannot be recovered.
 * **Privacy:** Users can only view their own transaction history and balances.
 
 ---
@@ -90,9 +92,9 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 * **Network:** Stellar Testnet for V1.
 * **Assets:**
     * `USDC` (Issued by Circle)
-    * `XLM` (Native asset, for fees and swaps)
-* **Smart Contracts (Soroban):**
-    * *Smart Wallet Contract:* Passkey-controlled wallet supporting transfers and DEX swaps.
+    * `XLM` (Native asset, for fees)
+* **Smart Accounts (Soroban):**
+    * *Passkey-kit Smart Wallet:* Self-custodial passkey-controlled wallet supporting SAC token transfers. DEX swaps are deferred.
 
 ### Integration Standards (SEPs)
 * **SEP-2 (Federation):** Evaluated for P2P addressing. V1 uses an internal username/phone mapping. SEP-2 may be adopted in a future version if the user base grows and public addressing is needed.
@@ -124,7 +126,8 @@ High-level deferred features include:
 * Fiat on-ramp via licensed Stellar Anchor (V2 — Philippines)
 * PHP stablecoin (PHPC) support (V2)
 * QR Ph merchant scan-and-pay off-ramp (V2)
-* Self-custody seed export
+* DEX swaps (reintroduction with real Stellar DEX/AMM)
+* Self-custody seed export UI
 * SEP-2 federation server
 * Multi-stablecoin support (V3)
 
@@ -134,3 +137,4 @@ High-level deferred features include:
 * V1 remains on Stellar Testnet. Mainnet deployment is out of scope for the current roadmap.
 * The exact waiting period for passkey recovery will be defined during implementation (recommended: 24-72 hours).
 * Passkey credential behavior (device-bound vs. synced via Apple/Google) depends on the user's device and platform.
+* DEX swaps are temporarily disabled in the passkey-kit migration (issue #33) and will be reintroduced in a future version.

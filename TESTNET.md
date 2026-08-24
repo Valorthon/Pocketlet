@@ -4,11 +4,10 @@ This guide covers the V1 Pocketlet flows on Stellar Testnet. It assumes the app 
 
 ## Prerequisites
 
-1. Install dependencies and build contracts:
+1. Install dependencies:
 
 ```bash
 pnpm install
-pnpm run build:contracts
 ```
 
 2. Start the web app:
@@ -43,14 +42,14 @@ RECOVERY_WAITING_PERIOD_MS=60000
 2. The app calls `POST /api/wallet/deploy` and deploys the smart wallet.
 3. Note the Stellar address shown in the **Your Stellar address** section.
 
-**Expected:** The `/api/wallet/deploy` response returns a contract address (`contractId`). The `apps/web/.data/platform_secret` file is created automatically with the deployer key, and the deployer is funded by Friendbot.
+**Expected:** The `/api/wallet/deploy` response returns a contract address (`contractId`). The fee payer account is funded automatically on testnet when needed.
 
 ### 3. Receive USDC and XLM from an External Testnet Wallet
 
 1. Copy your wallet's Stellar address from `/home` or the **Receive** page.
 2. From an external testnet wallet, send a small amount of XLM (e.g., 5 XLM) to the address.
 3. Send a small amount of USDC (e.g., 5 USDC) to the same address using the Circle testnet USDC contract `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`.
-4. Return to `/home` and wait for the balance card to refresh (or reload the page).
+4. Return to `/home`. The balance card auto-refreshes every 15 seconds; tap the **Refresh** button next to the balance to update immediately.
 
 **Expected:**
 
@@ -96,22 +95,11 @@ RECOVERY_WAITING_PERIOD_MS=60000
 
 **Expected:** The transfer completes and the second user's balance increases.
 
-### 7. Swap USDC ↔ XLM
+### 7. Swaps (Disabled)
 
-1. From `/home`, click **Swap**.
-2. Select the direction (USDC → XLM or XLM → USDC).
-3. Enter an amount within your balance.
-4. Confirm with PIN.
-5. Submit the swap.
+USDC ↔ XLM swaps are temporarily disabled in this passkey-kit migration. The `/swap` page shows a "coming soon" message. Swaps will be reintroduced in a future version using a real Stellar DEX/AMM integration.
 
-**Expected:**
-
-- The wallet contract's `swap` function is invoked.
-- On testnet, the bundled `mock_dex.wasm` is used if `DEX_CONTRACT_ID` is not set. The DEX contract is deployed once and cached in `apps/web/.data/dex_contract_id`.
-- The sold token balance decreases and the bought token balance increases.
-- `/transactions` shows a `swap` transaction with `sellAsset`, `buyAsset`, `sellAmount`, and `buyAmount`.
-
-### 8. Test Passkey Recovery
+### 7. Test Passkey Recovery
 
 1. Log in with a user that has a wallet and PIN.
 2. Open `/recover`.
@@ -127,7 +115,7 @@ RECOVERY_WAITING_PERIOD_MS=60000
 - The old passkey no longer works.
 - The new passkey works for login.
 
-### 9. Verify Transaction Details
+### 8. Verify Transaction Details
 
 1. Go to `/transactions`.
 2. Click any transaction.
@@ -143,7 +131,6 @@ RECOVERY_WAITING_PERIOD_MS=60000
 After running the end-to-end flow, confirm the local test suite still passes:
 
 ```bash
-pnpm run test:contracts
 pnpm --filter web test
 pnpm run lint
 pnpm run typecheck
@@ -158,21 +145,15 @@ pnpm run typecheck
 
 ### Wallet deployment fails
 
-- Check that `pocketlet_wallet.wasm` exists in `packages/contracts/target/wasm32v1-none/release/`.
-- Run `pnpm run build:contracts` to rebuild.
+- Verify `NEXT_PUBLIC_WALLET_WASM_HASH` is set to a WASM hash installed on testnet.
 - Verify the testnet Friendbot is accessible from the RPC URL.
-
-### Swap fails
-
-- Check that `mock_dex.wasm` is built.
-- If `DEX_CONTRACT_ID` is set, verify it is deployed on testnet.
-- Ensure the wallet has enough balance and the deployer account is funded.
+- Check that the fee payer account can be funded by Friendbot.
 
 ### Balance does not update
 
-- The home page polls balances every 15 seconds.
+- Tap the **Refresh** button on the home balance card, or wait for the 15-second auto-poll.
 - Verify the user's `contractId` is stored in `apps/web/.data/users.json`.
-- Check the Horizon API is accessible.
+- Check that the Soroban RPC URL is reachable.
 
 ### Recovery is locked
 
@@ -181,6 +162,6 @@ pnpm run typecheck
 
 ## Notes
 
-- Testnet accounts are occasionally reset. If balances or deployments disappear, delete `apps/web/.data/users.json`, `apps/web/.data/owner_keys.json`, `apps/web/.data/owner_key_master`, `apps/web/.data/platform_secret`, and `apps/web/.data/dex_contract_id` to start fresh.
-- The current DEX integration is a testnet mock. Production swaps will use a real Stellar DEX path-payment or AMM contract.
+- Testnet accounts are occasionally reset. If balances or deployments disappear, delete `apps/web/.data/users.json` and `apps/web/.data/fee_payer_secret` to start fresh.
+- Swaps are temporarily disabled while the DEX integration is rebuilt for the passkey-kit wallet.
 - Email verification returns the code in the API response for testnet convenience. Do not use this behavior in production.
