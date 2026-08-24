@@ -99,7 +99,7 @@ RECOVERY_WAITING_PERIOD_MS=60000
 
 USDC ↔ XLM swaps are temporarily disabled in this passkey-kit migration. The `/swap` page shows a "coming soon" message. Swaps will be reintroduced in a future version using a real Stellar DEX/AMM integration.
 
-### 7. Test Passkey Recovery
+### 8. Test Passkey Recovery
 
 1. Log in with a user that has a wallet and PIN.
 2. Open `/recover`.
@@ -115,14 +115,13 @@ USDC ↔ XLM swaps are temporarily disabled in this passkey-kit migration. The `
 - The old passkey no longer works.
 - The new passkey works for login.
 
-### 8. Verify Transaction Details
+### 9. Verify Transaction Details
 
 1. Go to `/transactions`.
 2. Click any transaction.
 3. Verify the details page shows:
    - Transaction type and amount
    - Recipient/sender (for payments)
-   - Sell/buy assets (for swaps)
    - Network fee
    - On-chain hash with a link to Stellar Expert
 

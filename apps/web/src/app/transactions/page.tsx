@@ -44,8 +44,6 @@ export default function TransactionsPage() {
         return 'text-green-600';
       case 'send':
         return 'text-red-600';
-      case 'swap':
-        return 'text-pocketlet-600';
       default:
         return 'text-gray-600';
     }

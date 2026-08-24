@@ -192,7 +192,7 @@ These are intentional simplifications in the current V1 testnet implementation t
 
 ### DEX swap integration
 - **Issue:** #20
-- **Current behavior:** USDC ↔ XLM swaps are temporarily disabled in the passkey-kit migration. The previous implementation relied on the deleted `packages/contracts` smart wallet and `mock_dex` contract. The `/swap` route shows a "coming soon" message and the swap API returns a disabled error.
+- **Current behavior:** USDC ↔ XLM swaps are disabled in V1. The `/swap` route shows a "coming soon" message, the swap API returns a disabled error, and the transaction parser no longer classifies path payments or swap invocations as swap transactions. The previous implementation relied on the deleted `packages/contracts` smart wallet and `mock_dex` contract.
 - **Future work:** Reintroduce swaps using a real Stellar DEX/AMM integration with passkey-kit signing, quote fetching, slippage protection, and price-impact display.
 
 ### Smart wallet authorization
@@ -230,7 +230,7 @@ These are intentional simplifications in the current V1 testnet implementation t
   - Phase 2 — Auth & onboarding ✅
   - Phase 3 — Balances & receive ✅
   - Phase 4 — Transfers ✅
-  - Phase 5 — Swaps: stub/hide (pending)
+  - Phase 5 — Swaps: stub/hide ✅ Completed
   - Phase 6 — Recovery flows (pending)
   - Phase 7 — Cleanup, tests & docs (pending)
   - Phase 8 — Mainnet readiness (pending)

@@ -57,8 +57,6 @@ export default function TransactionDetailsPage({ params }: { params: Promise<Par
         return 'text-green-600';
       case 'send':
         return 'text-red-600';
-      case 'swap':
-        return 'text-pocketlet-600';
       default:
         return 'text-gray-600';
     }
@@ -144,22 +142,6 @@ export default function TransactionDetailsPage({ params }: { params: Promise<Par
                   {tx.sender}
                 </dd>
               </div>
-            )}
-            {tx.type === 'swap' && (
-              <>
-                <div className="flex justify-between">
-                  <dt className="text-gray-500">Sold</dt>
-                  <dd className="font-medium text-gray-900">
-                    {tx.sellAmount ?? '-'} {tx.sellAsset ?? ''}
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-gray-500">Bought</dt>
-                  <dd className="font-medium text-gray-900">
-                    {tx.buyAmount ?? '-'} {tx.buyAsset ?? ''}
-                  </dd>
-                </div>
-              </>
             )}
             <div className="flex justify-between">
               <dt className="text-gray-500">Network fee</dt>

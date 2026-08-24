@@ -2,7 +2,7 @@ import { Horizon } from '@stellar/stellar-sdk';
 
 export const HORIZON_EXPLORER_URL = 'https://stellar.expert/explorer/testnet/tx';
 
-export type TransactionType = 'receive' | 'send' | 'swap' | 'unknown';
+export type TransactionType = 'receive' | 'send' | 'unknown';
 
 export interface WalletTransaction {
   id: string;
@@ -16,10 +16,6 @@ export interface WalletTransaction {
   amount: string;
   recipient?: string;
   sender?: string;
-  sellAsset?: string;
-  sellAmount?: string;
-  buyAsset?: string;
-  buyAmount?: string;
   memo?: string;
 }
 
@@ -99,19 +95,15 @@ function parsePathPaymentOperation(
   return {
     id: op.transaction_hash,
     hash: op.transaction_hash,
-    type: isSend && sourceAsset !== destAsset ? 'swap' : isReceive ? 'receive' : 'send',
+    type: isReceive ? 'receive' : 'send',
     status: op.transaction_successful ? 'success' : 'failed',
     createdAt: op.created_at,
     ledger: 0,
     fee: '0',
-    asset: destAsset,
-    amount: formatAmountFromStroops(op.amount),
+    asset: isReceive ? destAsset : sourceAsset,
+    amount: formatAmountFromStroops(isReceive ? op.amount : op.source_amount),
     recipient: isReceive ? undefined : op.to,
     sender: isReceive ? op.from : undefined,
-    sellAsset: isSend ? sourceAsset : undefined,
-    sellAmount: isSend ? formatAmountFromStroops(op.source_amount) : undefined,
-    buyAsset: isSend ? destAsset : undefined,
-    buyAmount: isSend ? formatAmountFromStroops(op.amount) : undefined,
   };
 }
 
@@ -140,31 +132,6 @@ function parseInvokeHostFunctionOperation(
   // classify the operation. This is intentionally simple for the V1 testnet.
   const functionName = op.function;
   const contract = op.address;
-
-  if (functionName === 'swap') {
-    const outgoing = op.asset_balance_changes.find(
-      (change) => change.from === walletAddress && change.to !== walletAddress
-    );
-    const incoming = op.asset_balance_changes.find(
-      (change) => change.from !== walletAddress && change.to === walletAddress
-    );
-
-    return {
-      id: op.transaction_hash,
-      hash: op.transaction_hash,
-      type: 'swap',
-      status: op.transaction_successful ? 'success' : 'failed',
-      createdAt: op.created_at,
-      ledger: 0,
-      fee: '0',
-      asset: outgoing ? describeAssetFromBalanceChange(outgoing) : USDC_ASSET,
-      amount: outgoing ? formatAmountFromStroops(outgoing.amount) : '0',
-      sellAsset: outgoing ? describeAssetFromBalanceChange(outgoing) : 'unknown',
-      sellAmount: outgoing ? formatAmountFromStroops(outgoing.amount) : '0',
-      buyAsset: incoming ? describeAssetFromBalanceChange(incoming) : 'unknown',
-      buyAmount: incoming ? formatAmountFromStroops(incoming.amount) : '0',
-    };
-  }
 
   if (functionName === 'transfer') {
     // Horizon reports SAC balance changes as classic asset entries. Find the
@@ -253,10 +220,6 @@ export function buildTransactionDetails(
     amount: primary?.amount ?? '0',
     recipient: primary?.recipient,
     sender: primary?.sender,
-    sellAsset: primary?.sellAsset,
-    sellAmount: primary?.sellAmount,
-    buyAsset: primary?.buyAsset,
-    buyAmount: primary?.buyAmount,
     memo,
     operationCount: ops.length,
     sourceAccount: tx.source_account,
@@ -273,8 +236,6 @@ export function formatTransactionType(type: TransactionType): string {
       return 'Received';
     case 'send':
       return 'Sent';
-    case 'swap':
-      return 'Swapped';
     default:
       return 'Transaction';
   }
@@ -286,8 +247,6 @@ export function formatTransactionDescription(tx: WalletTransaction): string {
       return `Received ${tx.amount} ${tx.asset}`;
     case 'send':
       return `Sent ${tx.amount} ${tx.asset}`;
-    case 'swap':
-      return `Swapped ${tx.sellAmount ?? tx.amount} ${tx.sellAsset ?? tx.asset} for ${tx.buyAmount ?? '?'} ${tx.buyAsset ?? '?'}`;
     default:
       return 'Unknown transaction';
   }
