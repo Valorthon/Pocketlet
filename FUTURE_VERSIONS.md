@@ -187,7 +187,7 @@ These are intentional simplifications in the current V1 testnet implementation t
 ### Fee payer key
 - **Issue:** #19 (originally the platform deployer key; repurposed during the passkey-kit migration)
 - **Current behavior:** If `FEE_PAYER_SECRET_KEY` is not set, the server generates a random testnet keypair and funds it automatically on first use.
-- **Why it exists:** The fee payer submits user-signed transactions directly to Soroban RPC and covers network fees on testnet. It is not a signer on any user wallet and cannot move user funds.
+- **Why it exists:** The fee payer rebuilds user-authorized `invoke_host_function` operations with itself as the source account, re-simulates for current resource fees, signs the envelope, and submits directly to Soroban RPC. It covers network fees on testnet, is not a signer on any user wallet, and cannot move user funds.
 - **Resolution:** On the Stellar public network, `FEE_PAYER_SECRET_KEY` is required and the app fails fast if it is missing. The testnet auto-generation path remains for local development and testnet testing.
 
 ### DEX swap integration
@@ -229,7 +229,7 @@ These are intentional simplifications in the current V1 testnet implementation t
   - Phase 1 — Foundation replacement ✅
   - Phase 2 — Auth & onboarding ✅
   - Phase 3 — Balances & receive ✅
-  - Phase 4 — Transfers (pending)
+  - Phase 4 — Transfers ✅
   - Phase 5 — Swaps: stub/hide (pending)
   - Phase 6 — Recovery flows (pending)
   - Phase 7 — Cleanup, tests & docs (pending)

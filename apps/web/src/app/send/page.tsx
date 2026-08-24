@@ -1,9 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { BASE_FEE } from '@stellar/stellar-sdk';
+import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
+import type { PasskeyKit } from 'passkey-kit';
 import PinModal from '@/components/PinModal';
-import { createPasskeyKit, createTokenClient } from '@/lib/wallet/passkey-kit';
+import { createPasskeyKit, prepareTokenTransferTx } from '@/lib/wallet/passkey-kit';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import { amountToBaseUnits } from '@/lib/wallet/amount';
 
@@ -27,6 +30,11 @@ function getTokenContractId(asset: 'USDC' | 'XLM'): string {
   return asset === 'USDC' ? getUsdcContractId() : getXlmContractId();
 }
 
+function formatFee(stroops: number): string {
+  const xlm = stroops / 10_000_000;
+  return xlm.toLocaleString(undefined, { maximumFractionDigits: 7 });
+}
+
 export default function SendPage() {
   const [form, setForm] = useState<TransferForm>({
     asset: 'USDC',
@@ -39,6 +47,11 @@ export default function SendPage() {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [resolved, setResolved] = useState<ResolvedRecipient | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [fee, setFee] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+
+  const preparedKitRef = useRef<PasskeyKit | null>(null);
+  const preparedTxRef = useRef<AssembledTransaction<null> | null>(null);
 
   const validateForm = (): string | null => {
     if (!form.recipient.trim()) {
@@ -87,6 +100,68 @@ export default function SendPage() {
     }
   };
 
+  useEffect(() => {
+    if (step !== 'review' || !resolved) {
+      setFee(null);
+      preparedKitRef.current = null;
+      preparedTxRef.current = null;
+      return;
+    }
+
+    const recipientAddress = resolved.address;
+
+    let cancelled = false;
+    setPreparing(true);
+    setError(null);
+
+    async function prepare() {
+      try {
+        const kit = createPasskeyKit();
+        await kit.connectWallet();
+
+        if (!kit.contractId) {
+          throw new Error('Wallet not connected');
+        }
+
+        const baseAmount = amountToBaseUnits(form.amount);
+        const tx = await prepareTokenTransferTx(
+          kit,
+          getTokenContractId(form.asset),
+          recipientAddress,
+          baseAmount
+        );
+
+        const simulation = tx.simulation;
+        if (!simulation || !('minResourceFee' in simulation)) {
+          throw new Error('Simulation data unavailable');
+        }
+
+        const minResourceFee = Number(simulation.minResourceFee);
+        const totalFeeStroops = minResourceFee + Number(BASE_FEE);
+
+        if (!cancelled) {
+          preparedKitRef.current = kit;
+          preparedTxRef.current = tx;
+          setFee(formatFee(totalFeeStroops));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to prepare transfer');
+        }
+      } finally {
+        if (!cancelled) {
+          setPreparing(false);
+        }
+      }
+    }
+
+    void prepare();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, resolved, form.asset, form.amount]);
+
   const confirmTransfer = () => {
     setPinModalOpen(true);
   };
@@ -97,26 +172,12 @@ export default function SendPage() {
     setError(null);
 
     try {
-      if (!resolved) {
-        throw new Error('Recipient not resolved');
+      const kit = preparedKitRef.current;
+      const tx = preparedTxRef.current;
+
+      if (!kit || !tx) {
+        throw new Error('Transfer not prepared');
       }
-
-      const kit = createPasskeyKit();
-      await kit.connectWallet();
-
-      if (!kit.contractId) {
-        throw new Error('Wallet not connected');
-      }
-
-      const tokenContractId = getTokenContractId(form.asset);
-      const tokenClient = createTokenClient(tokenContractId, kit.contractId);
-
-      const baseAmount = amountToBaseUnits(form.amount);
-      const tx = await tokenClient.transfer({
-        from: kit.contractId,
-        to: resolved.address,
-        amount: baseAmount,
-      });
 
       await kit.sign(tx);
       const signedXdr = tx.toXDR();
@@ -294,7 +355,9 @@ export default function SendPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Network fee</span>
-                  <span className="font-medium text-gray-900">~0.001 XLM</span>
+                  <span className="font-medium text-gray-900">
+                    {fee !== null ? `~${fee} XLM` : preparing ? 'Estimating...' : '—'}
+                  </span>
                 </div>
               </div>
 
@@ -307,7 +370,8 @@ export default function SendPage() {
                 </button>
                 <button
                   onClick={confirmTransfer}
-                  className="rounded-lg bg-pocketlet-600 py-3 font-semibold text-white hover:bg-pocketlet-700"
+                  disabled={preparing || fee === null}
+                  className="rounded-lg bg-pocketlet-600 py-3 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
                 >
                   Confirm
                 </button>

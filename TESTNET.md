@@ -73,7 +73,7 @@ RECOVERY_WAITING_PERIOD_MS=60000
    - Any external testnet Stellar address (e.g., from another wallet or the Stellar Laboratory).
 3. Enter an amount (e.g., `0.5`).
 4. Select the asset (USDC or XLM).
-5. Review the resolved Stellar address on the confirmation screen.
+5. Review the resolved Stellar address and the simulated network fee on the confirmation screen.
 6. Confirm with the PIN.
 7. Submit and wait for the transaction hash.
 

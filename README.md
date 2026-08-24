@@ -122,9 +122,9 @@ See [`TESTNET.md`](./TESTNET.md) for a step-by-step guide to test the full V1 fl
 
 - **Smart wallet** — passkey-kit creates a passkey-controlled Soroban smart wallet for each user. The platform never holds the user's signing key.
 - **Signer model** — the primary signer is a WebAuthn/Passkey (Secp256r1). Users also get a BIP39 recovery phrase (Stellar derivation path `m/44'/148'/0'`) and can optionally register a backup passkey.
-- **Fee payer** — a server-held account (`FEE_PAYER_SECRET_KEY`) submits user-signed transactions directly to Soroban RPC and covers network fees on testnet. It is not a signer on any user wallet.
+- **Fee payer** — a server-held account (`FEE_PAYER_SECRET_KEY`) rebuilds user-authorized `invoke_host_function` operations with itself as the source account, re-simulates for current resource fees, signs the envelope, and submits directly to Soroban RPC. It covers network fees on testnet and is not a signer on any user wallet.
 - **Balances** — read from the Stellar Asset Contract (SAC) for USDC and XLM via `passkey-kit`'s `SACClient`.
-- **Transfers** — user-signed SAC token transfers submitted via direct RPC with fee-payer sponsorship.
+- **Transfers** — user-authorized SAC token transfers signed by the user's passkey and submitted by the fee payer via direct RPC.
 - **Swaps** — temporarily disabled in V1 while the DEX integration is rebuilt for the passkey-kit wallet.
 - **Transactions** — fetched from Horizon and classified into receive, send, and (historical) swap.
 
@@ -145,7 +145,7 @@ pnpm run typecheck          # Run TypeScript type checking on the web app
 - User funds live in their own Soroban smart wallet.
 - The platform never holds user signing keys. Passkey credentials live on the user's device; the recovery phrase is generated client-side and is never sent to the server.
 - Recovery uses the BIP39 phrase or an optional backup passkey. Email verification is still required for account creation and passkey recovery, but it cannot alone rotate wallet signers.
-- The fee payer (`FEE_PAYER_SECRET_KEY`) only submits already-signed transactions and pays network fees; it cannot move user funds. Store it in a secrets manager in production.
+- The fee payer (`FEE_PAYER_SECRET_KEY`) rebuilds, signs, and submits user-authorized Soroban operations, paying network fees in the process. It never holds user funds and cannot move them. Store it in a secrets manager in production.
 - Email verification returns the code in the API response for testnet convenience. Replace with a real transactional email provider before production.
 - On the Stellar public network, `SESSION_SECRET` is required, and `WEBAUTHN_ORIGIN` must be HTTPS with a real `WEBAUTHN_RP_ID` (not `localhost`). The app fails fast on startup if these production requirements are not met.
 

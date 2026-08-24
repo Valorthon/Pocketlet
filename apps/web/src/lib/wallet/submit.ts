@@ -1,12 +1,13 @@
 import {
   Address,
+  BASE_FEE,
   FeeBumpTransaction,
+  Operation,
   Transaction,
   TransactionBuilder,
-  Operation,
+  type OperationRecord,
   rpc,
   xdr,
-  type OperationRecord,
 } from '@stellar/stellar-sdk';
 import { NETWORK_PASSPHRASE, RPC_URL } from './network';
 import { fundAccount, getFeePayerKeypair } from './fee-payer';
@@ -113,38 +114,6 @@ export function parseSorobanTransaction(signedXdr: string): Transaction {
   return envelope;
 }
 
-/**
- * Submit a user-signed Soroban transaction to the network with the platform
- * fee payer covering the network fee.
- *
- * The input must be a base64-encoded Transaction envelope (not a fee-bump)
- * containing at least one `invoke_host_function` operation. The fee payer
- * wraps it in a fee-bump transaction, signs, and submits via direct RPC.
- */
-export async function submitSignedTransaction(signedXdr: string): Promise<{ hash: string }> {
-  const server = new rpc.Server(RPC_URL);
-  const feePayer = getFeePayerKeypair();
-  await fundAccount(feePayer.publicKey());
-
-  const innerTx = parseSorobanTransaction(signedXdr);
-
-  // Use the inner transaction's simulated fee as the fee-bump base fee.
-  // Soroban transactions typically contain a single operation, so this
-  // preserves the resource estimate the client already simulated.
-  const feeBump = TransactionBuilder.buildFeeBumpTransaction(
-    feePayer.publicKey(),
-    innerTx.fee,
-    innerTx,
-    NETWORK_PASSPHRASE
-  );
-  feeBump.sign(feePayer);
-
-  const result = await server.sendTransaction(feeBump);
-  await pollTransaction(server, result.hash);
-
-  return { hash: result.hash };
-}
-
 function isInvokeHostFunctionOp(
   op: OperationRecord
 ): op is Operation.InvokeHostFunction {
@@ -214,4 +183,127 @@ export function getInvokeContractArgs(op: OperationRecord): xdr.ScVal[] | null {
  */
 export function scValToAddress(scVal: xdr.ScVal): string {
   return Address.fromScVal(scVal).toString();
+}
+
+function getAddressCredentials(
+  credentials: xdr.SorobanCredentials
+): xdr.SorobanAddressCredentials | null {
+  const switchName = credentials.switch().name;
+
+  if (switchName === 'sorobanCredentialsAddress') {
+    return credentials.address();
+  }
+  if (switchName === 'sorobanCredentialsAddressV2') {
+    return credentials.addressV2();
+  }
+  if (switchName === 'sorobanCredentialsAddressWithDelegates') {
+    return credentials.addressWithDelegates().addressCredentials();
+  }
+
+  return null;
+}
+
+/**
+ * Return the wallet addresses that appear in an invoke_host_function
+ * operation's address-bound authorization entries.
+ */
+export function getAuthEntryAddresses(op: Operation.InvokeHostFunction): string[] {
+  const addresses = new Set<string>();
+
+  for (const entry of op.auth ?? []) {
+    const credentials = entry.credentials();
+    const addressCredentials = getAddressCredentials(credentials);
+    if (addressCredentials) {
+      addresses.add(Address.fromScAddress(addressCredentials.address()).toString());
+    }
+  }
+
+  return [...addresses];
+}
+
+/**
+ * Return true if any auth entry in the operation uses source-account
+ * authorization, which would require the transaction source account to sign.
+ */
+export function hasSourceAccountAuth(op: Operation.InvokeHostFunction): boolean {
+  return (
+    op.auth?.some(
+      (entry) => entry.credentials().switch().name === 'sorobanCredentialsSourceAccount'
+    ) ?? false
+  );
+}
+
+/**
+ * Submit a user-authorized Soroban transaction to the network with the platform
+ * fee payer as the source account.
+ *
+ * The input must be a base64-encoded inner Transaction envelope (not a fee-bump)
+ * containing exactly one `invoke_host_function` operation. The operation's auth
+ * entries must already be signed by the user's wallet. The server rebuilds the
+ * transaction with the fee payer as the source account, re-simulates to obtain
+ * current resource fees and Soroban data, signs with the fee payer, and submits
+ * directly via RPC.
+ */
+export async function submitSignedTransaction(signedXdr: string): Promise<{ hash: string }> {
+  const server = new rpc.Server(RPC_URL);
+  const feePayer = getFeePayerKeypair();
+  await fundAccount(feePayer.publicKey());
+
+  const innerTx = parseSorobanTransaction(signedXdr);
+
+  if (innerTx.operations.length !== 1) {
+    throw new Error('Sponsored transaction must contain exactly one operation');
+  }
+
+  const op = innerTx.operations[0];
+  if (!isInvokeHostFunctionOp(op)) {
+    throw new Error('Sponsored transaction must be an invoke_host_function operation');
+  }
+
+  const feePayerAccount = await server.getAccount(feePayer.publicKey());
+
+  const tempTx = new TransactionBuilder(feePayerAccount, {
+    fee: BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      Operation.invokeHostFunction({
+        func: op.func,
+        auth: op.auth,
+      })
+    )
+    .setTimeout(30)
+    .build();
+
+  const simulation = await server.simulateTransaction(tempTx);
+  if (rpc.Api.isSimulationError(simulation)) {
+    throw new Error(`Simulation failed: ${simulation.error}`);
+  }
+  if (!rpc.Api.isSimulationSuccess(simulation)) {
+    throw new Error('Simulation did not succeed');
+  }
+
+  const sorobanData = simulation.transactionData.build();
+  const fee = String(Number(simulation.minResourceFee) + Number(BASE_FEE));
+
+  const sponsoredTx = new TransactionBuilder(feePayerAccount, {
+    fee,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .setSorobanData(sorobanData)
+    .addOperation(
+      Operation.invokeHostFunction({
+        func: op.func,
+        auth: op.auth,
+      })
+    )
+    .setTimeout(30)
+    .build();
+
+  sponsoredTx.sign(feePayer);
+
+  const result = await server.sendTransaction(sponsoredTx);
+  await pollTransaction(server, result.hash);
+
+  return { hash: result.hash };
 }

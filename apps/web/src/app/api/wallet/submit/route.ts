@@ -1,29 +1,28 @@
-import {
-  Address,
-  FeeBumpTransaction,
-  TransactionBuilder,
-  type Transaction,
-} from '@stellar/stellar-sdk';
+import { Operation } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { getUserByEmail } from '@/lib/auth/store';
-import { submitSignedTransaction } from '@/lib/wallet/submit';
-import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
+import {
+  getAuthEntryAddresses,
+  hasSourceAccountAuth,
+  parseSorobanTransaction,
+  submitSignedTransaction,
+} from '@/lib/wallet/submit';
 
 export interface SubmitRequest {
-  /** Base64-encoded signed Soroban transaction envelope. */
+  /** Base64-encoded inner Soroban transaction envelope with signed auth entries. */
   signedXdr: string;
 }
 
 /**
- * Submit a user-signed Soroban transaction with the platform fee payer.
+ * Submit a user-authorized Soroban transaction with the platform fee payer.
  *
- * The endpoint performs lightweight validation: the transaction must parse,
- * contain at least one Soroban operation, and the source must be the user's
- * own smart-wallet contract. Operation-level semantics are enforced on-chain
- * by the wallet contract's __check_auth.
+ * The endpoint validates that the transaction contains a single
+ * invoke_host_function operation and that all address-bound auth entries belong
+ * to the logged-in user's wallet. The server then rebuilds the transaction with
+ * the fee payer as the source account and submits it directly to RPC.
  */
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies();
@@ -55,32 +54,44 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const envelope = TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
-    if (envelope instanceof FeeBumpTransaction) {
+    const tx = parseSorobanTransaction(signedXdr);
+
+    if (tx.operations.length !== 1) {
       return NextResponse.json(
-        { error: 'Fee-bump envelopes are not accepted; submit the inner transaction' },
+        { error: 'Transaction must contain exactly one operation' },
         { status: 400 }
       );
     }
 
-    const tx = envelope as Transaction;
-    const sourceAddress =
-      typeof tx.source === 'string'
-        ? tx.source
-        : Address.fromScAddress(tx.source).toString();
-
-    if (sourceAddress !== user.walletContractId) {
-      return NextResponse.json(
-        { error: 'Transaction source must be the user wallet' },
-        { status: 400 }
-      );
-    }
-
-    const hasSorobanOp = tx.operations.some((op) => op.type === 'invokeHostFunction');
-    if (!hasSorobanOp) {
+    const op = tx.operations[0];
+    if (op.type !== 'invokeHostFunction') {
       return NextResponse.json(
         { error: 'Transaction must contain a Soroban operation' },
         { status: 400 }
+      );
+    }
+
+    const invokeOp = op as Operation.InvokeHostFunction;
+
+    if (hasSourceAccountAuth(invokeOp)) {
+      return NextResponse.json(
+        { error: 'Source-account authorization is not supported' },
+        { status: 400 }
+      );
+    }
+
+    const authAddresses = getAuthEntryAddresses(invokeOp);
+    if (authAddresses.length === 0) {
+      return NextResponse.json(
+        { error: 'No wallet authorization entries found' },
+        { status: 400 }
+      );
+    }
+
+    if (authAddresses.some((address) => address !== user.walletContractId)) {
+      return NextResponse.json(
+        { error: 'Transaction authorization is not for this wallet' },
+        { status: 403 }
       );
     }
 
