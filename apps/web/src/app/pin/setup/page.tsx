@@ -72,7 +72,7 @@ export default function PinSetupPage() {
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
         <h1 className="mb-2 text-2xl font-bold text-pocketlet-600">Create your PIN</h1>
         <p className="mb-6 text-sm text-gray-500">
-          Choose a 6-digit PIN to confirm payments and swaps.
+          Choose a 6-digit PIN to confirm payments.
         </p>
 
         {error && (

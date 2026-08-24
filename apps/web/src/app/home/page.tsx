@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { RefreshCw } from 'lucide-react';
 import PinModal from '@/components/PinModal';
 
 interface BalanceData {
@@ -15,10 +16,14 @@ export default function HomePage() {
   const [data, setData] = useState<BalanceData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [hasPin, setHasPin] = useState<boolean | null>(null);
   const [pinModalOpen, setPinModalOpen] = useState(false);
 
-  const fetchBalance = async () => {
+  const fetchBalance = async (isBackground = false) => {
+    if (!isBackground) {
+      setRefreshing(true);
+    }
     const res = await fetch('/api/wallet/balance');
     if (res.status === 401) {
       window.location.href = '/login';
@@ -28,11 +33,13 @@ export default function HomePage() {
       const body = (await res.json()) as { error?: string };
       setError(body.error ?? 'Failed to load wallet');
       setLoading(false);
+      setRefreshing(false);
       return;
     }
     setData(await res.json());
     setError(null);
     setLoading(false);
+    setRefreshing(false);
   };
 
   const fetchPinStatus = async () => {
@@ -44,9 +51,9 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    fetchBalance();
+    fetchBalance(true);
     fetchPinStatus();
-    const id = setInterval(fetchBalance, 15000);
+    const id = setInterval(() => fetchBalance(true), 15000);
     return () => clearInterval(id);
   }, []);
 
@@ -107,8 +114,18 @@ export default function HomePage() {
         </div>
 
         <div className="rounded-2xl bg-white p-6 shadow-lg">
-          <p className="text-sm text-gray-500">Total balance</p>
-          <div className="mt-2 text-3xl font-bold text-gray-900">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm text-gray-500">Total balance</p>
+            <button
+              onClick={() => fetchBalance()}
+              disabled={refreshing}
+              aria-label="Refresh balance"
+              className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-pocketlet-600 disabled:opacity-50"
+            >
+              <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+            </button>
+          </div>
+          <div className="text-3xl font-bold text-gray-900">
             {format(data.usdc)} USDC
           </div>
           <div className="mt-1 text-sm text-gray-500">
