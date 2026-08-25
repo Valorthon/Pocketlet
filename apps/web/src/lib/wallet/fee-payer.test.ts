@@ -120,6 +120,7 @@ describe('getFeePayerKeypair', () => {
 describe('fundAccount', () => {
   let originalPassphrase: string | undefined;
   let requestAirdropSpy: ReturnType<typeof vi.spyOn>;
+  let getAccountSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -127,11 +128,16 @@ describe('fundAccount', () => {
     requestAirdropSpy = vi
       .spyOn(rpc.Server.prototype, 'requestAirdrop')
       .mockResolvedValue(new Account(PUBLIC_KEY, '0'));
+    // Default: account does not exist yet.
+    getAccountSpy = vi
+      .spyOn(rpc.Server.prototype, 'getAccount')
+      .mockRejectedValue(new Error('Account not found'));
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     requestAirdropSpy.mockRestore();
+    getAccountSpy.mockRestore();
     errorSpy.mockRestore();
     if (originalPassphrase !== undefined) {
       process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = originalPassphrase;
@@ -146,17 +152,43 @@ describe('fundAccount', () => {
     const { fundAccount } = await import('./fee-payer');
     await fundAccount(PUBLIC_KEY);
     expect(requestAirdropSpy).not.toHaveBeenCalled();
+    expect(getAccountSpy).not.toHaveBeenCalled();
   });
 
-  it('calls requestAirdrop on testnet', async () => {
+  it('calls requestAirdrop on testnet when the account does not exist', async () => {
     process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;
     vi.resetModules();
     const { fundAccount } = await import('./fee-payer');
     await fundAccount(PUBLIC_KEY);
+    expect(getAccountSpy).toHaveBeenCalledWith(PUBLIC_KEY);
     expect(requestAirdropSpy).toHaveBeenCalledWith(PUBLIC_KEY);
   });
 
-  it('ignores already-funded Friendbot errors', async () => {
+  it('does not call requestAirdrop when the account already exists', async () => {
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;
+    getAccountSpy.mockResolvedValue(new Account(PUBLIC_KEY, '0'));
+    vi.resetModules();
+    const { fundAccount } = await import('./fee-payer');
+    await fundAccount(PUBLIC_KEY);
+    expect(getAccountSpy).toHaveBeenCalledWith(PUBLIC_KEY);
+    expect(requestAirdropSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores already-funded Friendbot errors when the account exists after the error', async () => {
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;
+    requestAirdropSpy.mockRejectedValue(
+      new Error('No account created in transaction')
+    );
+    // Account was actually created despite the parsing error.
+    getAccountSpy.mockRejectedValueOnce(new Error('Account not found'));
+    getAccountSpy.mockResolvedValueOnce(new Account(PUBLIC_KEY, '0'));
+    vi.resetModules();
+    const { fundAccount } = await import('./fee-payer');
+    await expect(fundAccount(PUBLIC_KEY)).resolves.toBeUndefined();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores textual already-funded Friendbot errors', async () => {
     process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;
     requestAirdropSpy.mockRejectedValue(
       new Error('account already funded by friendbot')

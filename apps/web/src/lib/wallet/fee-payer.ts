@@ -67,6 +67,16 @@ function getAxiosErrorDetail(err: unknown): string | undefined {
   return undefined;
 }
 
+async function accountExists(publicKey: string): Promise<boolean> {
+  const server = new rpc.Server(RPC_URL);
+  try {
+    await server.getAccount(publicKey);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Ensures the given account has a starting balance.
  *
@@ -78,13 +88,25 @@ export async function fundAccount(publicKey: string): Promise<void> {
     return;
   }
 
+  // Skip Friendbot entirely if the account already exists (typical across
+  // server restarts). This also avoids confusing meta-parsing errors from
+  // the deprecated requestAirdrop helper.
+  if (await accountExists(publicKey)) {
+    return;
+  }
+
   const server = new rpc.Server(RPC_URL);
 
   try {
     await server.requestAirdrop(publicKey);
   } catch (err) {
-    // Friendbot returns 400 once an account already has the starting balance.
-    // That is expected across restarts, so only log real failures.
+    // Friendbot may have created the account even if its response parsing
+    // failed (e.g. "No account created in transaction"). Re-check existence
+    // before logging a scary error.
+    if (await accountExists(publicKey)) {
+      return;
+    }
+
     const detail = getAxiosErrorDetail(err);
     if (detail?.toLowerCase().includes('already funded')) {
       return;

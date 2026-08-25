@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { xdr } from '@stellar/stellar-sdk';
+import { Keypair, xdr } from '@stellar/stellar-sdk';
 import { POST } from './route';
 import {
   createUser,
@@ -14,6 +14,12 @@ import {
 } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
+import {
+  parseSorobanTransaction,
+  getInvokeContractDetails,
+  getInvokeContractArgs,
+  submitSignedTransaction,
+} from '@/lib/wallet/submit';
 
 let dataDir: string;
 let cookieJar: Record<string, string> = {};
@@ -21,6 +27,20 @@ let cookieJar: Record<string, string> = {};
 const CONTRACT_ID = 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM';
 const RECOVERY_PUBLIC_KEY =
   'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP';
+
+function buildEd25519SignerScVal(publicKey: string): xdr.ScVal {
+  const rawPubKey = Keypair.fromPublicKey(publicKey).rawPublicKey();
+  return xdr.ScVal.scvVec([
+    xdr.ScVal.scvSymbol('Ed25519'),
+    xdr.ScVal.scvBytes(rawPubKey),
+    // SignerExpiration(None)
+    xdr.ScVal.scvVec([xdr.ScVal.scvVoid()]),
+    // SignerLimits(None)
+    xdr.ScVal.scvVec([xdr.ScVal.scvVoid()]),
+    // SignerStorage::Persistent
+    xdr.ScVal.scvVec([xdr.ScVal.scvSymbol('Persistent')]),
+  ]);
+}
 
 vi.mock('next/headers', () => ({
   cookies: vi.fn().mockImplementation(() => ({
@@ -32,45 +52,35 @@ vi.mock('next/headers', () => ({
   })),
 }));
 
-vi.mock('@/lib/wallet/submit', () => ({
-  parseSorobanTransaction: vi.fn().mockImplementation(() => ({
-    operations: [
-      {
-        type: 'invokeHostFunction',
-        func: {},
-        auth: [],
-      },
-    ],
-  })),
-  getInvokeContractDetails: vi.fn().mockReturnValue({
-    contractId: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
-    functionName: 'addEd25519',
-  }),
-  getInvokeContractArgs: vi.fn().mockReturnValue([
-    {
-      address: () => ({
-        accountId: () => ({
-          ed25519: () =>
-            Buffer.from(
-              'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP'.slice(1),
-              'base64'
-            ),
-        }),
-      }),
-      switch: () => ({ name: 'scvAddress' }),
-    } as unknown as xdr.ScVal,
-  ]),
-  scValToAddress: vi.fn().mockReturnValue(
-    'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP'
-  ),
-  scValToBytes: vi.fn().mockReturnValue(Buffer.from('unexpected-bytes')),
-  submitSignedTransaction: vi.fn().mockResolvedValue({ hash: 'recovery-signer-hash' }),
-}));
+vi.mock('@/lib/wallet/submit');
 
 beforeEach(() => {
   dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-recovery-signer-'));
   process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
+
+  vi.mocked(parseSorobanTransaction).mockImplementation(
+    () =>
+      ({
+        operations: [
+          {
+            type: 'invokeHostFunction',
+            func: {} as xdr.HostFunction,
+            auth: [],
+          },
+        ],
+      }) as never
+  );
+  vi.mocked(getInvokeContractDetails).mockReturnValue({
+    contractId: CONTRACT_ID,
+    functionName: 'add_signer',
+  });
+  vi.mocked(getInvokeContractArgs).mockReturnValue([
+    buildEd25519SignerScVal(RECOVERY_PUBLIC_KEY),
+  ]);
+  vi.mocked(submitSignedTransaction).mockResolvedValue({
+    hash: 'recovery-signer-hash',
+  });
 });
 
 afterEach(() => {
@@ -173,7 +183,7 @@ describe('POST /api/wallet/recovery-signer', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when the transaction does not call addEd25519', async () => {
+  it('returns 400 when the transaction does not call add_signer', async () => {
     const { getInvokeContractDetails } = await import('@/lib/wallet/submit');
     vi.mocked(getInvokeContractDetails).mockReturnValueOnce({
       contractId: CONTRACT_ID,
@@ -193,10 +203,12 @@ describe('POST /api/wallet/recovery-signer', () => {
   });
 
   it('returns 400 when the signed signer does not match the recovery public key', async () => {
-    const { scValToAddress } = await import('@/lib/wallet/submit');
-    vi.mocked(scValToAddress).mockReturnValueOnce(
-      'GCHCVLYHMRISIGAYR6HA6LNNMD5OTLLUFKIEZMXEZ4ZPM27SAK5TI46P'
-    );
+    const { getInvokeContractArgs } = await import('@/lib/wallet/submit');
+    vi.mocked(getInvokeContractArgs).mockReturnValueOnce([
+      buildEd25519SignerScVal(
+        'GCHCVLYHMRISIGAYR6HA6LNNMD5OTLLUFKIEZMXEZ4ZPM27SAK5TI46P'
+      ),
+    ]);
 
     const token = await createUserWithWallet('alice@example.com');
     const req = createRequest(

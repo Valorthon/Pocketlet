@@ -1,4 +1,4 @@
-import { Keypair } from '@stellar/stellar-sdk';
+import { Keypair, xdr } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
@@ -8,22 +8,56 @@ import {
   getInvokeContractArgs,
   getInvokeContractDetails,
   parseSorobanTransaction,
-  scValToAddress,
-  scValToBytes,
   submitSignedTransaction,
 } from '@/lib/wallet/submit';
 
 export interface RecoverySignerRequest {
-  /** Base64 XDR of the wallet's addEd25519 operation signed by the primary passkey. */
+  /** Base64 XDR of the wallet's add_signer operation signed by the primary passkey. */
   signedXdr: string;
   /** Recovery Ed25519 public key (G...) derived from the BIP39 phrase. */
   recoveryPublicKey: string;
 }
 
 /**
- * Compare the first ScVal of an addEd25519 operation with the expected recovery
- * public key. passkey-kit encodes the Ed25519 signer as either an Address or as
- * raw bytes, so we accept either representation.
+ * Extract the raw Ed25519 public-key bytes from a passkey-kit `Signer` union.
+ *
+ * passkey-kit's `addEd25519` builds an `add_signer({ signer })` invocation where
+ * `signer` is the contract `Signer` union encoded as:
+ *
+ *   scvVec([
+ *     scvSymbol("Ed25519"),
+ *     scvBytes(raw_ed25519_pubkey),
+ *     ...
+ *   ])
+ */
+function getEd25519PublicKeyBytesFromSignerArg(
+  signerArg: xdr.ScVal
+): Buffer | null {
+  if (signerArg.switch().name !== 'scvVec') {
+    return null;
+  }
+
+  const vec = signerArg.vec();
+  if (!vec || vec.length < 2) {
+    return null;
+  }
+
+  const tag = vec[0];
+  if (tag.switch().name !== 'scvSymbol' || tag.sym().toString() !== 'Ed25519') {
+    return null;
+  }
+
+  const pubKeyVal = vec[1];
+  if (pubKeyVal.switch().name !== 'scvBytes') {
+    return null;
+  }
+
+  return Buffer.from(pubKeyVal.bytes());
+}
+
+/**
+ * Compare the first ScVal of an add_signer operation with the expected recovery
+ * public key. The first arg is the `Signer` union built by passkey-kit.
  */
 function argsMatchRecoveryPublicKey(
   args: ReturnType<typeof getInvokeContractArgs>,
@@ -38,15 +72,14 @@ function argsMatchRecoveryPublicKey(
     return false;
   }
 
-  try {
-    return scValToAddress(firstArg) === recoveryPublicKey;
-  } catch {
-    // Not an Address ScVal; fall back to raw public-key bytes comparison.
+  const signerPubKey = getEd25519PublicKeyBytesFromSignerArg(firstArg);
+  if (!signerPubKey) {
+    return false;
   }
 
   try {
     const expected = Buffer.from(Keypair.fromPublicKey(recoveryPublicKey).rawPublicKey());
-    return scValToBytes(firstArg).equals(expected);
+    return signerPubKey.equals(expected);
   } catch {
     return false;
   }
@@ -117,9 +150,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const invokeDetails = getInvokeContractDetails(op);
-  if (!invokeDetails || invokeDetails.functionName !== 'addEd25519') {
+  if (!invokeDetails || invokeDetails.functionName !== 'add_signer') {
     return NextResponse.json(
-      { error: 'Transaction must call addEd25519' },
+      { error: 'Transaction must call add_signer' },
       { status: 400 }
     );
   }
