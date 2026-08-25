@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { RefreshCw } from 'lucide-react';
 import PinModal from '@/components/PinModal';
+import { baseUnitsToDisplay } from '@/lib/wallet/amount';
 
 interface BalanceData {
   xlm: string;
@@ -73,11 +74,6 @@ export default function HomePage() {
     router.push('/login');
   };
 
-  const format = (value: string) => {
-    const num = Number(value) / 10_000_000;
-    return num.toLocaleString(undefined, { maximumFractionDigits: 7 });
-  };
-
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center">
@@ -137,10 +133,10 @@ export default function HomePage() {
             </button>
           </div>
           <div className="text-3xl font-bold text-gray-900">
-            {format(data.usdc)} USDC
+            {baseUnitsToDisplay(data.usdc)} USDC
           </div>
           <div className="mt-1 text-sm text-gray-500">
-            {format(data.xlm)} XLM
+            {baseUnitsToDisplay(data.xlm)} XLM
           </div>
 
           <div className="mt-6 grid grid-cols-2 gap-3">

@@ -8,7 +8,8 @@ import type { PasskeyKit } from 'passkey-kit';
 import PinModal from '@/components/PinModal';
 import { createPasskeyKit, prepareTokenTransferTx } from '@/lib/wallet/passkey-kit';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
-import { amountToBaseUnits } from '@/lib/wallet/amount';
+import { amountToBaseUnits, baseUnitsToDisplay } from '@/lib/wallet/amount';
+import { validateRecipientFormat } from '@/lib/wallet/recipient-format';
 
 interface TransferForm {
   asset: 'USDC' | 'XLM';
@@ -24,6 +25,11 @@ interface ResolvedRecipient {
   type: 'address' | 'username' | 'phone';
   address: string;
   display: string;
+}
+
+interface Balances {
+  xlm: string;
+  usdc: string;
 }
 
 function getTokenContractId(asset: 'USDC' | 'XLM'): string {
@@ -49,6 +55,7 @@ export default function SendPage() {
   const [resolving, setResolving] = useState(false);
   const [fee, setFee] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
+  const [balances, setBalances] = useState<Balances | null>(null);
 
   const preparedKitRef = useRef<PasskeyKit | null>(null);
   const preparedTxRef = useRef<AssembledTransaction<null> | null>(null);
@@ -56,6 +63,10 @@ export default function SendPage() {
   const validateForm = (): string | null => {
     if (!form.recipient.trim()) {
       return 'Recipient is required';
+    }
+    const recipientError = validateRecipientFormat(form.recipient);
+    if (recipientError) {
+      return recipientError;
     }
     if (!form.amount || Number.isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
       return 'Enter a valid amount greater than zero';
@@ -73,6 +84,17 @@ export default function SendPage() {
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    if (!balances) {
+      setError('Balance not loaded. Please try again.');
+      return;
+    }
+
+    const availableBalance = form.asset === 'USDC' ? balances.usdc : balances.xlm;
+    if (amountToBaseUnits(form.amount) > BigInt(availableBalance)) {
+      setError(`Insufficient ${form.asset} balance`);
       return;
     }
 
@@ -99,6 +121,30 @@ export default function SendPage() {
       setResolving(false);
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchBalances() {
+      try {
+        const res = await fetch('/api/wallet/balance');
+        if (!res.ok) {
+          if (!cancelled) setBalances(null);
+          return;
+        }
+        const body = (await res.json()) as Balances;
+        if (!cancelled) setBalances({ xlm: body.xlm, usdc: body.usdc });
+      } catch {
+        if (!cancelled) setBalances(null);
+      }
+    }
+
+    void fetchBalances();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (step !== 'review' || !resolved) {
@@ -307,6 +353,14 @@ export default function SendPage() {
                   placeholder="0.00"
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Available:{' '}
+                  {balances
+                    ? `${baseUnitsToDisplay(
+                        form.asset === 'USDC' ? balances.usdc : balances.xlm
+                      )} ${form.asset}`
+                    : 'Loading…'}
+                </p>
               </div>
 
               <div>
