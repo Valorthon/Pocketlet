@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Address, xdr } from '@stellar/stellar-sdk';
 import { GET } from './route';
 import { createUser, setEmailVerified, setWallet } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
@@ -10,8 +11,12 @@ import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
+const USDC_CONTRACT_ID =
+  'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA';
 const WALLET_CONTRACT_ID =
-  'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM';
+  'CANWB6BIHTG37UGKBXNCFA7X6XD4XSA6FVSP4GVYSWRAQ3LID7LQ52ZG';
+const OTHER_ADDRESS =
+  'GAEBH5ZALWM4SFBG3XEE7FBGKNPUVX5JT7URH34XHQ6SVRT6IGY4SXAM';
 
 vi.mock('next/headers', () => ({
   cookies: vi.fn().mockImplementation(() => ({
@@ -37,7 +42,7 @@ vi.mock('@/lib/wallet/assets', () => ({
 
 interface MockOperation {
   hash: string;
-  functionName: string;
+  parameters: Array<{ value: string; type: string }>;
   balanceChanges: Array<{
     assetType: string;
     assetCode?: string;
@@ -45,6 +50,33 @@ interface MockOperation {
     to: string;
     amount: string;
   }>;
+}
+
+function makeAddressParam(address: string): { value: string; type: string } {
+  return {
+    value: Address.fromString(address).toScVal().toXDR('base64'),
+    type: 'Address',
+  };
+}
+
+function makeSymbolParam(name: string): { value: string; type: string } {
+  return {
+    value: xdr.ScVal.scvSymbol(name).toXDR('base64'),
+    type: 'Sym',
+  };
+}
+
+function makeTransferParameters(
+  token: string,
+  from: string,
+  to: string
+): Array<{ value: string; type: string }> {
+  return [
+    makeAddressParam(token),
+    makeSymbolParam('transfer'),
+    makeAddressParam(from),
+    makeAddressParam(to),
+  ];
 }
 
 function makeMockOperation(op: MockOperation) {
@@ -56,10 +88,10 @@ function makeMockOperation(op: MockOperation) {
     transaction_successful: true,
     created_at: '2026-07-20T10:00:00Z',
     source_account: 'GCCVPYFOHY7B7M4SCIQRMX2VTZVOB7VDJBJGN4NVBHPQAJLZS4KKJLPO',
-    function: op.functionName,
-    parameters: [],
-    address: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
-    salt: 'salt',
+    function: 'HostFunctionTypeHostFunctionTypeInvokeContract',
+    parameters: op.parameters,
+    address: '',
+    salt: '',
     asset_balance_changes: op.balanceChanges.map((change) => ({
       asset_type: change.assetType,
       asset_code: change.assetCode,
@@ -98,14 +130,18 @@ const mockOperations: Record<string, unknown[]> = {
   'tx-send': [
     makeMockOperation({
       hash: 'tx-send',
-      functionName: 'transfer',
+      parameters: makeTransferParameters(
+        USDC_CONTRACT_ID,
+        WALLET_CONTRACT_ID,
+        OTHER_ADDRESS
+      ),
       balanceChanges: [
         {
           assetType: 'credit_alphanum4',
           assetCode: 'USDC',
-          from: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
-          to: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDP',
-          amount: '25000000',
+          from: WALLET_CONTRACT_ID,
+          to: OTHER_ADDRESS,
+          amount: '2.5000000',
         },
       ],
     }),
@@ -113,7 +149,11 @@ const mockOperations: Record<string, unknown[]> = {
   'tx-admin': [
     makeMockOperation({
       hash: 'tx-admin',
-      functionName: 'set_owner',
+      parameters: makeTransferParameters(
+        USDC_CONTRACT_ID,
+        OTHER_ADDRESS,
+        'GAEBH5ZALWM4SFBG3XEE7FBGKNPUVX5JT7URH34XHQ6SVRT6IGY4SXAM'
+      ).map((p, idx) => (idx === 1 ? makeSymbolParam('set_owner') : p)),
       balanceChanges: [],
     }),
   ],

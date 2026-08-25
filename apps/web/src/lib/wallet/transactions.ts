@@ -1,4 +1,4 @@
-import { Horizon } from '@stellar/stellar-sdk';
+import { Horizon, Address, xdr } from '@stellar/stellar-sdk';
 import { isProductionNetwork } from './network';
 
 export const HORIZON_EXPLORER_URL = isProductionNetwork()
@@ -42,6 +42,38 @@ function formatAmountFromStroops(amount: string | undefined): string {
   }
   const fractionStr = fraction.toString().padStart(7, '0').replace(/0+$/, '');
   return `${integer}.${fractionStr}`;
+}
+
+function formatBalanceChangeAmount(amount: string | undefined): string {
+  if (!amount) {
+    return '0';
+  }
+  if (!amount.includes('.')) {
+    return amount;
+  }
+  return amount.replace(/\.?0+$/, '');
+}
+
+function parseScValSymbol(base64: string): string | null {
+  try {
+    const scVal = xdr.ScVal.fromXDR(Buffer.from(base64, 'base64'));
+    if (scVal.switch().name !== 'scvSymbol') {
+      return null;
+    }
+    const value = scVal.sym();
+    return typeof value === 'string' ? value : value.toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+function parseScValAddress(base64: string): string | null {
+  try {
+    const scVal = xdr.ScVal.fromXDR(Buffer.from(base64, 'base64'));
+    return Address.fromScVal(scVal).toString();
+  } catch {
+    return null;
+  }
 }
 
 function parsePaymentOperation(
@@ -119,42 +151,49 @@ function parseInvokeHostFunctionOperation(
   walletAddress: string,
   ledger: number
 ): WalletTransaction | null {
-  // In fee-sponsored passkey transactions the operation source is the fee
-  // payer, not the wallet. Detect wallet involvement through SAC balance
-  // changes emitted by Horizon for the invoked contract.
-  const functionName = op.function;
-
-  if (functionName === 'transfer') {
-    const outgoing = op.asset_balance_changes.find(
-      (change) => change.from === walletAddress && change.to !== walletAddress
-    );
-    const incoming = op.asset_balance_changes.find(
-      (change) => change.to === walletAddress && change.from !== walletAddress
-    );
-
-    const change = outgoing ?? incoming;
-    if (!change) {
-      return null;
-    }
-
-    const isReceive = !outgoing && Boolean(incoming);
-
-    return {
-      id: op.transaction_hash,
-      hash: op.transaction_hash,
-      type: isReceive ? 'receive' : 'send',
-      status: op.transaction_successful ? 'success' : 'failed',
-      createdAt: op.created_at,
-      ledger,
-      fee: '0',
-      asset: describeAssetFromBalanceChange(change),
-      amount: formatAmountFromStroops(change.amount),
-      recipient: isReceive ? undefined : change.to,
-      sender: isReceive ? change.from : undefined,
-    };
+  // Horizon reports the host function type at the operation level; the actual
+  // contract function name and arguments are encoded as XDR ScVals in the
+  // parameters array.
+  if (op.function !== 'HostFunctionTypeHostFunctionTypeInvokeContract') {
+    return null;
   }
 
-  return null;
+  const functionName = parseScValSymbol(op.parameters[1]?.value ?? '');
+  if (functionName !== 'transfer') {
+    return null;
+  }
+
+  const fromAddress = parseScValAddress(op.parameters[2]?.value ?? '');
+  const toAddress = parseScValAddress(op.parameters[3]?.value ?? '');
+  if (!fromAddress || !toAddress) {
+    return null;
+  }
+
+  const isReceive = toAddress === walletAddress;
+  const isSend = fromAddress === walletAddress;
+  if (!isReceive && !isSend) {
+    return null;
+  }
+
+  // Horizon reports SAC balance changes as classic asset entries. Find the
+  // matching change to determine the real asset and amount.
+  const change = op.asset_balance_changes.find(
+    (c) => c.from === fromAddress && c.to === toAddress
+  );
+
+  return {
+    id: op.transaction_hash,
+    hash: op.transaction_hash,
+    type: isReceive ? 'receive' : 'send',
+    status: op.transaction_successful ? 'success' : 'failed',
+    createdAt: op.created_at,
+    ledger,
+    fee: '0',
+    asset: change ? describeAssetFromBalanceChange(change) : XLM_ASSET,
+    amount: change ? formatBalanceChangeAmount(change.amount) : '0',
+    recipient: isReceive ? undefined : toAddress,
+    sender: isReceive ? fromAddress : undefined,
+  };
 }
 
 export function classifyOperation(
