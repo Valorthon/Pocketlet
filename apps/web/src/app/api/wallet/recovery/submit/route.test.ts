@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { xdr } from '@stellar/stellar-sdk';
 import { POST } from './route';
 import {
   createUser,
@@ -47,6 +48,9 @@ vi.mock('@simplewebauthn/server', () => ({
   }),
 }));
 
+const CONTRACT_ID = 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM';
+const NEW_KEY_ID = 'new-key-id';
+
 vi.mock('@/lib/wallet/submit', () => ({
   parseSorobanTransaction: vi.fn().mockImplementation(() => {
     return {
@@ -59,6 +63,15 @@ vi.mock('@/lib/wallet/submit', () => ({
       ],
     };
   }),
+  getInvokeContractDetails: vi.fn().mockReturnValue({
+    contractId: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
+    functionName: 'addSecp256r1',
+  }),
+  getInvokeContractArgs: vi.fn().mockReturnValue([
+    { bytes: () => Buffer.from('new-key-id', 'base64url') } as xdr.ScVal,
+    { bytes: () => Buffer.from('new-public-key') } as xdr.ScVal,
+  ]),
+  scValToBytes: vi.fn().mockImplementation((scVal: { bytes: () => Buffer }) => scVal.bytes()),
   getAuthEntryAddresses: vi.fn().mockReturnValue([
     'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
   ]),
@@ -171,6 +184,56 @@ describe('POST /api/wallet/recovery/submit', () => {
       signedXdr: 'AAAA...',
       response: { id: 'new-key-id' },
       keyIdBase64: 'different-key-id',
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a transaction that does not call addSecp256r1', async () => {
+    const { getInvokeContractDetails } = await import('@/lib/wallet/submit');
+    vi.mocked(getInvokeContractDetails).mockReturnValueOnce({
+      contractId: CONTRACT_ID,
+      functionName: 'transfer',
+    });
+
+    makeRecoverableUser('alice@example.com');
+    setRecoveryInitiated(
+      'alice@example.com',
+      '123456',
+      new Date(Date.now() + 60000).toISOString()
+    );
+    verifyRecoveryCode('alice@example.com', '123456');
+    await setRecoverySession('alice@example.com');
+
+    const req = createRequest({
+      signedXdr: 'AAAA...',
+      response: { id: NEW_KEY_ID },
+      keyIdBase64: NEW_KEY_ID,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a signed signer that does not match the registered passkey', async () => {
+    const { getInvokeContractArgs } = await import('@/lib/wallet/submit');
+    vi.mocked(getInvokeContractArgs).mockReturnValueOnce([
+      { bytes: () => Buffer.from('attacker-key-id', 'base64url') } as xdr.ScVal,
+      { bytes: () => Buffer.from('attacker-public-key') } as xdr.ScVal,
+    ]);
+
+    makeRecoverableUser('alice@example.com');
+    setRecoveryInitiated(
+      'alice@example.com',
+      '123456',
+      new Date(Date.now() + 60000).toISOString()
+    );
+    verifyRecoveryCode('alice@example.com', '123456');
+    await setRecoverySession('alice@example.com');
+
+    const req = createRequest({
+      signedXdr: 'AAAA...',
+      response: { id: NEW_KEY_ID },
+      keyIdBase64: NEW_KEY_ID,
     });
     const res = await POST(req);
     expect(res.status).toBe(400);

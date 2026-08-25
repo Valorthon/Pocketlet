@@ -22,6 +22,7 @@ type RecoveryStep =
   | 'waiting'
   | 'phrase'
   | 'register'
+  | 'old-passkey-warning'
   | 'success'
   | 'unrecoverable';
 
@@ -221,38 +222,59 @@ export default function RecoverPage() {
 
       // Remove the lost primary passkey if we know its key id.
       if (status.primaryPasskeyKeyId && status.primaryPasskeyKeyId !== newPasskey.keyId) {
-        try {
-          const removeSignerTx = await kit.remove(
-            SignerKey.Secp256r1(status.primaryPasskeyKeyId)
-          );
-          await kit.sign(removeSignerTx, new Ed25519Signer(recoveryKeypair));
-          const removeSignedXdr = removeSignerTx.toXDR();
-
-          const removeRes = await fetch('/api/wallet/submit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ signedXdr: removeSignedXdr }),
-          });
-
-          const removeData = (await removeRes.json()) as { error?: string; hash?: string };
-          if (!removeRes.ok) {
-            setWarning(
-              removeData.error ??
-                'New passkey registered, but the old passkey could not be removed.'
-            );
-          }
-        } catch (removeErr) {
-          setWarning(
-            removeErr instanceof Error
-              ? removeErr.message
-              : 'New passkey registered, but the old passkey could not be removed.'
-          );
-        }
+        await removeOldPrimaryPasskey(status.primaryPasskeyKeyId);
+        return;
       }
 
       setStep('success');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to register new passkey');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeOldPrimaryPasskey = async (keyId: string) => {
+    if (!recoveryKeypair || !status?.contractId) {
+      setError('Recovery state is incomplete. Please start over.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const kit = createPasskeyKit();
+      connectPasskeyKitByContractId(kit, status.contractId);
+
+      const removeSignerTx = await kit.remove(SignerKey.Secp256r1(keyId));
+      await kit.sign(removeSignerTx, new Ed25519Signer(recoveryKeypair));
+      const removeSignedXdr = removeSignerTx.toXDR();
+
+      const removeRes = await fetch('/api/wallet/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signedXdr: removeSignedXdr }),
+      });
+
+      const removeData = (await removeRes.json()) as { error?: string; hash?: string };
+      if (!removeRes.ok) {
+        setWarning(
+          removeData.error ??
+            'New passkey registered, but the old passkey could not be removed.'
+        );
+        setStep('old-passkey-warning');
+        return;
+      }
+
+      setStep('success');
+    } catch (removeErr) {
+      setWarning(
+        removeErr instanceof Error
+          ? removeErr.message
+          : 'New passkey registered, but the old passkey could not be removed.'
+      );
+      setStep('old-passkey-warning');
     } finally {
       setLoading(false);
     }
@@ -426,6 +448,33 @@ export default function RecoverPage() {
               className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
               {loading ? 'Registering...' : 'Register new passkey'}
+            </button>
+          </div>
+        )}
+
+        {step === 'old-passkey-warning' && status?.primaryPasskeyKeyId && (
+          <div className="space-y-4 text-center">
+            <div className="rounded-lg bg-amber-50 p-4 text-left text-sm text-amber-800">
+              <p className="font-medium">Old passkey could not be removed</p>
+              <p className="mt-1">
+                Your new passkey is registered, but we could not remove the old one from your
+                wallet. The old passkey may still work until it is removed.
+              </p>
+              {warning && <p className="mt-2">{warning}</p>}
+            </div>
+            <button
+              onClick={() => removeOldPrimaryPasskey(status.primaryPasskeyKeyId!)}
+              disabled={loading}
+              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+            >
+              {loading ? 'Trying again...' : 'Try removing old passkey again'}
+            </button>
+            <button
+              onClick={() => setStep('success')}
+              disabled={loading}
+              className="w-full rounded-lg bg-gray-100 py-2.5 font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+            >
+              Continue anyway
             </button>
           </div>
         )}

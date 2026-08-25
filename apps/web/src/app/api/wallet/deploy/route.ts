@@ -30,12 +30,17 @@ export interface DeployRequest {
  * `createWallet`. We verify the registration response cryptographically and
  * check origin/RPID, but we do not enforce a server-known challenge here.
  * The deploy transaction itself is signed by the passkey and validated on-chain.
+ *
+ * TODO(V1 production): bind the WebAuthn challenge to a server-generated nonce
+ * stored in the session instead of accepting any challenge. This is acceptable
+ * for testnet because the on-chain signature is the real authorization check.
  */
 async function verifyPasskeyRegistrationResponse(
   response: unknown
 ): Promise<ReturnType<typeof verifyRegistrationResponse>> {
   return verifyRegistrationResponse({
     response: response as never,
+    // V1 testnet shortcut: passkey-kit generates the challenge client-side.
     expectedChallenge: () => true,
     expectedOrigin: ORIGIN,
     expectedRPID: RP_ID,

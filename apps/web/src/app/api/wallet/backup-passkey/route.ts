@@ -55,6 +55,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     verification = await verifyRegistrationResponse({
       response: response as never,
+      // V1 testnet shortcut: passkey-kit generates the challenge client-side.
+      // TODO(V1 production): bind the challenge to a server-generated nonce.
       expectedChallenge: () => true,
       expectedOrigin: ORIGIN,
       expectedRPID: RP_ID,

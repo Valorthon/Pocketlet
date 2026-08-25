@@ -18,8 +18,11 @@ import {
 } from '@/lib/auth/recovery-token';
 import {
   getAuthEntryAddresses,
+  getInvokeContractArgs,
+  getInvokeContractDetails,
   hasSourceAccountAuth,
   parseSorobanTransaction,
+  scValToBytes,
   submitSignedTransaction,
 } from '@/lib/wallet/submit';
 
@@ -149,6 +152,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     verification = await verifyRegistrationResponse({
       response: response as never,
+      // V1 testnet shortcut: passkey-kit generates the challenge client-side.
+      // TODO(V1 production): bind the challenge to a server-generated nonce.
       expectedChallenge: () => true,
       expectedOrigin: ORIGIN,
       expectedRPID: RP_ID,
@@ -170,6 +175,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (credential.id !== keyIdBase64) {
     return NextResponse.json(
       { error: 'Credential id does not match request' },
+      { status: 400 }
+    );
+  }
+
+  const invokeDetails = getInvokeContractDetails(op);
+  if (!invokeDetails || invokeDetails.functionName !== 'addSecp256r1') {
+    return NextResponse.json(
+      { error: 'Transaction must call addSecp256r1' },
+      { status: 400 }
+    );
+  }
+
+  if (invokeDetails.contractId !== user.walletContractId) {
+    return NextResponse.json(
+      { error: 'Transaction is not for this wallet contract' },
+      { status: 403 }
+    );
+  }
+
+  const invokeArgs = getInvokeContractArgs(op);
+  if (!invokeArgs || invokeArgs.length < 2) {
+    return NextResponse.json(
+      { error: 'addSecp256r1 arguments are malformed' },
+      { status: 400 }
+    );
+  }
+
+  const expectedKeyId = Buffer.from(credential.id, 'base64url');
+  const expectedPublicKey = Buffer.from(credential.publicKey);
+  const signedKeyId = scValToBytes(invokeArgs[0]);
+  const signedPublicKey = scValToBytes(invokeArgs[1]);
+
+  if (!signedKeyId.equals(expectedKeyId) || !signedPublicKey.equals(expectedPublicKey)) {
+    return NextResponse.json(
+      { error: 'Signed signer does not match the registered passkey' },
       { status: 400 }
     );
   }

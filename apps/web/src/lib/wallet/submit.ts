@@ -197,6 +197,13 @@ export function scValToAddress(scVal: xdr.ScVal): string {
   return Address.fromScVal(scVal).toString();
 }
 
+/**
+ * Read a Bytes ScVal as a Buffer.
+ */
+export function scValToBytes(scVal: xdr.ScVal): Buffer {
+  return Buffer.from(scVal.bytes());
+}
+
 function getAddressCredentials(
   credentials: xdr.SorobanCredentials
 ): xdr.SorobanAddressCredentials | null {
