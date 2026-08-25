@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
 import {
   generateRecoveryPhrase,
@@ -13,6 +14,7 @@ const ONBOARDING_KEY_ID_KEY = 'pocketlet:onboarding:keyIdBase64';
 const ONBOARDING_CONTRACT_ID_KEY = 'pocketlet:onboarding:contractId';
 
 export default function SignupPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'email' | 'code' | 'passkey'>('email');
@@ -168,7 +170,7 @@ export default function SignupPage() {
         return;
       }
 
-      window.location.href = '/recovery-phrase';
+      router.push('/recovery-phrase');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to register recovery signer');
     } finally {

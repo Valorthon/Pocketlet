@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Copy, Check, Download } from 'lucide-react';
 import { splitRecoveryPhrase } from '@/lib/wallet/recovery';
 
@@ -13,6 +14,7 @@ interface ConfirmationPrompt {
 }
 
 export default function RecoveryPhrasePage() {
+  const router = useRouter();
   const [phrase, setPhrase] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -62,10 +64,14 @@ export default function RecoveryPhrasePage() {
 
   const startConfirmation = () => {
     if (!phrase) return;
-    // Pick 3 random distinct indices.
+    // Pick 3 random distinct indices using a CSPRNG.
     const indices = new Set<number>();
-    while (indices.size < 3) {
-      indices.add(Math.floor(Math.random() * words.length));
+    const randomBytes = new Uint32Array(12);
+    window.crypto.getRandomValues(randomBytes);
+    let byteIndex = 0;
+    while (indices.size < 3 && byteIndex < randomBytes.length) {
+      indices.add(randomBytes[byteIndex] % words.length);
+      byteIndex += 1;
     }
     const sorted = Array.from(indices).sort((a, b) => a - b);
     setPrompts(
@@ -103,7 +109,7 @@ export default function RecoveryPhrasePage() {
       }
 
       window.sessionStorage.removeItem(ONBOARDING_PHRASE_KEY);
-      window.location.href = '/backup-passkey';
+      router.push('/backup-passkey');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Confirmation failed');
     } finally {

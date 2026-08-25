@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Read this file, `SPEC.md`, `FUTURE_VERSIONS.md`, `README.md`, and `TESTNET.md` before any planning or coding. The monorepo structure is scaffolded and the project is in active V1 development.
+Read this file, `SPEC.md`, `FUTURE_VERSIONS.md`, `README.md`, `TESTNET.md`, and `COMPETITIVE_ANALYSIS.md` before any planning or coding. The monorepo structure is scaffolded and the project is in active V1 development.
 
 ## Primary Directives
 

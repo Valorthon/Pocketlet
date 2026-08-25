@@ -84,29 +84,30 @@ function makeBalanceChange(
 describe('transaction parser', () => {
   it('classifies a received payment', () => {
     const op = makePaymentOp({ from: OTHER_ADDRESS, to: WALLET_ADDRESS });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx).not.toBeNull();
     expect(tx?.type).toBe('receive');
     expect(tx?.amount).toBe('10');
+    expect(tx?.ledger).toBe(12345);
     expect(tx?.sender).toBe(OTHER_ADDRESS);
   });
 
   it('classifies a sent payment', () => {
     const op = makePaymentOp({ from: WALLET_ADDRESS, to: OTHER_ADDRESS });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx?.type).toBe('send');
     expect(tx?.recipient).toBe(OTHER_ADDRESS);
   });
 
   it('ignores payments not involving the wallet', () => {
     const op = makePaymentOp({ from: OTHER_ADDRESS, to: OTHER_ADDRESS });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx).toBeNull();
   });
 
   it('classifies a swap invoke operation as unknown', () => {
     const op = makeInvokeOp({ function: 'swap' });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx).toBeNull();
   });
 
@@ -161,7 +162,7 @@ describe('transaction parser', () => {
         }),
       ],
     });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx?.type).toBe('send');
     expect(tx?.asset).toBe('USDC');
     expect(tx?.amount).toBe('2.5');
@@ -180,7 +181,7 @@ describe('transaction parser', () => {
       amount: '100000000',
       source_amount: '25000000',
     } as unknown as Horizon.ServerApi.PathPaymentOperationRecord;
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx?.type).toBe('send');
     expect(tx?.asset).toBe('USDC');
     expect(tx?.amount).toBe('2.5');

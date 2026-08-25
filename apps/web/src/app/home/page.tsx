@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { RefreshCw } from 'lucide-react';
 import PinModal from '@/components/PinModal';
@@ -13,12 +14,14 @@ interface BalanceData {
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const [data, setData] = useState<BalanceData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasPin, setHasPin] = useState<boolean | null>(null);
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinToast, setPinToast] = useState<string | null>(null);
 
   const fetchBalance = async (isBackground = false) => {
     if (!isBackground) {
@@ -26,7 +29,7 @@ export default function HomePage() {
     }
     const res = await fetch('/api/wallet/balance');
     if (res.status === 401) {
-      window.location.href = '/login';
+      router.push('/login');
       return;
     }
     if (!res.ok) {
@@ -57,9 +60,17 @@ export default function HomePage() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!pinToast) {
+      return;
+    }
+    const id = setTimeout(() => setPinToast(null), 3000);
+    return () => clearTimeout(id);
+  }, [pinToast]);
+
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.href = '/login';
+    router.push('/login');
   };
 
   const format = (value: string) => {
@@ -148,16 +159,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="mt-6 rounded-2xl bg-white p-6 shadow-lg">
-          <h2 className="mb-2 text-sm font-semibold text-gray-700">Your Stellar address</h2>
-          <div className="break-all rounded-lg bg-gray-100 p-3 text-sm font-mono text-gray-700">
-            {data.stellarAddress}
-          </div>
-          <p className="mt-2 text-xs text-gray-500">
-            Share this address to receive USDC or XLM from any Stellar wallet.
-          </p>
-        </div>
-
         <Link
           href="/transactions"
           className="mt-6 block rounded-2xl bg-white p-6 shadow-lg transition hover:shadow-md"
@@ -198,12 +199,18 @@ export default function HomePage() {
         </div>
       </div>
 
+      {pinToast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-lg">
+          {pinToast}
+        </div>
+      )}
+
       <PinModal
         isOpen={pinModalOpen}
         title="Test PIN confirmation"
         onConfirm={() => {
           setPinModalOpen(false);
-          alert('PIN confirmed successfully');
+          setPinToast('PIN confirmed successfully');
         }}
         onCancel={() => setPinModalOpen(false)}
       />

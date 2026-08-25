@@ -20,9 +20,6 @@ importers:
       '@noble/hashes':
         specifier: ^2.3.0
         version: 2.3.0
-      '@scure/bip32':
-        specifier: ^2.3.0
-        version: 2.3.0
       '@simplewebauthn/browser':
         specifier: ^13.1.0
         version: 13.3.0
@@ -437,10 +434,6 @@ packages:
     resolution: {integrity: sha512-gbKGcRUYIjA3/zCCNaWDciTMFI0dCkvou3TL8Zmy5Nc7sJ47a0jtOeZoTaMxkuqRo9cRhjOdZJXegxYE5FN/xw==}
     engines: {node: ^14.21.3 || >=16}
 
-  '@noble/curves@2.3.0':
-    resolution: {integrity: sha512-v7cY+4oWYPQszRj6ZFGzTVL7uP2TaLo1xMhWHzYC5wj0ZhOXQ5x+sBre8rF3hi8cAoi0bh1qXoovoOkdFtvqEg==}
-    engines: {node: '>= 20.19.0'}
-
   '@noble/ed25519@3.1.0':
     resolution: {integrity: sha512-pfcObRY3CtvwfaG9Mt5XqZdKmAQppl37tHUeuBhDUbiwJBCVY4/A4lbMvb1xKhMDx96AqAqZpMWuBX1HulhX4g==}
 
@@ -612,12 +605,6 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
-
-  '@scure/base@2.3.0':
-    resolution: {integrity: sha512-NsG6Y03tY6R5BUis4FdVtHVkur0U6FOzskgs9ZXNl78CUc9fkZ78HmENUle1nSOkCasDmbubmWD9qwB7mm4PZA==}
-
-  '@scure/bip32@2.3.0':
-    resolution: {integrity: sha512-mMPjNcXxJsvNveIgRIXrnwd4omu0wdXo4JowAUZO7/82+/bpAwVltclx6MG6nv2M3dA6IbfVv4xwWxaREm3OcA==}
 
   '@simplewebauthn/browser@13.3.0':
     resolution: {integrity: sha512-BE/UWv6FOToAdVk0EokzkqQQDOWtNydYlY6+OrmiZ5SCNmb41VehttboTetUM3T/fr6EAFYVXjz4My2wg230rQ==}
@@ -2218,10 +2205,6 @@ snapshots:
     dependencies:
       '@noble/hashes': 1.8.0
 
-  '@noble/curves@2.3.0':
-    dependencies:
-      '@noble/hashes': 2.3.0
-
   '@noble/ed25519@3.1.0': {}
 
   '@noble/hashes@1.8.0': {}
@@ -2409,14 +2392,6 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
-
-  '@scure/base@2.3.0': {}
-
-  '@scure/bip32@2.3.0':
-    dependencies:
-      '@noble/curves': 2.3.0
-      '@noble/hashes': 2.3.0
-      '@scure/base': 2.3.0
 
   '@simplewebauthn/browser@13.3.0': {}
 

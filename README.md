@@ -45,7 +45,7 @@ Swaps are currently disabled in the UI. A DEX integration will be added in a fut
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 22+ (LTS recommended)
-- [pnpm](https://pnpm.io/) 11.13.1+ (the monorepo uses `packageManager: pnpm@11.13.1`)
+- [pnpm](https://pnpm.io/) 11.13.1 (the monorepo uses `packageManager: pnpm@11.13.1`)
 - A Stellar Testnet wallet (e.g., [Laboratory](https://laboratory.stellar.org/#testnet), [LOBSTR](https://lobstr.co/), or a testnet-funded account) for end-to-end testing
 
 ## Install

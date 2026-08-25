@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   WalletTransaction,
@@ -9,6 +10,7 @@ import {
 } from '@/lib/wallet/transactions';
 
 export default function TransactionsPage() {
+  const router = useRouter();
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +18,7 @@ export default function TransactionsPage() {
   const fetchTransactions = async () => {
     const res = await fetch('/api/wallet/transactions');
     if (res.status === 401) {
-      window.location.href = '/login';
+      router.push('/login');
       return;
     }
     if (!res.ok) {

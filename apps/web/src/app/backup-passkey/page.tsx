@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
 
 const ONBOARDING_KEY_ID_KEY = 'pocketlet:onboarding:keyIdBase64';
 const ONBOARDING_CONTRACT_ID_KEY = 'pocketlet:onboarding:contractId';
 
 export default function BackupPasskeyPage() {
+  const router = useRouter();
   const [email, setEmail] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -16,7 +18,7 @@ export default function BackupPasskeyPage() {
     fetch('/api/auth/pin')
       .then((res) => {
         if (res.status === 401) {
-          window.location.href = '/login';
+          router.push('/login');
           return null;
         }
         return res.json();
@@ -36,7 +38,7 @@ export default function BackupPasskeyPage() {
 
   const redirectToPinSetup = () => {
     clearOnboardingState();
-    window.location.href = '/pin/setup';
+    router.push('/pin/setup');
   };
 
   const registerBackupPasskey = async () => {

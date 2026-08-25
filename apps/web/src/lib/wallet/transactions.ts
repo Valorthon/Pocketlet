@@ -1,6 +1,9 @@
 import { Horizon } from '@stellar/stellar-sdk';
+import { isProductionNetwork } from './network';
 
-export const HORIZON_EXPLORER_URL = 'https://stellar.expert/explorer/testnet/tx';
+export const HORIZON_EXPLORER_URL = isProductionNetwork()
+  ? 'https://stellar.expert/explorer/public/tx'
+  : 'https://stellar.expert/explorer/testnet/tx';
 
 export type TransactionType = 'receive' | 'send' | 'unknown';
 
@@ -53,7 +56,8 @@ function formatAmountFromStroops(amount: string | undefined): string {
 
 function parsePaymentOperation(
   op: Horizon.ServerApi.PaymentOperationRecord,
-  walletAddress: string
+  walletAddress: string,
+  ledger: number
 ): WalletTransaction | null {
   const isReceive = op.to === walletAddress;
   const isSend = op.from === walletAddress;
@@ -70,7 +74,7 @@ function parsePaymentOperation(
     type: isReceive ? 'receive' : 'send',
     status: op.transaction_successful ? 'success' : 'failed',
     createdAt: op.created_at,
-    ledger: 0,
+    ledger,
     fee: '0',
     asset: assetCode,
     amount,
@@ -81,7 +85,8 @@ function parsePaymentOperation(
 
 function parsePathPaymentOperation(
   op: Horizon.ServerApi.PathPaymentOperationRecord,
-  walletAddress: string
+  walletAddress: string,
+  ledger: number
 ): WalletTransaction | null {
   const isReceive = op.to === walletAddress;
   const isSend = op.from === walletAddress;
@@ -98,7 +103,7 @@ function parsePathPaymentOperation(
     type: isReceive ? 'receive' : 'send',
     status: op.transaction_successful ? 'success' : 'failed',
     createdAt: op.created_at,
-    ledger: 0,
+    ledger,
     fee: '0',
     asset: isReceive ? destAsset : sourceAsset,
     amount: formatAmountFromStroops(isReceive ? op.amount : op.source_amount),
@@ -122,7 +127,8 @@ function describeAssetFromBalanceChange(
 function parseInvokeHostFunctionOperation(
   op: Horizon.ServerApi.InvokeHostFunctionOperationRecord,
   walletAddress: string,
-  usdcContractId: string
+  usdcContractId: string,
+  ledger: number
 ): WalletTransaction | null {
   if (op.source_account !== walletAddress) {
     return null;
@@ -146,7 +152,7 @@ function parseInvokeHostFunctionOperation(
       type: 'send',
       status: op.transaction_successful ? 'success' : 'failed',
       createdAt: op.created_at,
-      ledger: 0,
+      ledger,
       fee: '0',
       asset: outgoing
         ? describeAssetFromBalanceChange(outgoing)
@@ -162,25 +168,29 @@ function parseInvokeHostFunctionOperation(
 export function classifyOperation(
   op: Horizon.ServerApi.OperationRecord,
   walletAddress: string,
-  usdcContractId: string
+  usdcContractId: string,
+  ledger: number
 ): WalletTransaction | null {
   switch (op.type) {
     case 'payment':
       return parsePaymentOperation(
         op as Horizon.ServerApi.PaymentOperationRecord,
-        walletAddress
+        walletAddress,
+        ledger
       );
     case 'path_payment_strict_receive':
     case 'path_payment_strict_send':
       return parsePathPaymentOperation(
         op as Horizon.ServerApi.PathPaymentOperationRecord,
-        walletAddress
+        walletAddress,
+        ledger
       );
     case 'invoke_host_function':
       return parseInvokeHostFunctionOperation(
         op as Horizon.ServerApi.InvokeHostFunctionOperationRecord,
         walletAddress,
-        usdcContractId
+        usdcContractId,
+        ledger
       );
     default:
       return null;
@@ -199,7 +209,7 @@ export function buildTransactionDetails(
 
   let primary: WalletTransaction | null = null;
   for (const op of ops) {
-    const parsed = classifyOperation(op, walletAddress, usdcContractId);
+    const parsed = classifyOperation(op, walletAddress, usdcContractId, tx.ledger_attr);
     if (parsed) {
       primary = parsed;
       break;
