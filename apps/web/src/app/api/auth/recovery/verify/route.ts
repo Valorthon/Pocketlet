@@ -25,14 +25,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const user = getUserByEmail(normalizedEmail);
+    const user = await getUserByEmail(normalizedEmail);
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     let updatedUser;
     try {
-      updatedUser = verifyRecoveryCode(normalizedEmail, code);
+      updatedUser = await verifyRecoveryCode(normalizedEmail, code);
     } catch {
       return NextResponse.json(
         { error: 'Invalid or expired recovery code' },

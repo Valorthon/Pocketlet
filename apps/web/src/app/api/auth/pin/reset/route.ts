@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   if (body.action === 'request') {
     const code = generateCode();
-    setPinResetCode(user.email, code);
+    await setPinResetCode(user.email, code);
     // Testnet only: return the code so the user can reset without a mail server.
     // In production, send this via email and do not return it in the response.
     return NextResponse.json({
@@ -58,12 +58,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!verifyPinResetCode(user.email, code)) {
+    if (!(await verifyPinResetCode(user.email, code))) {
       return NextResponse.json({ error: 'Invalid reset code' }, { status: 401 });
     }
 
-    setPin(user.email, pin);
-    clearPinResetCode(user.email);
+    await setPin(user.email, pin);
+    await clearPinResetCode(user.email);
     return NextResponse.json({ success: true });
   }
 

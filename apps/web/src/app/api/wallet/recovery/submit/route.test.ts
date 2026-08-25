@@ -1,8 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { xdr } from '@stellar/stellar-sdk';
 import { POST } from './route';
 import {
@@ -21,7 +18,6 @@ import {
 } from '@/lib/auth/recovery-token';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 vi.mock('next/headers', () => ({
@@ -80,17 +76,8 @@ vi.mock('@/lib/wallet/submit', () => ({
 }));
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-recovery-submit-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   process.env.RECOVERY_WAITING_PERIOD_MS = '0';
   cookieJar = {};
-});
-
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  delete process.env.RECOVERY_WAITING_PERIOD_MS;
-  vi.clearAllMocks();
 });
 
 function createRequest(body: unknown) {
@@ -100,20 +87,20 @@ function createRequest(body: unknown) {
   });
 }
 
-function makeRecoverableUser(email: string) {
-  createUser(email, '000000');
-  setEmailVerified(email);
-  setCredential(email, {
+async function makeRecoverableUser(email: string) {
+  await createUser(email, '000000');
+  await setEmailVerified(email);
+  await setCredential(email, {
     id: 'primary-key-id',
     publicKey: 'cHVibGljLWtleQ',
     counter: 0,
   });
-  setWallet(email, {
+  await setWallet(email, {
     walletContractId: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
     stellarAddress: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
     primaryPasskeyKeyId: 'primary-key-id',
   });
-  setRecoveryPublicKey(
+  await setRecoveryPublicKey(
     email,
     'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP'
   );
@@ -136,13 +123,13 @@ describe('POST /api/wallet/recovery/submit', () => {
   });
 
   it('submits the recovery transaction and starts a session', async () => {
-    makeRecoverableUser('alice@example.com');
-    setRecoveryInitiated(
+    await makeRecoverableUser('alice@example.com');
+    await setRecoveryInitiated(
       'alice@example.com',
       '123456',
       new Date(Date.now() + 60000).toISOString()
     );
-    verifyRecoveryCode('alice@example.com', '123456');
+    await verifyRecoveryCode('alice@example.com', '123456');
     await setRecoverySession('alice@example.com');
 
     const req = createRequest({
@@ -163,7 +150,7 @@ describe('POST /api/wallet/recovery/submit', () => {
     expect(body.verified).toBe(true);
     expect(body.hash).toBe('recovery-tx-hash');
 
-    const user = getUserByEmail('alice@example.com');
+    const user = await getUserByEmail('alice@example.com');
     expect(user?.primaryPasskeyKeyId).toBe('new-key-id');
     expect(user?.credential?.id).toBe('new-key-id');
     expect(cookieJar[SESSION_COOKIE_NAME]).toBeDefined();
@@ -171,13 +158,13 @@ describe('POST /api/wallet/recovery/submit', () => {
   });
 
   it('rejects a mismatched keyId', async () => {
-    makeRecoverableUser('alice@example.com');
-    setRecoveryInitiated(
+    await makeRecoverableUser('alice@example.com');
+    await setRecoveryInitiated(
       'alice@example.com',
       '123456',
       new Date(Date.now() + 60000).toISOString()
     );
-    verifyRecoveryCode('alice@example.com', '123456');
+    await verifyRecoveryCode('alice@example.com', '123456');
     await setRecoverySession('alice@example.com');
 
     const req = createRequest({
@@ -196,13 +183,13 @@ describe('POST /api/wallet/recovery/submit', () => {
       functionName: 'transfer',
     });
 
-    makeRecoverableUser('alice@example.com');
-    setRecoveryInitiated(
+    await makeRecoverableUser('alice@example.com');
+    await setRecoveryInitiated(
       'alice@example.com',
       '123456',
       new Date(Date.now() + 60000).toISOString()
     );
-    verifyRecoveryCode('alice@example.com', '123456');
+    await verifyRecoveryCode('alice@example.com', '123456');
     await setRecoverySession('alice@example.com');
 
     const req = createRequest({
@@ -221,13 +208,13 @@ describe('POST /api/wallet/recovery/submit', () => {
       { bytes: () => Buffer.from('attacker-public-key') } as xdr.ScVal,
     ]);
 
-    makeRecoverableUser('alice@example.com');
-    setRecoveryInitiated(
+    await makeRecoverableUser('alice@example.com');
+    await setRecoveryInitiated(
       'alice@example.com',
       '123456',
       new Date(Date.now() + 60000).toISOString()
     );
-    verifyRecoveryCode('alice@example.com', '123456');
+    await verifyRecoveryCode('alice@example.com', '123456');
     await setRecoverySession('alice@example.com');
 
     const req = createRequest({

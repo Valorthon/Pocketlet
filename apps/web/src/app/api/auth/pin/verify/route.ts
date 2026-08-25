@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const valid = verifyPinForUser(user.email, pin);
+  const valid = await verifyPinForUser(user.email, pin);
   if (!valid) {
     return NextResponse.json({ error: 'Incorrect PIN' }, { status: 401 });
   }

@@ -8,6 +8,7 @@ import {
   setCredential,
   setWallet,
 } from '@/lib/auth/store';
+import { incrementMetric } from '@/lib/metrics';
 import { submitSignedTransaction } from '@/lib/wallet/submit';
 
 export interface DeployRequest {
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user || !user.emailVerified) {
     return NextResponse.json(
       { error: 'User not found or email not verified' },
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    setCredential(user.email, {
+    await setCredential(user.email, {
       id: credential.id,
       publicKey: Buffer.from(credential.publicKey).toString('base64url'),
       counter: credential.counter,
@@ -117,11 +118,13 @@ export async function POST(request: NextRequest) {
 
     const { hash } = await submitSignedTransaction(signedTx);
 
-    setWallet(user.email, {
+    await setWallet(user.email, {
       walletContractId: contractId,
       stellarAddress: contractId,
       primaryPasskeyKeyId: credential.id,
     });
+
+    await incrementMetric('wallet.deploy.success');
 
     return NextResponse.json({
       email: user.email,
@@ -132,6 +135,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Wallet deployment failed';
     console.error('Wallet deployment failed:', err);
+    await incrementMetric('wallet.deploy.failure');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

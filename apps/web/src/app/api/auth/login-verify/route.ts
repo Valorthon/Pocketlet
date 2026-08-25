@@ -1,4 +1,7 @@
-import { verifyAuthenticationResponse } from '@simplewebauthn/server';
+import {
+  verifyAuthenticationResponse,
+  type AuthenticatorTransportFuture,
+} from '@simplewebauthn/server';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/browser';
 import { NextRequest, NextResponse } from 'next/server';
 import { ORIGIN, RP_ID } from '@/lib/auth/config';
@@ -7,6 +10,7 @@ import {
   updateCredentialCounter,
   updateBackupCredentialCounter,
 } from '@/lib/auth/store';
+import { incrementMetric } from '@/lib/metrics';
 import { createSessionToken, cookieOptions } from '@/lib/auth/session';
 
 export async function POST(request: NextRequest) {
@@ -24,7 +28,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const user = getUserByEmail(email);
+  const user = await getUserByEmail(email);
   if (!user || !user.credential) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
@@ -55,7 +59,7 @@ export async function POST(request: NextRequest) {
       id: storedCredential.id,
       publicKey: Buffer.from(storedCredential.publicKey, 'base64url'),
       counter: storedCredential.counter,
-      transports: storedCredential.transports,
+      transports: storedCredential.transports as AuthenticatorTransportFuture[] | undefined,
     };
 
     const verification = await verifyAuthenticationResponse({
@@ -75,13 +79,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (isBackup) {
-      updateBackupCredentialCounter(
+      await updateBackupCredentialCounter(
         email,
         verification.authenticationInfo.newCounter
       );
     } else {
-      updateCredentialCounter(email, verification.authenticationInfo.newCounter);
+      await updateCredentialCounter(email, verification.authenticationInfo.newCounter);
     }
+
+    await incrementMetric('auth.login.completed');
 
     const token = await createSessionToken({ email });
     const res = NextResponse.json({ email, verified: true });

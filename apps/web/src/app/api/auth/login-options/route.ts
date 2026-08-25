@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Email is required' }, { status: 400 });
   }
 
-  const user = getUserByEmail(email);
+  const user = await getUserByEmail(email);
   if (!user || !user.credential) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
@@ -20,14 +20,14 @@ export async function POST(request: NextRequest) {
   const allowCredentials: { id: string; transports?: AuthenticatorTransportFuture[] }[] = [
     {
       id: user.credential.id,
-      transports: user.credential.transports,
+      transports: user.credential.transports as AuthenticatorTransportFuture[] | undefined,
     },
   ];
 
   if (user.hasBackupPasskey && user.backupCredential) {
     allowCredentials.push({
       id: user.backupCredential.id,
-      transports: user.backupCredential.transports,
+      transports: user.backupCredential.transports as AuthenticatorTransportFuture[] | undefined,
     });
   }
 
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     userVerification: 'preferred',
   });
 
-  setPendingChallenge(email, options.challenge);
+  await setPendingChallenge(email, options.challenge);
 
   return NextResponse.json(options);
 }

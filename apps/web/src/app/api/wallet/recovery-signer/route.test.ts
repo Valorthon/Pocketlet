@@ -1,8 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Keypair, xdr } from '@stellar/stellar-sdk';
 import { POST } from './route';
 import {
@@ -21,7 +18,6 @@ import {
   submitSignedTransaction,
 } from '@/lib/wallet/submit';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 const CONTRACT_ID = 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM';
@@ -55,8 +51,6 @@ vi.mock('next/headers', () => ({
 vi.mock('@/lib/wallet/submit');
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-recovery-signer-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
 
   vi.mocked(parseSorobanTransaction).mockImplementation(
@@ -83,12 +77,6 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
-});
-
 function createRequest(body: unknown, token?: string) {
   if (token) {
     cookieJar[SESSION_COOKIE_NAME] = token;
@@ -100,14 +88,14 @@ function createRequest(body: unknown, token?: string) {
 }
 
 async function createUserWithWallet(email: string) {
-  createUser(email, '000000');
-  setEmailVerified(email);
-  setCredential(email, {
+  await createUser(email, '000000');
+  await setEmailVerified(email);
+  await setCredential(email, {
     id: 'primary-key-id',
     publicKey: 'cHVibGljLWtleQ',
     counter: 0,
   });
-  setWallet(email, {
+  await setWallet(email, {
     walletContractId: CONTRACT_ID,
     stellarAddress: CONTRACT_ID,
     primaryPasskeyKeyId: 'primary-key-id',
@@ -126,8 +114,8 @@ describe('POST /api/wallet/recovery-signer', () => {
   });
 
   it('returns 404 when the wallet is not deployed', async () => {
-    createUser('alice@example.com', '000000');
-    setEmailVerified('alice@example.com');
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
     const token = await createSessionToken({ email: 'alice@example.com' });
 
     const req = createRequest(
@@ -165,7 +153,7 @@ describe('POST /api/wallet/recovery-signer', () => {
     expect(body.recoveryPublicKey).toBe(RECOVERY_PUBLIC_KEY);
     expect(body.hash).toBe('recovery-signer-hash');
 
-    const user = getUserByEmail('alice@example.com');
+    const user = await getUserByEmail('alice@example.com');
     expect(user?.recoveryPublicKey).toBe(RECOVERY_PUBLIC_KEY);
   });
 

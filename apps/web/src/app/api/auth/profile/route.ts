@@ -16,7 +16,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
@@ -37,7 +37,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const updated = setProfile(user.email, profile);
+    const updated = await setProfile(user.email, profile);
     return NextResponse.json({
       email: updated.email,
       username: updated.username,
