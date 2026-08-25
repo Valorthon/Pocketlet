@@ -30,16 +30,6 @@ export interface TransactionDetails extends WalletTransaction {
 const XLM_ASSET = 'XLM';
 const USDC_ASSET = 'USDC';
 
-function describeAsset(contractId: string | undefined, usdcContractId: string): string {
-  if (!contractId) {
-    return XLM_ASSET;
-  }
-  if (contractId === usdcContractId) {
-    return USDC_ASSET;
-  }
-  return `contract:${contractId.slice(0, 8)}...`;
-}
-
 function formatAmountFromStroops(amount: string | undefined): string {
   if (!amount) {
     return '0';
@@ -127,38 +117,40 @@ function describeAssetFromBalanceChange(
 function parseInvokeHostFunctionOperation(
   op: Horizon.ServerApi.InvokeHostFunctionOperationRecord,
   walletAddress: string,
-  usdcContractId: string,
   ledger: number
 ): WalletTransaction | null {
-  if (op.source_account !== walletAddress) {
-    return null;
-  }
-
-  // Heuristic: look at the invoked function name and the invoked contract to
-  // classify the operation. This is intentionally simple for the V1 testnet.
+  // In fee-sponsored passkey transactions the operation source is the fee
+  // payer, not the wallet. Detect wallet involvement through SAC balance
+  // changes emitted by Horizon for the invoked contract.
   const functionName = op.function;
-  const contract = op.address;
 
   if (functionName === 'transfer') {
-    // Horizon reports SAC balance changes as classic asset entries. Find the
-    // outgoing change to determine the real asset and amount.
     const outgoing = op.asset_balance_changes.find(
       (change) => change.from === walletAddress && change.to !== walletAddress
     );
+    const incoming = op.asset_balance_changes.find(
+      (change) => change.to === walletAddress && change.from !== walletAddress
+    );
+
+    const change = outgoing ?? incoming;
+    if (!change) {
+      return null;
+    }
+
+    const isReceive = !outgoing && Boolean(incoming);
 
     return {
       id: op.transaction_hash,
       hash: op.transaction_hash,
-      type: 'send',
+      type: isReceive ? 'receive' : 'send',
       status: op.transaction_successful ? 'success' : 'failed',
       createdAt: op.created_at,
       ledger,
       fee: '0',
-      asset: outgoing
-        ? describeAssetFromBalanceChange(outgoing)
-        : describeAsset(contract, usdcContractId),
-      amount: outgoing ? formatAmountFromStroops(outgoing.amount) : '0',
-      recipient: outgoing?.to,
+      asset: describeAssetFromBalanceChange(change),
+      amount: formatAmountFromStroops(change.amount),
+      recipient: isReceive ? undefined : change.to,
+      sender: isReceive ? change.from : undefined,
     };
   }
 
@@ -189,7 +181,6 @@ export function classifyOperation(
       return parseInvokeHostFunctionOperation(
         op as Horizon.ServerApi.InvokeHostFunctionOperationRecord,
         walletAddress,
-        usdcContractId,
         ledger
       );
     default:

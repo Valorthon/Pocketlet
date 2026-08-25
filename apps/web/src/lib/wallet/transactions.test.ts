@@ -9,8 +9,16 @@ import {
 } from './transactions';
 
 const USDC_CONTRACT_ID = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA';
-const WALLET_ADDRESS = 'GABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNO';
-const OTHER_ADDRESS = 'GBBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNO';
+const WALLET_CONTRACT_ID =
+  'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM';
+const OTHER_CONTRACT_ID =
+  'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDP';
+const CLASSIC_WALLET_ADDRESS =
+  'GABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNO';
+const CLASSIC_OTHER_ADDRESS =
+  'GBBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNO';
+const FEE_PAYER_ADDRESS =
+  'GCCVPYFOHY7B7M4SCIQRMX2VTZVOB7VDJBJGN4NVBHPQAJLZS4KKJLPO';
 
 function makeTx(overrides: Partial<Horizon.ServerApi.TransactionRecord> = {}) {
   return {
@@ -19,7 +27,7 @@ function makeTx(overrides: Partial<Horizon.ServerApi.TransactionRecord> = {}) {
     created_at: '2026-07-20T10:00:00Z',
     ledger: 12345,
     fee_charged: '100',
-    source_account: WALLET_ADDRESS,
+    source_account: CLASSIC_WALLET_ADDRESS,
     memo_type: 'none',
     memo: '',
     result_code: 0,
@@ -38,9 +46,9 @@ function makePaymentOp(
     transaction_hash: 'txhash123',
     transaction_successful: true,
     created_at: '2026-07-20T10:00:00Z',
-    source_account: WALLET_ADDRESS,
-    from: OTHER_ADDRESS,
-    to: WALLET_ADDRESS,
+    source_account: CLASSIC_WALLET_ADDRESS,
+    from: CLASSIC_OTHER_ADDRESS,
+    to: CLASSIC_WALLET_ADDRESS,
     amount: '100000000',
     asset_type: 'native',
     asset_code: undefined,
@@ -58,10 +66,10 @@ function makeInvokeOp(
     transaction_hash: 'txhash123',
     transaction_successful: true,
     created_at: '2026-07-20T10:00:00Z',
-    source_account: WALLET_ADDRESS,
+    source_account: FEE_PAYER_ADDRESS,
     function: 'transfer',
     parameters: [],
-    address: 'CADDR',
+    address: USDC_CONTRACT_ID,
     salt: 'salt',
     asset_balance_changes: [],
     ...overrides,
@@ -74,8 +82,8 @@ function makeBalanceChange(
   return {
     asset_type: 'native',
     type: 'transfer',
-    from: WALLET_ADDRESS,
-    to: OTHER_ADDRESS,
+    from: WALLET_CONTRACT_ID,
+    to: OTHER_CONTRACT_ID,
     amount: '150000000',
     ...overrides,
   };
@@ -83,38 +91,75 @@ function makeBalanceChange(
 
 describe('transaction parser', () => {
   it('classifies a received payment', () => {
-    const op = makePaymentOp({ from: OTHER_ADDRESS, to: WALLET_ADDRESS });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
+    const op = makePaymentOp({
+      from: CLASSIC_OTHER_ADDRESS,
+      to: CLASSIC_WALLET_ADDRESS,
+    });
+    const tx = classifyOperation(
+      op,
+      CLASSIC_WALLET_ADDRESS,
+      USDC_CONTRACT_ID,
+      12345
+    );
     expect(tx).not.toBeNull();
     expect(tx?.type).toBe('receive');
     expect(tx?.amount).toBe('10');
     expect(tx?.ledger).toBe(12345);
-    expect(tx?.sender).toBe(OTHER_ADDRESS);
+    expect(tx?.sender).toBe(CLASSIC_OTHER_ADDRESS);
   });
 
   it('classifies a sent payment', () => {
-    const op = makePaymentOp({ from: WALLET_ADDRESS, to: OTHER_ADDRESS });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
+    const op = makePaymentOp({
+      from: CLASSIC_WALLET_ADDRESS,
+      to: CLASSIC_OTHER_ADDRESS,
+    });
+    const tx = classifyOperation(
+      op,
+      CLASSIC_WALLET_ADDRESS,
+      USDC_CONTRACT_ID,
+      12345
+    );
     expect(tx?.type).toBe('send');
-    expect(tx?.recipient).toBe(OTHER_ADDRESS);
+    expect(tx?.recipient).toBe(CLASSIC_OTHER_ADDRESS);
   });
 
   it('ignores payments not involving the wallet', () => {
-    const op = makePaymentOp({ from: OTHER_ADDRESS, to: OTHER_ADDRESS });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
+    const op = makePaymentOp({
+      from: CLASSIC_OTHER_ADDRESS,
+      to: CLASSIC_OTHER_ADDRESS,
+    });
+    const tx = classifyOperation(
+      op,
+      CLASSIC_WALLET_ADDRESS,
+      USDC_CONTRACT_ID,
+      12345
+    );
     expect(tx).toBeNull();
   });
 
   it('classifies a swap invoke operation as unknown', () => {
     const op = makeInvokeOp({ function: 'swap' });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
+    const tx = classifyOperation(
+      op,
+      WALLET_CONTRACT_ID,
+      USDC_CONTRACT_ID,
+      12345
+    );
     expect(tx).toBeNull();
   });
 
   it('builds transaction details from a receive payment', () => {
     const tx = makeTx();
-    const op = makePaymentOp({ from: OTHER_ADDRESS, to: WALLET_ADDRESS });
-    const details = buildTransactionDetails(tx, [op], WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const op = makePaymentOp({
+      from: CLASSIC_OTHER_ADDRESS,
+      to: CLASSIC_WALLET_ADDRESS,
+    });
+    const details = buildTransactionDetails(
+      tx,
+      [op],
+      CLASSIC_WALLET_ADDRESS,
+      USDC_CONTRACT_ID
+    );
 
     expect(details.hash).toBe('txhash123');
     expect(details.type).toBe('receive');
@@ -123,20 +168,33 @@ describe('transaction parser', () => {
     expect(details.amount).toBe('10');
     expect(details.asset).toBe('XLM');
     expect(details.operationCount).toBe(1);
-    expect(details.sourceAccount).toBe(WALLET_ADDRESS);
+    expect(details.sourceAccount).toBe(CLASSIC_WALLET_ADDRESS);
   });
 
   it('marks failed transactions', () => {
     const tx = makeTx({ successful: false });
     const op = makePaymentOp();
-    const details = buildTransactionDetails(tx, [op], WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const details = buildTransactionDetails(
+      tx,
+      [op],
+      CLASSIC_WALLET_ADDRESS,
+      USDC_CONTRACT_ID
+    );
     expect(details.status).toBe('failed');
   });
 
   it('falls back to unknown when no matching operation', () => {
     const tx = makeTx();
-    const op = makeInvokeOp({ function: 'set_owner', source_account: OTHER_ADDRESS });
-    const details = buildTransactionDetails(tx, [op], WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const op = makeInvokeOp({
+      function: 'set_owner',
+      source_account: OTHER_CONTRACT_ID,
+    });
+    const details = buildTransactionDetails(
+      tx,
+      [op],
+      WALLET_CONTRACT_ID,
+      USDC_CONTRACT_ID
+    );
     expect(details.type).toBe('unknown');
   });
 
@@ -147,11 +205,25 @@ describe('transaction parser', () => {
   });
 
   it('formats transaction descriptions', () => {
-    expect(formatTransactionDescription({ ...makePaymentOp(), type: 'receive', amount: '10', asset: 'XLM' } as never)).toBe('Received 10 XLM');
-    expect(formatTransactionDescription({ ...makePaymentOp(), type: 'send', amount: '5', asset: 'USDC' } as never)).toBe('Sent 5 USDC');
+    expect(
+      formatTransactionDescription({
+        ...makePaymentOp(),
+        type: 'receive',
+        amount: '10',
+        asset: 'XLM',
+      } as never)
+    ).toBe('Received 10 XLM');
+    expect(
+      formatTransactionDescription({
+        ...makePaymentOp(),
+        type: 'send',
+        amount: '5',
+        asset: 'USDC',
+      } as never)
+    ).toBe('Sent 5 USDC');
   });
 
-  it('classifies a transfer invoke operation with balance changes', () => {
+  it('classifies a sent transfer invoke operation with balance changes', () => {
     const op = makeInvokeOp({
       function: 'transfer',
       asset_balance_changes: [
@@ -162,11 +234,61 @@ describe('transaction parser', () => {
         }),
       ],
     });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
+    const tx = classifyOperation(
+      op,
+      WALLET_CONTRACT_ID,
+      USDC_CONTRACT_ID,
+      12345
+    );
     expect(tx?.type).toBe('send');
     expect(tx?.asset).toBe('USDC');
     expect(tx?.amount).toBe('2.5');
-    expect(tx?.recipient).toBe(OTHER_ADDRESS);
+    expect(tx?.recipient).toBe(OTHER_CONTRACT_ID);
+  });
+
+  it('classifies a received transfer invoke operation with balance changes', () => {
+    const op = makeInvokeOp({
+      function: 'transfer',
+      asset_balance_changes: [
+        makeBalanceChange({
+          asset_type: 'native',
+          from: OTHER_CONTRACT_ID,
+          to: WALLET_CONTRACT_ID,
+          amount: '300000000',
+        }),
+      ],
+    });
+    const tx = classifyOperation(
+      op,
+      WALLET_CONTRACT_ID,
+      USDC_CONTRACT_ID,
+      12345
+    );
+    expect(tx?.type).toBe('receive');
+    expect(tx?.asset).toBe('XLM');
+    expect(tx?.amount).toBe('30');
+    expect(tx?.sender).toBe(OTHER_CONTRACT_ID);
+    expect(tx?.recipient).toBeUndefined();
+  });
+
+  it('ignores invoke transfers not involving the wallet', () => {
+    const op = makeInvokeOp({
+      function: 'transfer',
+      asset_balance_changes: [
+        makeBalanceChange({
+          from: OTHER_CONTRACT_ID,
+          to: 'CNOTTHEWALLETAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          amount: '10000000',
+        }),
+      ],
+    });
+    const tx = classifyOperation(
+      op,
+      WALLET_CONTRACT_ID,
+      USDC_CONTRACT_ID,
+      12345
+    );
+    expect(tx).toBeNull();
   });
 
   it('classifies a path payment send as a normal send', () => {
@@ -174,18 +296,23 @@ describe('transaction parser', () => {
       ...makePaymentOp(),
       type: 'path_payment_strict_send',
       type_i: 13,
-      from: WALLET_ADDRESS,
-      to: OTHER_ADDRESS,
+      from: CLASSIC_WALLET_ADDRESS,
+      to: CLASSIC_OTHER_ADDRESS,
       asset_code: 'XLM',
       source_asset_code: 'USDC',
       amount: '100000000',
       source_amount: '25000000',
     } as unknown as Horizon.ServerApi.PathPaymentOperationRecord;
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
+    const tx = classifyOperation(
+      op,
+      CLASSIC_WALLET_ADDRESS,
+      USDC_CONTRACT_ID,
+      12345
+    );
     expect(tx?.type).toBe('send');
     expect(tx?.asset).toBe('USDC');
     expect(tx?.amount).toBe('2.5');
-    expect(tx?.recipient).toBe(OTHER_ADDRESS);
+    expect(tx?.recipient).toBe(CLASSIC_OTHER_ADDRESS);
   });
 
   it('builds Stellar Expert explorer URL', () => {
