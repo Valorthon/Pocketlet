@@ -8,7 +8,8 @@ import type { PasskeyKit } from 'passkey-kit';
 import PinModal from '@/components/PinModal';
 import { createPasskeyKit, prepareTokenTransferTx } from '@/lib/wallet/passkey-kit';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
-import { amountToBaseUnits } from '@/lib/wallet/amount';
+import { amountToBaseUnits, baseUnitsToDisplay } from '@/lib/wallet/amount';
+import { validateRecipientFormat } from '@/lib/wallet/recipient-format';
 import {
   hasUsableSessionKey,
   ensureSessionKey,
@@ -36,6 +37,11 @@ interface WalletInfo {
   primaryPasskeyKeyId: string;
 }
 
+interface Balances {
+  xlm: string;
+  usdc: string;
+}
+
 function getTokenContractId(asset: 'USDC' | 'XLM'): string {
   return asset === 'USDC' ? getUsdcContractId() : getXlmContractId();
 }
@@ -61,6 +67,8 @@ export default function SendPage() {
   const [preparing, setPreparing] = useState(false);
   const [walletInfo, setWalletInfo] = useState<WalletInfo | null>(null);
   const [walletInfoLoading, setWalletInfoLoading] = useState(false);
+  const [balances, setBalances] = useState<Balances | null>(null);
+  const [balancesLoading, setBalancesLoading] = useState(false);
 
   const preparedKitRef = useRef<PasskeyKit | null>(null);
   const preparedTxRef = useRef<AssembledTransaction<null> | null>(null);
@@ -94,9 +102,40 @@ export default function SendPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setBalancesLoading(true);
+
+    async function fetchBalances() {
+      try {
+        const res = await fetch('/api/wallet/balance');
+        if (!res.ok) {
+          if (!cancelled) setBalances(null);
+          return;
+        }
+        const body = (await res.json()) as Balances;
+        if (!cancelled) setBalances({ xlm: body.xlm, usdc: body.usdc });
+      } catch {
+        if (!cancelled) setBalances(null);
+      } finally {
+        if (!cancelled) setBalancesLoading(false);
+      }
+    }
+
+    void fetchBalances();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const validateForm = (): string | null => {
     if (!form.recipient.trim()) {
       return 'Recipient is required';
+    }
+    const recipientError = validateRecipientFormat(form.recipient);
+    if (recipientError) {
+      return recipientError;
     }
     if (!form.amount || Number.isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
       return 'Enter a valid amount greater than zero';
@@ -114,6 +153,17 @@ export default function SendPage() {
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    if (!balances) {
+      setError('Balance not loaded. Please try again.');
+      return;
+    }
+
+    const availableBalance = form.asset === 'USDC' ? balances.usdc : balances.xlm;
+    if (amountToBaseUnits(form.amount) > BigInt(availableBalance)) {
+      setError(`Insufficient ${form.asset} balance`);
       return;
     }
 
@@ -361,6 +411,14 @@ export default function SendPage() {
                   placeholder="0.00"
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Available:{' '}
+                  {balances && !balancesLoading
+                    ? `${baseUnitsToDisplay(
+                        form.asset === 'USDC' ? balances.usdc : balances.xlm
+                      )} ${form.asset}`
+                    : 'Loading…'}
+                </p>
               </div>
 
               <div>
@@ -381,10 +439,14 @@ export default function SendPage() {
 
               <button
                 type="submit"
-                disabled={resolving || walletInfoLoading}
+                disabled={resolving || walletInfoLoading || balancesLoading}
                 className="w-full rounded-lg bg-pocketlet-600 py-3 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
               >
-                {resolving ? 'Resolving...' : walletInfoLoading ? 'Loading...' : 'Review'}
+                {resolving
+                  ? 'Resolving...'
+                  : walletInfoLoading || balancesLoading
+                    ? 'Loading...'
+                    : 'Review'}
               </button>
             </form>
           )}

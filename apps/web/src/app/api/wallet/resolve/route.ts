@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { verifySessionToken } from '@/lib/auth/session';
 import { resolveRecipient } from '@/lib/wallet/recipient';
+import { validateRecipientFormat } from '@/lib/wallet/recipient-format';
 
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies();
@@ -26,6 +27,11 @@ export async function POST(request: NextRequest) {
   const recipient = typeof body.recipient === 'string' ? body.recipient.trim() : '';
   if (!recipient) {
     return NextResponse.json({ error: 'Recipient is required' }, { status: 400 });
+  }
+
+  const formatError = validateRecipientFormat(recipient);
+  if (formatError) {
+    return NextResponse.json({ error: formatError }, { status: 400 });
   }
 
   const resolved = resolveRecipient(recipient);

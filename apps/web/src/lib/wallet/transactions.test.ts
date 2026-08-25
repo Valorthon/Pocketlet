@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Horizon } from '@stellar/stellar-sdk';
+import { Horizon, Address, xdr } from '@stellar/stellar-sdk';
 import {
   buildTransactionDetails,
   classifyOperation,
@@ -7,18 +7,46 @@ import {
   formatTransactionDescription,
   formatTransactionType,
 } from './transactions';
+import { getXlmContractId } from './assets';
 
 const USDC_CONTRACT_ID = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA';
 const WALLET_CONTRACT_ID =
-  'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM';
-const OTHER_CONTRACT_ID =
-  'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDP';
+  'CANWB6BIHTG37UGKBXNCFA7X6XD4XSA6FVSP4GVYSWRAQ3LID7LQ52ZG';
+const OTHER_ADDRESS =
+  'GAEBH5ZALWM4SFBG3XEE7FBGKNPUVX5JT7URH34XHQ6SVRT6IGY4SXAM';
 const CLASSIC_WALLET_ADDRESS =
   'GABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNO';
 const CLASSIC_OTHER_ADDRESS =
   'GBBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNO';
 const FEE_PAYER_ADDRESS =
   'GCCVPYFOHY7B7M4SCIQRMX2VTZVOB7VDJBJGN4NVBHPQAJLZS4KKJLPO';
+
+function makeAddressParam(address: string): { value: string; type: string } {
+  return {
+    value: Address.fromString(address).toScVal().toXDR('base64'),
+    type: 'Address',
+  };
+}
+
+function makeSymbolParam(name: string): { value: string; type: string } {
+  return {
+    value: xdr.ScVal.scvSymbol(name).toXDR('base64'),
+    type: 'Sym',
+  };
+}
+
+function makeTransferParameters(
+  token: string,
+  from: string,
+  to: string
+): Array<{ value: string; type: string }> {
+  return [
+    makeAddressParam(token),
+    makeSymbolParam('transfer'),
+    makeAddressParam(from),
+    makeAddressParam(to),
+  ];
+}
 
 function makeTx(overrides: Partial<Horizon.ServerApi.TransactionRecord> = {}) {
   return {
@@ -67,10 +95,14 @@ function makeInvokeOp(
     transaction_successful: true,
     created_at: '2026-07-20T10:00:00Z',
     source_account: FEE_PAYER_ADDRESS,
-    function: 'transfer',
-    parameters: [],
-    address: USDC_CONTRACT_ID,
-    salt: 'salt',
+    function: 'HostFunctionTypeHostFunctionTypeInvokeContract',
+    parameters: makeTransferParameters(
+      USDC_CONTRACT_ID,
+      WALLET_CONTRACT_ID,
+      OTHER_ADDRESS
+    ),
+    address: '',
+    salt: '',
     asset_balance_changes: [],
     ...overrides,
   } as unknown as Horizon.ServerApi.InvokeHostFunctionOperationRecord;
@@ -83,8 +115,8 @@ function makeBalanceChange(
     asset_type: 'native',
     type: 'transfer',
     from: WALLET_CONTRACT_ID,
-    to: OTHER_CONTRACT_ID,
-    amount: '150000000',
+    to: OTHER_ADDRESS,
+    amount: '15.0000000',
     ...overrides,
   };
 }
@@ -138,7 +170,15 @@ describe('transaction parser', () => {
   });
 
   it('classifies a swap invoke operation as unknown', () => {
-    const op = makeInvokeOp({ function: 'swap' });
+    const op = makeInvokeOp({
+      parameters: makeTransferParameters(
+        USDC_CONTRACT_ID,
+        WALLET_CONTRACT_ID,
+        OTHER_ADDRESS
+      ).map((p, idx) =>
+        idx === 1 ? makeSymbolParam('swap') : p
+      ),
+    });
     const tx = classifyOperation(
       op,
       WALLET_CONTRACT_ID,
@@ -186,8 +226,12 @@ describe('transaction parser', () => {
   it('falls back to unknown when no matching operation', () => {
     const tx = makeTx();
     const op = makeInvokeOp({
-      function: 'set_owner',
-      source_account: OTHER_CONTRACT_ID,
+      parameters: makeTransferParameters(
+        USDC_CONTRACT_ID,
+        OTHER_ADDRESS,
+        OTHER_ADDRESS
+      ),
+      asset_balance_changes: [],
     });
     const details = buildTransactionDetails(
       tx,
@@ -223,14 +267,18 @@ describe('transaction parser', () => {
     ).toBe('Sent 5 USDC');
   });
 
-  it('classifies a sent transfer invoke operation with balance changes', () => {
+  it('classifies a sent USDC transfer invoke operation with balance changes', () => {
     const op = makeInvokeOp({
-      function: 'transfer',
+      parameters: makeTransferParameters(
+        USDC_CONTRACT_ID,
+        WALLET_CONTRACT_ID,
+        OTHER_ADDRESS
+      ),
       asset_balance_changes: [
         makeBalanceChange({
           asset_type: 'credit_alphanum4',
           asset_code: 'USDC',
-          amount: '25000000',
+          amount: '2.5000000',
         }),
       ],
     });
@@ -243,18 +291,22 @@ describe('transaction parser', () => {
     expect(tx?.type).toBe('send');
     expect(tx?.asset).toBe('USDC');
     expect(tx?.amount).toBe('2.5');
-    expect(tx?.recipient).toBe(OTHER_CONTRACT_ID);
+    expect(tx?.recipient).toBe(OTHER_ADDRESS);
   });
 
-  it('classifies a received transfer invoke operation with balance changes', () => {
+  it('classifies a received XLM transfer invoke operation with balance changes', () => {
     const op = makeInvokeOp({
-      function: 'transfer',
+      parameters: makeTransferParameters(
+        USDC_CONTRACT_ID,
+        OTHER_ADDRESS,
+        WALLET_CONTRACT_ID
+      ),
       asset_balance_changes: [
         makeBalanceChange({
           asset_type: 'native',
-          from: OTHER_CONTRACT_ID,
+          from: OTHER_ADDRESS,
           to: WALLET_CONTRACT_ID,
-          amount: '300000000',
+          amount: '30.0000000',
         }),
       ],
     });
@@ -267,18 +319,22 @@ describe('transaction parser', () => {
     expect(tx?.type).toBe('receive');
     expect(tx?.asset).toBe('XLM');
     expect(tx?.amount).toBe('30');
-    expect(tx?.sender).toBe(OTHER_CONTRACT_ID);
+    expect(tx?.sender).toBe(OTHER_ADDRESS);
     expect(tx?.recipient).toBeUndefined();
   });
 
   it('ignores invoke transfers not involving the wallet', () => {
     const op = makeInvokeOp({
-      function: 'transfer',
+      parameters: makeTransferParameters(
+        USDC_CONTRACT_ID,
+        OTHER_ADDRESS,
+        OTHER_ADDRESS
+      ),
       asset_balance_changes: [
         makeBalanceChange({
-          from: OTHER_CONTRACT_ID,
-          to: 'CNOTTHEWALLETAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-          amount: '10000000',
+          from: OTHER_ADDRESS,
+          to: OTHER_ADDRESS,
+          amount: '1.0000000',
         }),
       ],
     });
@@ -289,6 +345,34 @@ describe('transaction parser', () => {
       12345
     );
     expect(tx).toBeNull();
+  });
+
+  it('classifies a real Horizon XLM SAC transfer shape', () => {
+    const op = makeInvokeOp({
+      function: 'HostFunctionTypeHostFunctionTypeInvokeContract',
+      parameters: makeTransferParameters(
+        getXlmContractId(),
+        WALLET_CONTRACT_ID,
+        OTHER_ADDRESS
+      ),
+      asset_balance_changes: [
+        makeBalanceChange({
+          from: WALLET_CONTRACT_ID,
+          to: OTHER_ADDRESS,
+          amount: '50.0000000',
+        }),
+      ],
+    });
+    const tx = classifyOperation(
+      op,
+      WALLET_CONTRACT_ID,
+      USDC_CONTRACT_ID,
+      12345
+    );
+    expect(tx?.type).toBe('send');
+    expect(tx?.asset).toBe('XLM');
+    expect(tx?.amount).toBe('50');
+    expect(tx?.recipient).toBe(OTHER_ADDRESS);
   });
 
   it('classifies a path payment send as a normal send', () => {

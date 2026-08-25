@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   amountToBaseUnits,
+  baseUnitsToDisplay,
   i128ScVal,
   addressScVal,
 } from './amount';
@@ -25,6 +26,24 @@ describe('amountToBaseUnits', () => {
 
   it('handles leading-zero integer part', () => {
     expect(amountToBaseUnits('0.0000001')).toBe(1n);
+  });
+});
+
+describe('baseUnitsToDisplay', () => {
+  it('formats an integer string', () => {
+    expect(baseUnitsToDisplay('50000000')).toBe('5');
+  });
+
+  it('formats a bigint', () => {
+    expect(baseUnitsToDisplay(10_000_000n)).toBe('1');
+  });
+
+  it('formats a fractional value', () => {
+    expect(baseUnitsToDisplay('1000000')).toBe('0.1');
+  });
+
+  it('honors a custom decimals argument', () => {
+    expect(baseUnitsToDisplay('500', 2)).toBe('5');
   });
 });
 

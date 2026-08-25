@@ -12,6 +12,15 @@ export function amountToBaseUnits(amount: string, decimals = 7): bigint {
 }
 
 /**
+ * Format a base-unit amount (7 decimals by default) for display.
+ */
+export function baseUnitsToDisplay(value: string | bigint, decimals = 7): string {
+  const base = typeof value === 'bigint' ? value : BigInt(value);
+  const num = Number(base) / 10 ** decimals;
+  return num.toLocaleString(undefined, { maximumFractionDigits: 7 });
+}
+
+/**
  * Convert an i128 ScVal to a bigint.
  */
 export function i128ToBigInt(value: xdr.ScVal): bigint {

@@ -123,4 +123,13 @@ describe('POST /api/wallet/resolve', () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
+
+  it('returns 400 for a malformed recipient', async () => {
+    const token = await createUserWithWallet('alice@example.com');
+    const req = createResolveRequest({ recipient: 'hello world' }, token);
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('Enter a valid username, phone number, or Stellar address.');
+  });
 });

@@ -2,6 +2,14 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
 import { hashPin, verifyPin } from './pin';
+import {
+  normalizeUsername,
+  normalizePhone,
+  isValidUsernameFormat,
+  isValidPhoneFormat,
+} from '@/lib/wallet/recipient-format';
+
+export { normalizeUsername, normalizePhone };
 
 export interface Credential {
   id: string;
@@ -82,35 +90,12 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export function normalizeUsername(username: string): string {
-  return username.trim().toLowerCase().replace(/^@/, '');
-}
-
 export function isValidUsername(username: string): boolean {
-  const normalized = normalizeUsername(username);
-  if (normalized.length < 3 || normalized.length > 30) {
-    return false;
-  }
-  return /^[a-z0-9_.-]+$/.test(normalized);
-}
-
-export function normalizePhone(phone: string): string {
-  const trimmed = phone.trim();
-  const hasPlus = trimmed.startsWith('+');
-  const digits = trimmed.replace(/\D/g, '');
-  return hasPlus ? `+${digits}` : digits;
+  return isValidUsernameFormat(username);
 }
 
 export function isValidPhone(phone: string): boolean {
-  const normalized = normalizePhone(phone);
-  if (!normalized.startsWith('+')) {
-    return false;
-  }
-  const digits = normalized.slice(1);
-  if (digits.length < 10 || digits.length > 15) {
-    return false;
-  }
-  return /^\d+$/.test(digits);
+  return isValidPhoneFormat(phone);
 }
 
 export function getUserByEmail(email: string): User | undefined {
