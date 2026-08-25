@@ -35,10 +35,4 @@ export function addressScVal(value: string): xdr.ScVal {
   return new Address(value).toScVal();
 }
 
-/**
- * Compute the minimum acceptable buy amount given a sell amount and slippage
- * tolerance in basis points (e.g. 100 = 1%).
- */
-export function calculateMinBuyAmount(sellAmount: bigint, slippageBps: number): bigint {
-  return (sellAmount * BigInt(10_000 - slippageBps)) / 10_000n;
-}
+

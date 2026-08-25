@@ -22,7 +22,10 @@ export async function GET() {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
 
-  return NextResponse.json({ hasPin: hasPin(user.email) });
+  return NextResponse.json({
+    email: user.email,
+    hasPin: hasPin(user.email),
+  });
 }
 
 export async function POST(request: NextRequest) {

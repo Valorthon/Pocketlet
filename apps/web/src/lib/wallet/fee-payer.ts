@@ -35,10 +35,6 @@ function loadOrCreateFeePayerSecret(): string {
   const kp = Keypair.random();
   const secret = kp.secret();
   writeFileSync(secretFile, secret, { mode: 0o600 });
-  console.warn(
-    'FEE_PAYER_SECRET_KEY is not set. A persistent testnet fee payer keypair has been generated and saved to:'
-  );
-  console.warn(secretFile);
   return secret;
 }
 
@@ -91,10 +87,9 @@ export async function fundAccount(publicKey: string): Promise<void> {
     // That is expected across restarts, so only log real failures.
     const detail = getAxiosErrorDetail(err);
     if (detail?.toLowerCase().includes('already funded')) {
-      console.log(`Friendbot: ${publicKey} is already funded.`);
       return;
     }
-    console.log('Friendbot funding attempt failed:', detail ?? err);
+    console.error('Friendbot funding attempt failed:', detail ?? err);
   }
 }
 

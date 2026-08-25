@@ -56,13 +56,14 @@ This document records features that were intentionally deferred from V1 and the 
 
 ## V2 — Self-Custody
 
-### Seed Phrase Export
-* **What:** Allow advanced users to export their wallet's seed phrase and manage keys outside the app.
-* **Why deferred:** Abstracted passkey custody is the safer default for non-crypto users. Self-custody introduces key management risks and support burden.
+### Seed Phrase Export UI
+* **What:** A dedicated UI for advanced users to view/export their wallet's recovery seed phrase at any time after onboarding.
+* **V1 status:** Every V1 user already receives a BIP39 recovery phrase during onboarding and can use it for lost-passkey recovery (see issue #33). The phrase is generated client-side and never touches the server.
+* **Why deferred:** A standalone export/view flow is deferred to V2 to keep the V1 onboarding UX simple.
 
 ### Self-Custody Import
 * **What:** Allow users to import an existing Stellar account via seed phrase or hardware wallet.
-* **Why deferred:** Same reasoning as seed phrase export.
+* **Why deferred:** Importing external keys increases support burden and is not required for the core V1 passkey wallet experience.
 
 ---
 
@@ -78,6 +79,10 @@ This document records features that were intentionally deferred from V1 and the 
 * **What:** Notify users of incoming payments, successful swaps, and security events.
 * **Why deferred:** PWA push notifications require additional setup and are not critical for core V1 flows.
 
+### Progressive Web App (PWA)
+* **What:** Package the web app as an installable PWA with a web app manifest, service worker, offline caching, and home-screen icons.
+* **Why deferred:** V1 focuses on validating the core wallet flows in the browser. A full PWA layer (manifest, icons, service worker, offline handling) can be added once the feature set is stable.
+
 ---
 
 ## V3 — Multi-Stablecoin Support & Regional Expansion
@@ -92,7 +97,7 @@ This document records features that were intentionally deferred from V1 and the 
 
 ### Cross-Asset Swaps
 * **What:** Swap between any supported stablecoin pair (not only USDC ↔ XLM), integrated with a real Stellar DEX/AMM.
-* **Why deferred:** The bundled `mock_dex` is 1:1 and only suitable for testnet demo swaps. Real cross-asset swaps need quote handling, slippage protection, and liquidity evaluation.
+* **Why deferred:** Swaps are disabled in the passkey-kit migration. Real cross-asset swaps need quote handling, slippage protection, and liquidity evaluation on a live Stellar DEX/AMM.
 
 ### Additional Regional Markets
 * **What:** Expand fiat on-ramp/off-ramp and localized payment methods beyond the Philippines (e.g., SEPA, PIX, local bank transfers).
@@ -105,8 +110,10 @@ This document records features that were intentionally deferred from V1 and the 
 V1 is intentionally narrow so the team can:
 1. Launch a working abstracted wallet on Stellar Testnet.
 2. Validate passkey-based custody and P2P transfer UX globally.
-3. Prove USDC ↔ XLM swap flows before adding fiat complexity.
-4. Build a clean contract and SDK foundation that makes V2 integrations (Anchor, QR Ph, PHPC) and V3 multi-stablecoin expansion easier to add.
+3. Validate SAC token transfers and fee-payer submission with passkey-kit smart accounts.
+4. Build a clean SDK foundation that makes V2 integrations (Anchor, QR Ph, PHPC) and V3 multi-stablecoin expansion easier to add.
+
+USDC ↔ XLM swaps were stubbed in the passkey-kit migration because the passkey-kit smart account cannot authorize classic `PathPayment` operations. Swaps will be reintroduced in a future version once a real Stellar DEX/AMM integration is rebuilt around SAC or Soroban DEX flows.
 
 For each deferred feature, this document will be updated with implementation notes as planning for V2 and V3 begins.
 
@@ -184,28 +191,27 @@ These are intentional simplifications in the current V1 testnet implementation t
 - **Current behavior:** The signup API returns the verification code in the JSON response so testing works without a mail server.
 - **Future work:** Integrate a transactional email provider (e.g., Resend, SendGrid, AWS SES) and remove the code from the API response.
 
-### Platform deployer key
-- **Issue:** #19
-- **Current behavior:** If `PLATFORM_SECRET_KEY` is not set, the server generates a random testnet keypair and funds it automatically on startup.
-- **Why it exists:** The deployer pays for smart-wallet WASM upload and contract deployment and acts as the `recovery_admin` for lost-passkey recovery.
-- **Resolution:** On the Stellar public network, `PLATFORM_SECRET_KEY` is now required and the app fails fast if it is missing. The testnet auto-generation path remains for local development and testnet testing.
+### Fee payer key
+- **Issue:** #19 (originally the platform deployer key; repurposed during the passkey-kit migration)
+- **Current behavior:** If `FEE_PAYER_SECRET_KEY` is not set, the server generates a random testnet keypair and funds it automatically on first use.
+- **Why it exists:** The fee payer rebuilds user-authorized `invoke_host_function` operations with itself as the source account, re-simulates for current resource fees, signs the envelope, and submits directly to Soroban RPC. It covers network fees on testnet, is not a signer on any user wallet, and cannot move user funds.
+- **Resolution:** On the Stellar public network, `FEE_PAYER_SECRET_KEY` is required and the app fails fast if it is missing. The testnet auto-generation path remains for local development and testnet testing.
 
 ### DEX swap integration
 - **Issue:** #20
-- **Current behavior:** The smart wallet accepts a DEX contract address and calls `swap(...)`. The unit tests use a tiny `mock_dex` contract.
-- **Future work:** Replace the mock with a real Stellar DEX path-payment contract or AMM pool and add slippage/quote handling in the frontend.
+- **Current behavior:** USDC ↔ XLM swaps are disabled in V1. The `/swap` route shows a "coming soon" message, the swap API returns a disabled error, and the transaction parser no longer classifies path payments or swap invocations as swap transactions. The previous implementation relied on the deleted `packages/contracts` smart wallet and `mock_dex` contract.
+- **Future work:** Reintroduce swaps using a real Stellar DEX/AMM integration with passkey-kit signing, quote fetching, slippage protection, and price-impact display.
 
 ### Smart wallet authorization
 - **Issue:** #21
-- **Current behavior:** The wallet contract's `transfer` function does not call `require_auth()`, so it relies entirely on the platform relayer's off-chain session + PIN checks. The `swap` function does enforce authorization.
-- **Why it exists:** Removing on-chain auth was a testnet shortcut to get XLM transfers working through the relayer flow.
-- **Resolution:** `transfer` now calls `env.current_contract_address().require_auth()`, so the wallet's `__check_auth` validates the owner signature before a transfer can move funds. The relayer still attaches the owner signature via `authorizeEntry` in `invokeWalletContract`, so end-to-end testnet flows remain intact.
+- **Previous behavior:** The wallet contract's `transfer` function did not call `require_auth()`, so it relied entirely on the platform relayer's off-chain session + PIN checks.
+- **Resolution:** The migration to passkey-kit removes the custom smart-wallet contract. Authorization is now handled by the passkey-kit smart wallet's `__check_auth`, which validates WebAuthn signatures for `invoke_host_function` transactions. PIN confirmation remains an app-level gate before any transfer.
 
-### Custody of wallet owner secret keys
+### Custody of wallet signing keys
 - **Issue:** #22
 - **Previous behavior:** The wallet owner's Ed25519 secret key was generated server-side during deployment and stored in plaintext inside `apps/web/.data/users.json`.
-- **Resolution:** Owner secret keys are now encrypted at rest with AES-256-GCM and stored in a separate `owner_keys.json` file, no longer alongside user records. The encryption key is supplied by `OWNER_KEY_MASTER_KEY`; on the Stellar public network this env var is required and the app fails fast if it is missing. On testnet, a random master key is generated automatically for local development.
-- **Trade-off:** V1 ships with a software encrypted file store (`lib/wallet/keys.ts`) rather than a hardware HSM, MPC service, or cloud KMS. This closes the plaintext-storage gap while keeping the server-side signing / abstracted-passkey model intact. Before a production launch, replace the `KeyStorage` interface implementation with a backend backed by a real HSM, KMS, or MPC service.
+- **Resolution:** The passkey-kit migration eliminates server-held owner keys. The primary signer is a device-bound or synced WebAuthn passkey. Users also receive a client-generated BIP39 recovery phrase and may register an optional backup passkey. Neither the recovery phrase nor passkey private key material ever reaches the server.
+- **Trade-off:** V1 uses passkey-kit's abstracted custody model. Before a production launch, review passkey backup policies (platform sync vs. device-bound credentials) and consider offering hardware-wallet or seed-phrase-only self-custody options for advanced users.
 
 ### Development-only secrets and defaults
 - **Issue:** #23
@@ -214,19 +220,26 @@ These are intentional simplifications in the current V1 testnet implementation t
 
 ### Local file-based storage
 - **Issue:** #24
-- **Current behavior:** Users, deployer secrets, and the cached DEX contract ID are stored in `.data/*.json` files on disk.
-- **Future work:** Replace file storage with a real database for user records and a secrets manager for sensitive keys.
+- **Current behavior:** Users and the testnet fee payer secret are stored in `.data/*.json` files on disk.
+- **Future work:** Replace file storage with a real database for user records and a secrets manager for `FEE_PAYER_SECRET_KEY`.
 
 ### Remaining V1 issues
-All tracked V1 MVP sub-issues have been implemented:
 
 - ~~Scaffold monorepo with pnpm workspace (issue #5)~~ ✅ Completed
-- ~~Implement Soroban smart wallet contract with passkey signer (issue #6)~~ ✅ Completed
 - ~~Implement email + passkey authentication flow (issue #8)~~ ✅ Completed
 - ~~Implement smart wallet deployment and receive screen (issue #9)~~ ✅ Completed
 - ~~P2P transfers by username, phone, or raw address (issue #10)~~ ✅ Completed
-- ~~Implement USDC ↔ XLM swaps via Stellar DEX (issue #11)~~ ✅ Completed
 - ~~Implement transaction history and details view (issue #12)~~ ✅ Completed
-- ~~Implement PIN confirmation for payments and swaps (issue #13)~~ ✅ Completed
-- ~~Implement lost passkey recovery flow (issue #14)~~ ✅ Completed
-- ~~End-to-end testnet testing and documentation update (issue #15)~~ ✅ Completed
+- ~~Implement PIN confirmation for payments (issue #13)~~ ✅ Completed
+- ~~Migrate to self-custodial passkey smart accounts using passkey-kit (issue #33)~~ ✅ Completed
+  - Phase 0 — Validation ✅
+  - Phase 1 — Foundation replacement ✅
+  - Phase 2 — Auth & onboarding ✅
+  - Phase 3 — Balances & receive ✅
+  - Phase 4 — Transfers ✅
+  - Phase 5 — Swaps: stub/hide ✅
+  - Phase 6 — Recovery flows ✅
+  - Phase 7 — Cleanup, tests & docs ✅
+  - Phase 8 — Mainnet readiness 🔄 Pending
+- ~~Implement USDC ↔ XLM swaps via Stellar DEX (issue #11)~~ ⏸️ Stubbed/hidden; see issue #33 Phase 5
+- ~~End-to-end testnet testing and documentation update (issue #15)~~ 🔄 Docs updated for passkey-kit migration

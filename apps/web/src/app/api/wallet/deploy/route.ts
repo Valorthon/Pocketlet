@@ -3,7 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME, ORIGIN, RP_ID } from '@/lib/auth/config';
-import { getUserByEmail, setCredential, setWallet } from '@/lib/auth/store';
+import {
+  getUserByEmail,
+  setCredential,
+  setWallet,
+} from '@/lib/auth/store';
 import { submitSignedTransaction } from '@/lib/wallet/submit';
 
 export interface DeployRequest {
@@ -22,12 +26,17 @@ export interface DeployRequest {
  * `createWallet`. We verify the registration response cryptographically and
  * check origin/RPID, but we do not enforce a server-known challenge here.
  * The deploy transaction itself is signed by the passkey and validated on-chain.
+ *
+ * TODO(V1 production): bind the WebAuthn challenge to a server-generated nonce
+ * stored in the session instead of accepting any challenge. This is acceptable
+ * for testnet because the on-chain signature is the real authorization check.
  */
 async function verifyPasskeyRegistrationResponse(
   response: unknown
 ): Promise<ReturnType<typeof verifyRegistrationResponse>> {
   return verifyRegistrationResponse({
     response: response as never,
+    // V1 testnet shortcut: passkey-kit generates the challenge client-side.
     expectedChallenge: () => true,
     expectedOrigin: ORIGIN,
     expectedRPID: RP_ID,
@@ -55,10 +64,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (user.contractId) {
+  if (user.walletContractId) {
     return NextResponse.json({
       email: user.email,
-      contractId: user.contractId,
+      contractId: user.walletContractId,
       stellarAddress: user.stellarAddress,
     });
   }
@@ -74,7 +83,9 @@ export async function POST(request: NextRequest) {
 
   if (!response || !keyIdBase64 || !contractId || !signedTx) {
     return NextResponse.json(
-      { error: 'response, keyIdBase64, contractId, and signedTx are required' },
+      {
+        error: 'response, keyIdBase64, contractId, and signedTx are required',
+      },
       { status: 400 }
     );
   }
@@ -105,11 +116,11 @@ export async function POST(request: NextRequest) {
     });
 
     const { hash } = await submitSignedTransaction(signedTx);
-    console.log('Wallet deployed:', { contractId, hash });
 
     setWallet(user.email, {
-      contractId,
+      walletContractId: contractId,
       stellarAddress: contractId,
+      primaryPasskeyKeyId: credential.id,
     });
 
     return NextResponse.json({

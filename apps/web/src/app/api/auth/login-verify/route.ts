@@ -1,7 +1,12 @@
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
+import type { AuthenticationResponseJSON } from '@simplewebauthn/browser';
 import { NextRequest, NextResponse } from 'next/server';
 import { ORIGIN, RP_ID } from '@/lib/auth/config';
-import { getUserByEmail, updateCredentialCounter } from '@/lib/auth/store';
+import {
+  getUserByEmail,
+  updateCredentialCounter,
+  updateBackupCredentialCounter,
+} from '@/lib/auth/store';
 import { createSessionToken, cookieOptions } from '@/lib/auth/session';
 
 export async function POST(request: NextRequest) {
@@ -10,10 +15,13 @@ export async function POST(request: NextRequest) {
     response?: unknown;
   };
   const email = body.email?.trim().toLowerCase();
-  const response = body.response;
+  const response = body.response as AuthenticationResponseJSON | undefined;
 
   if (!email || !response) {
-    return NextResponse.json({ error: 'Email and passkey response are required' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Email and passkey response are required' },
+      { status: 400 }
+    );
   }
 
   const user = getUserByEmail(email);
@@ -22,15 +30,32 @@ export async function POST(request: NextRequest) {
   }
 
   if (!user.pendingChallenge) {
-    return NextResponse.json({ error: 'No pending authentication challenge' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'No pending authentication challenge' },
+      { status: 400 }
+    );
+  }
+
+  const responseId = response.id;
+  const isBackup =
+    user.hasBackupPasskey &&
+    user.backupCredential &&
+    user.backupCredential.id === responseId;
+
+  const storedCredential = isBackup ? user.backupCredential : user.credential;
+  if (!storedCredential || storedCredential.id !== responseId) {
+    return NextResponse.json(
+      { error: 'Passkey not recognized' },
+      { status: 401 }
+    );
   }
 
   try {
     const credential = {
-      id: user.credential.id,
-      publicKey: Buffer.from(user.credential.publicKey, 'base64url'),
-      counter: user.credential.counter,
-      transports: user.credential.transports,
+      id: storedCredential.id,
+      publicKey: Buffer.from(storedCredential.publicKey, 'base64url'),
+      counter: storedCredential.counter,
+      transports: storedCredential.transports,
     };
 
     const verification = await verifyAuthenticationResponse({
@@ -43,10 +68,20 @@ export async function POST(request: NextRequest) {
     });
 
     if (!verification.verified || !verification.authenticationInfo) {
-      return NextResponse.json({ error: 'Passkey verification failed' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Passkey verification failed' },
+        { status: 401 }
+      );
     }
 
-    updateCredentialCounter(email, verification.authenticationInfo.newCounter);
+    if (isBackup) {
+      updateBackupCredentialCounter(
+        email,
+        verification.authenticationInfo.newCounter
+      );
+    } else {
+      updateCredentialCounter(email, verification.authenticationInfo.newCounter);
+    }
 
     const token = await createSessionToken({ email });
     const res = NextResponse.json({ email, verified: true });

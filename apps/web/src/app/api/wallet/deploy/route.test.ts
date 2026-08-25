@@ -99,7 +99,9 @@ describe('POST /api/wallet/deploy', () => {
     expect(body.hash).toBe('deploy-tx-hash');
 
     const user = getUserByEmail('alice@example.com');
-    expect(user?.contractId).toBe('CABC');
+    expect(user?.walletContractId).toBe('CABC');
+    expect(user?.primaryPasskeyKeyId).toBe('test-key-id');
+    expect(user?.recoveryPublicKey).toBeUndefined();
     expect(user?.credential?.id).toBe('test-key-id');
   });
 
@@ -109,8 +111,9 @@ describe('POST /api/wallet/deploy', () => {
 
     const { setWallet } = await import('@/lib/auth/store');
     setWallet('alice@example.com', {
-      contractId: 'CEXISTING',
+      walletContractId: 'CEXISTING',
       stellarAddress: 'CEXISTING',
+      primaryPasskeyKeyId: 'existing-key-id',
     });
 
     const token = await createSessionToken({ email: 'alice@example.com' });
@@ -150,5 +153,25 @@ describe('POST /api/wallet/deploy', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain('Credential id does not match');
+  });
+
+  it('rejects missing required fields', async () => {
+    createUser('alice@example.com', '000000');
+    setEmailVerified('alice@example.com');
+    const token = await createSessionToken({ email: 'alice@example.com' });
+
+    const req = createDeployRequest(
+      {
+        response: { id: 'test-key-id' },
+        keyIdBase64: 'test-key-id',
+        contractId: 'CABC',
+      },
+      token
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('response, keyIdBase64, contractId, and signedTx are required');
   });
 });

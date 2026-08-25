@@ -2,9 +2,11 @@
 
 import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Copy, Check } from 'lucide-react';
 
 export default function ReceivePage() {
+  const router = useRouter();
   const [address, setAddress] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -13,7 +15,7 @@ export default function ReceivePage() {
     fetch('/api/wallet/balance')
       .then((res) => {
         if (res.status === 401) {
-          window.location.href = '/login';
+          router.push('/login');
           return null;
         }
         return res.json();

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 interface ProfileData {
@@ -10,6 +11,7 @@ interface ProfileData {
 }
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [username, setUsername] = useState('');
   const [phone, setPhone] = useState('');
@@ -23,7 +25,7 @@ export default function ProfilePage() {
       try {
         const res = await fetch('/api/auth/me');
         if (res.status === 401) {
-          window.location.href = '/login';
+          router.push('/login');
           return;
         }
         if (!res.ok) {

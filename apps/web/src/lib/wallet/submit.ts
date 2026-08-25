@@ -1,15 +1,50 @@
 import {
   Address,
+  BASE_FEE,
   FeeBumpTransaction,
+  Operation,
   Transaction,
   TransactionBuilder,
-  Operation,
+  type OperationRecord,
   rpc,
   xdr,
-  type OperationRecord,
 } from '@stellar/stellar-sdk';
 import { NETWORK_PASSPHRASE, RPC_URL } from './network';
 import { fundAccount, getFeePayerKeypair } from './fee-payer';
+
+function getOperationResultCode(
+  op: xdr.OperationResult
+): { name: string; value: number | string } | null {
+  const switchResult = op.switch?.();
+  if (!switchResult) {
+    return null;
+  }
+  return {
+    name: switchResult.name,
+    value: switchResult.value,
+  };
+}
+
+function getInvokeHostFunctionResultCode(
+  op: xdr.OperationResult
+): { name: string; value: number | string } | null {
+  const tr = op.tr?.();
+  if (!tr) {
+    return null;
+  }
+  const hostResult = tr.invokeHostFunctionResult?.();
+  if (!hostResult) {
+    return null;
+  }
+  const switchResult = hostResult.switch?.();
+  if (!switchResult) {
+    return null;
+  }
+  return {
+    name: switchResult.name,
+    value: switchResult.value,
+  };
+}
 
 function formatFailedResult(
   tx: rpc.Api.GetFailedTransactionResponse
@@ -18,53 +53,28 @@ function formatFailedResult(
     return 'no result XDR';
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const resultAny = tx.resultXdr as any;
-  const resultUnion =
-    typeof resultAny.result === 'function' ? resultAny.result() : resultAny.result;
+  const resultUnion = tx.resultXdr.result();
+  const txSwitch = resultUnion.switch();
+  const txCode = txSwitch.name ?? txSwitch.value ?? 'unknown';
 
-  const txCode =
-    resultUnion?.switch?.().name ?? resultUnion?.switch?.().value ?? 'unknown';
+  const opResults = resultUnion.results?.() ?? [];
 
-  const opResults =
-    typeof resultUnion?.results === 'function'
-      ? resultUnion.results()
-      : resultUnion?.results;
+  const opCodes = opResults.map((op, idx) => {
+    const opCode = getOperationResultCode(op);
+    const hostCode = getInvokeHostFunctionResultCode(op);
 
-  const opCodes = Array.isArray(opResults)
-    ? opResults.map((op: unknown, idx: number) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const opAny = op as any;
-        const opCode =
-          opAny?.switch?.().name ?? opAny?.switch?.().value ?? 'unknown';
-
-        const hostResult = opAny?.tr?.()?.invokeHostFunctionResult?.();
-        if (hostResult) {
-          const hostCode =
-            hostResult?.switch?.().name ?? hostResult?.switch?.().value ?? 'unknown';
-          return `op${idx}=${opCode},host=${hostCode}`;
-        }
-
-        return `op${idx}=${opCode}`;
-      })
-    : [];
+    if (opCode && hostCode) {
+      return `op${idx}=${opCode.name},host=${hostCode.name}`;
+    }
+    if (opCode) {
+      return `op${idx}=${opCode.name}`;
+    }
+    return `op${idx}=unknown`;
+  });
 
   return opCodes.length
     ? `tx=${txCode}; ${opCodes.join('; ')}`
     : `tx=${txCode}`;
-}
-
-function resultXdrToBase64(
-  resultXdr: rpc.Api.GetFailedTransactionResponse['resultXdr']
-): string {
-  if (!resultXdr) return '';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const anyResult = resultXdr as any;
-  if (typeof anyResult.toXDR === 'function') {
-    return anyResult.toXDR('base64');
-  }
-  if (typeof resultXdr === 'string') return resultXdr;
-  return '';
 }
 
 export async function pollTransaction(
@@ -83,7 +93,6 @@ export async function pollTransaction(
         detail,
         txHash: tx.txHash,
         ledger: tx.ledger,
-        resultXdr: resultXdrToBase64(tx.resultXdr),
       });
       throw new Error(`Transaction failed: ${detail}`);
     }
@@ -113,41 +122,15 @@ export function parseSorobanTransaction(signedXdr: string): Transaction {
   return envelope;
 }
 
-/**
- * Submit a user-signed Soroban transaction to the network with the platform
- * fee payer covering the network fee.
- *
- * The input must be a base64-encoded Transaction envelope (not a fee-bump)
- * containing at least one `invoke_host_function` operation. The fee payer
- * wraps it in a fee-bump transaction, signs, and submits via direct RPC.
- */
-export async function submitSignedTransaction(signedXdr: string): Promise<{ hash: string }> {
-  const server = new rpc.Server(RPC_URL);
-  const feePayer = getFeePayerKeypair();
-  await fundAccount(feePayer.publicKey());
-
-  const innerTx = parseSorobanTransaction(signedXdr);
-
-  // Use the inner transaction's simulated fee as the fee-bump base fee.
-  // Soroban transactions typically contain a single operation, so this
-  // preserves the resource estimate the client already simulated.
-  const feeBump = TransactionBuilder.buildFeeBumpTransaction(
-    feePayer.publicKey(),
-    innerTx.fee,
-    innerTx,
-    NETWORK_PASSPHRASE
-  );
-  feeBump.sign(feePayer);
-
-  const result = await server.sendTransaction(feeBump);
-  await pollTransaction(server, result.hash);
-
-  return { hash: result.hash };
+interface InvokeHostFunctionOperation {
+  type: 'invokeHostFunction';
+  func: xdr.HostFunction;
+  auth?: xdr.SorobanAuthorizationEntry[];
 }
 
 function isInvokeHostFunctionOp(
   op: OperationRecord
-): op is Operation.InvokeHostFunction {
+): op is OperationRecord & InvokeHostFunctionOperation {
   return op.type === 'invokeHostFunction';
 }
 
@@ -168,8 +151,7 @@ export function getInvokeContractDetails(
     return null;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const invokeArgs = hostFunction.invokeContract?.() as any;
+  const invokeArgs = hostFunction.invokeContract?.();
   if (!invokeArgs) {
     return null;
   }
@@ -200,13 +182,12 @@ export function getInvokeContractArgs(op: OperationRecord): xdr.ScVal[] | null {
     return null;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const invokeArgs = hostFunction.invokeContract?.() as any;
+  const invokeArgs = hostFunction.invokeContract?.();
   if (!invokeArgs) {
     return null;
   }
 
-  return (invokeArgs.args?.() as xdr.ScVal[] | undefined) ?? null;
+  return invokeArgs.args?.() ?? [];
 }
 
 /**
@@ -214,4 +195,142 @@ export function getInvokeContractArgs(op: OperationRecord): xdr.ScVal[] | null {
  */
 export function scValToAddress(scVal: xdr.ScVal): string {
   return Address.fromScVal(scVal).toString();
+}
+
+/**
+ * Read a Bytes ScVal as a Buffer.
+ */
+export function scValToBytes(scVal: xdr.ScVal): Buffer {
+  return Buffer.from(scVal.bytes());
+}
+
+function getAddressCredentials(
+  credentials: xdr.SorobanCredentials
+): xdr.SorobanAddressCredentials | null {
+  const switchName = credentials.switch().name;
+
+  if (switchName === 'sorobanCredentialsAddress') {
+    return credentials.address();
+  }
+  if (switchName === 'sorobanCredentialsAddressV2') {
+    return credentials.addressV2();
+  }
+  if (switchName === 'sorobanCredentialsAddressWithDelegates') {
+    return credentials.addressWithDelegates().addressCredentials();
+  }
+
+  return null;
+}
+
+/**
+ * Return the wallet addresses that appear in an invoke_host_function
+ * operation's address-bound authorization entries.
+ */
+export function getAuthEntryAddresses(op: OperationRecord): string[] {
+  if (!isInvokeHostFunctionOp(op)) {
+    return [];
+  }
+
+  const addresses = new Set<string>();
+
+  for (const entry of op.auth ?? []) {
+    const credentials = entry.credentials();
+    const addressCredentials = getAddressCredentials(credentials);
+    if (addressCredentials) {
+      addresses.add(Address.fromScAddress(addressCredentials.address()).toString());
+    }
+  }
+
+  return [...addresses];
+}
+
+/**
+ * Return true if any auth entry in the operation uses source-account
+ * authorization, which would require the transaction source account to sign.
+ */
+export function hasSourceAccountAuth(op: OperationRecord): boolean {
+  if (!isInvokeHostFunctionOp(op)) {
+    return false;
+  }
+
+  return (
+    op.auth?.some(
+      (entry) => entry.credentials().switch().name === 'sorobanCredentialsSourceAccount'
+    ) ?? false
+  );
+}
+
+/**
+ * Submit a user-authorized Soroban transaction to the network with the platform
+ * fee payer as the source account.
+ *
+ * The input must be a base64-encoded inner Transaction envelope (not a fee-bump)
+ * containing exactly one `invoke_host_function` operation. The operation's auth
+ * entries must already be signed by the user's wallet. The server rebuilds the
+ * transaction with the fee payer as the source account, re-simulates to obtain
+ * current resource fees and Soroban data, signs with the fee payer, and submits
+ * directly via RPC.
+ */
+export async function submitSignedTransaction(signedXdr: string): Promise<{ hash: string }> {
+  const server = new rpc.Server(RPC_URL);
+  const feePayer = getFeePayerKeypair();
+  await fundAccount(feePayer.publicKey());
+
+  const innerTx = parseSorobanTransaction(signedXdr);
+
+  if (innerTx.operations.length !== 1) {
+    throw new Error('Sponsored transaction must contain exactly one operation');
+  }
+
+  const op = innerTx.operations[0];
+  if (!isInvokeHostFunctionOp(op)) {
+    throw new Error('Sponsored transaction must be an invoke_host_function operation');
+  }
+
+  const feePayerAccount = await server.getAccount(feePayer.publicKey());
+
+  const tempTx = new TransactionBuilder(feePayerAccount, {
+    fee: BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      Operation.invokeHostFunction({
+        func: op.func,
+        auth: op.auth,
+      })
+    )
+    .setTimeout(30)
+    .build();
+
+  const simulation = await server.simulateTransaction(tempTx);
+  if (rpc.Api.isSimulationError(simulation)) {
+    throw new Error(`Simulation failed: ${simulation.error}`);
+  }
+  if (!rpc.Api.isSimulationSuccess(simulation)) {
+    throw new Error('Simulation did not succeed');
+  }
+
+  const sorobanData = simulation.transactionData.build();
+  const fee = String(Number(simulation.minResourceFee) + Number(BASE_FEE));
+
+  const sponsoredTx = new TransactionBuilder(feePayerAccount, {
+    fee,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .setSorobanData(sorobanData)
+    .addOperation(
+      Operation.invokeHostFunction({
+        func: op.func,
+        auth: op.auth,
+      })
+    )
+    .setTimeout(30)
+    .build();
+
+  sponsoredTx.sign(feePayer);
+
+  const result = await server.sendTransaction(sponsoredTx);
+  await pollTransaction(server, result.hash);
+
+  return { hash: result.hash };
 }

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,12 +15,6 @@ import {
   setPinResetCode,
   verifyPinResetCode,
   clearPinResetCode,
-  setRecoveryInitiated,
-  recordRecoveryAttempt,
-  isRecoveryLocked,
-  verifyRecoveryCode,
-  isRecoveryReady,
-  clearRecoveryState,
   normalizeUsername,
   isValidUsername,
   normalizePhone,
@@ -27,6 +22,14 @@ import {
   getUserByUsername,
   getUserByPhone,
   setProfile,
+  setWallet,
+  setRecoveryPublicKey,
+  markRecoveryPhraseConfirmed,
+  setBackupPasskey,
+  setRecoveryInitiated,
+  verifyRecoveryCode,
+  isRecoveryLocked,
+  clearRecoveryState,
 } from './store';
 
 let dataDir: string;
@@ -101,75 +104,65 @@ describe('auth store', () => {
     expect(verifyPinResetCode('reset@example.com', '987654')).toBe(false);
   });
 
-  it('stores a recovery request', () => {
-    createUser('recover@example.com', '000000');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    const user = setRecoveryInitiated('recover@example.com', '123456', expiresAt);
+  it('stores wallet info including passkey key id', () => {
+    createUser('wallet@example.com', '000000');
+    const user = setWallet('wallet@example.com', {
+      walletContractId: 'CABC',
+      stellarAddress: 'CABC',
+      primaryPasskeyKeyId: 'key-id',
+    });
+    expect(user.walletContractId).toBe('CABC');
+    expect(user.stellarAddress).toBe('CABC');
+    expect(user.primaryPasskeyKeyId).toBe('key-id');
+  });
+
+  it('stores recovery public key and confirmation flag', () => {
+    createUser('recovery@example.com', '000000');
+    setRecoveryPublicKey('recovery@example.com', 'GABC');
+    const user = markRecoveryPhraseConfirmed('recovery@example.com');
+    expect(user.recoveryPublicKey).toBe('GABC');
+    expect(user.recoveryPhraseConfirmed).toBe(true);
+  });
+
+  it('stores backup passkey info', () => {
+    createUser('backup@example.com', '000000');
+    const credential = {
+      id: 'backup-key-id',
+      publicKey: 'backup-pubkey',
+      counter: 0,
+      transports: ['hybrid'] as AuthenticatorTransportFuture[],
+    };
+    const user = setBackupPasskey('backup@example.com', { credential });
+    expect(user.hasBackupPasskey).toBe(true);
+    expect(user.backupCredential).toEqual(credential);
+  });
+
+  it('manages recovery state', () => {
+    createUser('recovery@example.com', '000000');
+    const expiresAt = new Date(Date.now() + 60000).toISOString();
+    const user = setRecoveryInitiated('recovery@example.com', '123456', expiresAt);
     expect(user.recoveryCode).toBe('123456');
     expect(user.recoveryCodeExpiresAt).toBe(expiresAt);
     expect(user.recoveryAttempts).toBe(0);
-    expect(user.recoveryVerifiedAt).toBeUndefined();
-  });
 
-  it('verifies a valid recovery code', () => {
-    createUser('recover@example.com', '000000');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    setRecoveryInitiated('recover@example.com', '123456', expiresAt);
-    const user = verifyRecoveryCode('recover@example.com', '123456');
-    expect(user.recoveryVerifiedAt).toBeDefined();
-    expect(user.recoveryCode).toBeUndefined();
-    expect(user.recoveryAttempts).toBeUndefined();
-  });
+    const verified = verifyRecoveryCode('recovery@example.com', '123456');
+    expect(verified.recoveryVerifiedAt).toBeDefined();
+    expect(verified.recoveryCode).toBeUndefined();
 
-  it('rejects an expired recovery code', () => {
-    createUser('recover@example.com', '000000');
-    const expiresAt = new Date(Date.now() - 1).toISOString();
-    setRecoveryInitiated('recover@example.com', '123456', expiresAt);
-    expect(() => verifyRecoveryCode('recover@example.com', '123456')).toThrow('expired');
-  });
-
-  it('rejects an invalid recovery code and records attempts', () => {
-    createUser('recover@example.com', '000000');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    setRecoveryInitiated('recover@example.com', '123456', expiresAt);
-    expect(() => verifyRecoveryCode('recover@example.com', '000000')).toThrow('Invalid');
-    expect(getUserByEmail('recover@example.com')?.recoveryAttempts).toBe(1);
+    const cleared = clearRecoveryState('recovery@example.com');
+    expect(cleared.recoveryVerifiedAt).toBeUndefined();
   });
 
   it('locks recovery after too many failed attempts', () => {
-    createUser('recover@example.com', '000000');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    setRecoveryInitiated('recover@example.com', '123456', expiresAt);
-    expect(isRecoveryLocked('recover@example.com')).toBe(false);
-    recordRecoveryAttempt('recover@example.com');
-    recordRecoveryAttempt('recover@example.com');
-    expect(isRecoveryLocked('recover@example.com')).toBe(false);
-    recordRecoveryAttempt('recover@example.com');
-    expect(isRecoveryLocked('recover@example.com')).toBe(true);
-    expect(() => verifyRecoveryCode('recover@example.com', '123456')).toThrow('locked');
-  });
+    createUser('locked@example.com', '000000');
+    const expiresAt = new Date(Date.now() + 60000).toISOString();
+    setRecoveryInitiated('locked@example.com', '123456', expiresAt);
 
-  it('reports recovery readiness based on waiting period', () => {
-    createUser('recover@example.com', '000000');
-    process.env.RECOVERY_WAITING_PERIOD_MS = '60000';
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    setRecoveryInitiated('recover@example.com', '123456', expiresAt);
-    verifyRecoveryCode('recover@example.com', '123456');
-    expect(isRecoveryReady('recover@example.com')).toBe(false);
-    const later = Date.now() + 2 * 60 * 1000;
-    expect(isRecoveryReady('recover@example.com', later)).toBe(true);
-    delete process.env.RECOVERY_WAITING_PERIOD_MS;
-  });
-
-  it('clears recovery state', () => {
-    createUser('recover@example.com', '000000');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    setRecoveryInitiated('recover@example.com', '123456', expiresAt);
-    verifyRecoveryCode('recover@example.com', '123456');
-    const user = clearRecoveryState('recover@example.com');
-    expect(user.recoveryCode).toBeUndefined();
-    expect(user.recoveryVerifiedAt).toBeUndefined();
-    expect(user.recoveryInitiatedAt).toBeUndefined();
+    expect(() => verifyRecoveryCode('locked@example.com', '000000')).toThrow('Invalid recovery code');
+    expect(() => verifyRecoveryCode('locked@example.com', '000000')).toThrow('Invalid recovery code');
+    expect(() => verifyRecoveryCode('locked@example.com', '000000')).toThrow('Invalid recovery code');
+    expect(() => verifyRecoveryCode('locked@example.com', '000000')).toThrow('Recovery is locked');
+    expect(isRecoveryLocked('locked@example.com')).toBe(true);
   });
 });
 

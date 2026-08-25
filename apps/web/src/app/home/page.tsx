@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { RefreshCw } from 'lucide-react';
 import PinModal from '@/components/PinModal';
 
 interface BalanceData {
@@ -12,27 +14,35 @@ interface BalanceData {
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const [data, setData] = useState<BalanceData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [hasPin, setHasPin] = useState<boolean | null>(null);
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinToast, setPinToast] = useState<string | null>(null);
 
-  const fetchBalance = async () => {
+  const fetchBalance = async (isBackground = false) => {
+    if (!isBackground) {
+      setRefreshing(true);
+    }
     const res = await fetch('/api/wallet/balance');
     if (res.status === 401) {
-      window.location.href = '/login';
+      router.push('/login');
       return;
     }
     if (!res.ok) {
       const body = (await res.json()) as { error?: string };
       setError(body.error ?? 'Failed to load wallet');
       setLoading(false);
+      setRefreshing(false);
       return;
     }
     setData(await res.json());
     setError(null);
     setLoading(false);
+    setRefreshing(false);
   };
 
   const fetchPinStatus = async () => {
@@ -44,15 +54,23 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    fetchBalance();
+    fetchBalance(true);
     fetchPinStatus();
-    const id = setInterval(fetchBalance, 15000);
+    const id = setInterval(() => fetchBalance(true), 15000);
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!pinToast) {
+      return;
+    }
+    const id = setTimeout(() => setPinToast(null), 3000);
+    return () => clearTimeout(id);
+  }, [pinToast]);
+
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.href = '/login';
+    router.push('/login');
   };
 
   const format = (value: string) => {
@@ -107,8 +125,18 @@ export default function HomePage() {
         </div>
 
         <div className="rounded-2xl bg-white p-6 shadow-lg">
-          <p className="text-sm text-gray-500">Total balance</p>
-          <div className="mt-2 text-3xl font-bold text-gray-900">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm text-gray-500">Total balance</p>
+            <button
+              onClick={() => fetchBalance()}
+              disabled={refreshing}
+              aria-label="Refresh balance"
+              className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-pocketlet-600 disabled:opacity-50"
+            >
+              <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+            </button>
+          </div>
+          <div className="text-3xl font-bold text-gray-900">
             {format(data.usdc)} USDC
           </div>
           <div className="mt-1 text-sm text-gray-500">
@@ -129,16 +157,6 @@ export default function HomePage() {
               Send
             </Link>
           </div>
-        </div>
-
-        <div className="mt-6 rounded-2xl bg-white p-6 shadow-lg">
-          <h2 className="mb-2 text-sm font-semibold text-gray-700">Your Stellar address</h2>
-          <div className="break-all rounded-lg bg-gray-100 p-3 text-sm font-mono text-gray-700">
-            {data.stellarAddress}
-          </div>
-          <p className="mt-2 text-xs text-gray-500">
-            Share this address to receive USDC or XLM from any Stellar wallet.
-          </p>
         </div>
 
         <Link
@@ -181,12 +199,18 @@ export default function HomePage() {
         </div>
       </div>
 
+      {pinToast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-lg">
+          {pinToast}
+        </div>
+      )}
+
       <PinModal
         isOpen={pinModalOpen}
         title="Test PIN confirmation"
         onConfirm={() => {
           setPinModalOpen(false);
-          alert('PIN confirmed successfully');
+          setPinToast('PIN confirmed successfully');
         }}
         onCancel={() => setPinModalOpen(false)}
       />

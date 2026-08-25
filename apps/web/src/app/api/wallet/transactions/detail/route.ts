@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
 
   const user = getUserByEmail(session.email);
-  if (!user || !user.contractId) {
+  if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
 
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   try {
     const tx = await server.transactions().transaction(hash).call();
     const ops = await server.operations().forTransaction(hash).call();
-    const details = buildTransactionDetails(tx, ops.records, user.contractId, getUsdcContractId());
+    const details = buildTransactionDetails(tx, ops.records, user.walletContractId, getUsdcContractId());
     return NextResponse.json(details);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load transaction details';

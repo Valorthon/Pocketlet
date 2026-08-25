@@ -1,9 +1,18 @@
-import { PasskeyKit, SACClient } from 'passkey-kit';
+import {
+  PasskeyKit,
+  SACClient,
+  SignerStore,
+  PasskeyClient,
+  SignerKey,
+  Ed25519Signer,
+} from 'passkey-kit';
 import { IndexedDBStorage } from 'passkey-kit/storage';
 import { Asset } from '@stellar/stellar-sdk';
-import { Client as SacClient } from 'sac-sdk';
+import { type AssembledTransaction } from '@stellar/stellar-sdk/contract';
 import { RPC_URL, NETWORK_PASSPHRASE } from './network';
 import { getUsdcContractId } from './assets';
+
+export { SignerStore, PasskeyClient, SignerKey, Ed25519Signer };
 
 /**
  * Canonical v1 passkey-kit smart-wallet WASM hash.
@@ -36,6 +45,25 @@ export function createPasskeyKit(): PasskeyKit {
 }
 
 /**
+ * Connect a PasskeyKit instance to a known smart-wallet contract address
+ * without performing a WebAuthn ceremony.
+ *
+ * This is used during lost-passkey recovery: the user has no accessible
+ * passkey, but can sign admin transactions with their BIP39-derived Ed25519
+ * recovery key via `Ed25519Signer`.
+ */
+export function connectPasskeyKitByContractId(
+  kit: PasskeyKit,
+  contractId: string
+): void {
+  kit.wallet = new PasskeyClient({
+    contractId,
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+}
+
+/**
  * Create a SACClient for reading SEP-41 token balances and building transfers.
  */
 export function createSACClient(): SACClient {
@@ -62,16 +90,41 @@ export function getXlmSACClient() {
 }
 
 /**
- * Create a SEP-41 token client for a specific wallet source.
+ * Build an unsigned SEP-41 token transfer from the connected smart wallet.
  *
- * The returned client uses the smart-wallet contract as the transaction source
- * so that `transfer(...)` auth entries are authorized by the wallet signer.
+ * The returned AssembledTransaction has been simulated and contains unsigned
+ * wallet auth entries. Sign it with `await kit.sign(tx)` before submitting.
  */
-export function createTokenClient(tokenContractId: string, walletContractId: string): SacClient {
-  return new SacClient({
-    contractId: tokenContractId,
-    networkPassphrase: NETWORK_PASSPHRASE,
-    rpcUrl: RPC_URL,
-    publicKey: walletContractId,
+export async function prepareTokenTransferTx(
+  kit: PasskeyKit,
+  tokenContractId: string,
+  to: string,
+  amount: bigint
+): Promise<AssembledTransaction<null>> {
+  if (!kit.contractId) {
+    throw new Error('Wallet not connected');
+  }
+
+  const sac = createSACClient();
+  const token = sac.getSACClient(tokenContractId);
+
+  return token.transfer({
+    from: kit.contractId,
+    to,
+    amount,
   });
+}
+
+/**
+ * Build and sign a SEP-41 token transfer from the connected smart wallet.
+ */
+export async function buildTokenTransferTx(
+  kit: PasskeyKit,
+  tokenContractId: string,
+  to: string,
+  amount: bigint
+): Promise<AssembledTransaction<null>> {
+  const tx = await prepareTokenTransferTx(kit, tokenContractId, to, amount);
+  await kit.sign(tx);
+  return tx;
 }

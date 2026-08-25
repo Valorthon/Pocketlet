@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   TransactionDetails,
@@ -13,25 +14,18 @@ interface Params {
   hash: string;
 }
 
-export default function TransactionDetailsPage({ params }: { params: Promise<Params> }) {
-  const [hash, setHash] = useState<string | null>(null);
+export default function TransactionDetailsPage({ params }: { params: Params }) {
+  const router = useRouter();
+  const { hash } = params;
   const [tx, setTx] = useState<TransactionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    params.then((p) => setHash(p.hash));
-  }, [params]);
-
-  useEffect(() => {
-    if (!hash) {
-      return;
-    }
-
     const fetchDetails = async () => {
       const res = await fetch(`/api/wallet/transactions/detail?hash=${encodeURIComponent(hash)}`);
       if (res.status === 401) {
-        window.location.href = '/login';
+        router.push('/login');
         return;
       }
       if (!res.ok) {
@@ -57,8 +51,6 @@ export default function TransactionDetailsPage({ params }: { params: Promise<Par
         return 'text-green-600';
       case 'send':
         return 'text-red-600';
-      case 'swap':
-        return 'text-pocketlet-600';
       default:
         return 'text-gray-600';
     }
@@ -144,22 +136,6 @@ export default function TransactionDetailsPage({ params }: { params: Promise<Par
                   {tx.sender}
                 </dd>
               </div>
-            )}
-            {tx.type === 'swap' && (
-              <>
-                <div className="flex justify-between">
-                  <dt className="text-gray-500">Sold</dt>
-                  <dd className="font-medium text-gray-900">
-                    {tx.sellAmount ?? '-'} {tx.sellAsset ?? ''}
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-gray-500">Bought</dt>
-                  <dd className="font-medium text-gray-900">
-                    {tx.buyAmount ?? '-'} {tx.buyAsset ?? ''}
-                  </dd>
-                </div>
-              </>
             )}
             <div className="flex justify-between">
               <dt className="text-gray-500">Network fee</dt>

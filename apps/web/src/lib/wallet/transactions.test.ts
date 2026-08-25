@@ -84,30 +84,31 @@ function makeBalanceChange(
 describe('transaction parser', () => {
   it('classifies a received payment', () => {
     const op = makePaymentOp({ from: OTHER_ADDRESS, to: WALLET_ADDRESS });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx).not.toBeNull();
     expect(tx?.type).toBe('receive');
     expect(tx?.amount).toBe('10');
+    expect(tx?.ledger).toBe(12345);
     expect(tx?.sender).toBe(OTHER_ADDRESS);
   });
 
   it('classifies a sent payment', () => {
     const op = makePaymentOp({ from: WALLET_ADDRESS, to: OTHER_ADDRESS });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx?.type).toBe('send');
     expect(tx?.recipient).toBe(OTHER_ADDRESS);
   });
 
   it('ignores payments not involving the wallet', () => {
     const op = makePaymentOp({ from: OTHER_ADDRESS, to: OTHER_ADDRESS });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx).toBeNull();
   });
 
-  it('classifies a swap invoke operation', () => {
+  it('classifies a swap invoke operation as unknown', () => {
     const op = makeInvokeOp({ function: 'swap' });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
-    expect(tx?.type).toBe('swap');
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
+    expect(tx).toBeNull();
   });
 
   it('builds transaction details from a receive payment', () => {
@@ -142,14 +143,12 @@ describe('transaction parser', () => {
   it('formats transaction types', () => {
     expect(formatTransactionType('receive')).toBe('Received');
     expect(formatTransactionType('send')).toBe('Sent');
-    expect(formatTransactionType('swap')).toBe('Swapped');
     expect(formatTransactionType('unknown')).toBe('Transaction');
   });
 
   it('formats transaction descriptions', () => {
     expect(formatTransactionDescription({ ...makePaymentOp(), type: 'receive', amount: '10', asset: 'XLM' } as never)).toBe('Received 10 XLM');
     expect(formatTransactionDescription({ ...makePaymentOp(), type: 'send', amount: '5', asset: 'USDC' } as never)).toBe('Sent 5 USDC');
-    expect(formatTransactionDescription({ ...makeInvokeOp(), type: 'swap', amount: '1', asset: 'USDC', sellAmount: '1', sellAsset: 'USDC', buyAmount: '10', buyAsset: 'XLM' } as never)).toBe('Swapped 1 USDC for 10 XLM');
   });
 
   it('classifies a transfer invoke operation with balance changes', () => {
@@ -163,36 +162,30 @@ describe('transaction parser', () => {
         }),
       ],
     });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
     expect(tx?.type).toBe('send');
     expect(tx?.asset).toBe('USDC');
     expect(tx?.amount).toBe('2.5');
     expect(tx?.recipient).toBe(OTHER_ADDRESS);
   });
 
-  it('classifies a swap invoke operation with balance changes', () => {
-    const op = makeInvokeOp({
-      function: 'swap',
-      asset_balance_changes: [
-        makeBalanceChange({
-          asset_type: 'credit_alphanum4',
-          asset_code: 'USDC',
-          amount: '100000000',
-        }),
-        makeBalanceChange({
-          asset_type: 'native',
-          from: OTHER_ADDRESS,
-          to: WALLET_ADDRESS,
-          amount: '100000000',
-        }),
-      ],
-    });
-    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID);
-    expect(tx?.type).toBe('swap');
-    expect(tx?.sellAsset).toBe('USDC');
-    expect(tx?.sellAmount).toBe('10');
-    expect(tx?.buyAsset).toBe('XLM');
-    expect(tx?.buyAmount).toBe('10');
+  it('classifies a path payment send as a normal send', () => {
+    const op = {
+      ...makePaymentOp(),
+      type: 'path_payment_strict_send',
+      type_i: 13,
+      from: WALLET_ADDRESS,
+      to: OTHER_ADDRESS,
+      asset_code: 'XLM',
+      source_asset_code: 'USDC',
+      amount: '100000000',
+      source_amount: '25000000',
+    } as unknown as Horizon.ServerApi.PathPaymentOperationRecord;
+    const tx = classifyOperation(op, WALLET_ADDRESS, USDC_CONTRACT_ID, 12345);
+    expect(tx?.type).toBe('send');
+    expect(tx?.asset).toBe('USDC');
+    expect(tx?.amount).toBe('2.5');
+    expect(tx?.recipient).toBe(OTHER_ADDRESS);
   });
 
   it('builds Stellar Expert explorer URL', () => {

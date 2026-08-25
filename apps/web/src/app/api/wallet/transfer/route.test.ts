@@ -16,6 +16,7 @@ import {
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
+import { getTokenBalance } from '@/lib/wallet/token';
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
 import { addressScVal, amountToBaseUnits, i128ScVal } from '@/lib/wallet/amount';
 
@@ -102,8 +103,9 @@ async function createSender(email: string) {
     counter: 0,
   });
   setWallet(email, {
-    contractId: SENDER_CONTRACT,
+    walletContractId: SENDER_CONTRACT,
     stellarAddress: SENDER_CONTRACT,
+    primaryPasskeyKeyId: 'cred-id',
   });
   setPin(email, '123456');
   return createSessionToken({ email });
@@ -118,8 +120,9 @@ async function createRecipient(email: string, username?: string, phone?: string)
     counter: 0,
   });
   setWallet(email, {
-    contractId: 'CRECIPIENT',
+    walletContractId: 'CRECIPIENT',
     stellarAddress: RECIPIENT_ADDRESS,
+    primaryPasskeyKeyId: 'cred-id-2',
   });
   if (username || phone) {
     setProfile(email, { username, phone });
@@ -282,7 +285,7 @@ describe('POST /api/wallet/transfer', () => {
       token
     );
     const res = await POST(req);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain('wrong token contract');
   });
@@ -305,7 +308,7 @@ describe('POST /api/wallet/transfer', () => {
       token
     );
     const res = await POST(req);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain('not from the user wallet');
   });
@@ -328,8 +331,140 @@ describe('POST /api/wallet/transfer', () => {
       token
     );
     const res = await POST(req);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain('amount does not match');
+  });
+
+  it('returns 400 when signedXdr is missing', async () => {
+    const token = await createSender('alice@example.com');
+    const req = createTransferRequest(
+      {
+        asset: 'USDC',
+        amount: '1',
+        recipient: RECIPIENT_ADDRESS,
+        pin: '123456',
+      },
+      token
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('signedXdr is required');
+  });
+
+  it('returns 400 for an unsupported asset', async () => {
+    const token = await createSender('alice@example.com');
+    const req = createTransferRequest(
+      {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '1'
+        ),
+        asset: 'BTC',
+        amount: '1',
+        recipient: RECIPIENT_ADDRESS,
+        pin: '123456',
+      },
+      token
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('Asset must be USDC or XLM');
+  });
+
+  it('returns 400 for a non-numeric amount', async () => {
+    const token = await createSender('alice@example.com');
+    const req = createTransferRequest(
+      {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '1'
+        ),
+        asset: 'USDC',
+        amount: 'not-a-number',
+        recipient: RECIPIENT_ADDRESS,
+        pin: '123456',
+      },
+      token
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('Amount must be a positive number');
+  });
+
+  it('returns 400 for an amount with too many decimals', async () => {
+    const token = await createSender('alice@example.com');
+    const req = createTransferRequest(
+      {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '1'
+        ),
+        asset: 'USDC',
+        amount: '1.12345678',
+        recipient: RECIPIENT_ADDRESS,
+        pin: '123456',
+      },
+      token
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('Amount cannot have more than 7 decimal places');
+  });
+
+  it('returns 400 when the recipient is missing', async () => {
+    const token = await createSender('alice@example.com');
+    const req = createTransferRequest(
+      {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '1'
+        ),
+        asset: 'USDC',
+        amount: '1',
+        pin: '123456',
+      },
+      token
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('Recipient is required');
+  });
+
+  it('returns 400 when the balance is insufficient', async () => {
+    vi.mocked(getTokenBalance).mockResolvedValueOnce(BigInt('1000000'));
+    const token = await createSender('alice@example.com');
+    const req = createTransferRequest(
+      {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '5'
+        ),
+        asset: 'USDC',
+        amount: '5',
+        recipient: RECIPIENT_ADDRESS,
+        pin: '123456',
+      },
+      token
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('Insufficient USDC balance');
   });
 });

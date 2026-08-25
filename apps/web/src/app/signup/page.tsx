@@ -1,14 +1,30 @@
 'use client';
 
 import { useState } from 'react';
-import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
+import { useRouter } from 'next/navigation';
+import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
+import {
+  generateRecoveryPhrase,
+  getRecoveryPublicKey,
+  splitRecoveryPhrase,
+} from '@/lib/wallet/recovery';
+
+const ONBOARDING_PHRASE_KEY = 'pocketlet:onboarding:recoveryPhrase';
+const ONBOARDING_KEY_ID_KEY = 'pocketlet:onboarding:keyIdBase64';
+const ONBOARDING_CONTRACT_ID_KEY = 'pocketlet:onboarding:contractId';
 
 export default function SignupPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'email' | 'code' | 'passkey'>('email');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deployResult, setDeployResult] = useState<{
+    contractId: string;
+    keyIdBase64: string;
+  } | null>(null);
+  const [recoveryPhrase, setRecoveryPhrase] = useState<string | null>(null);
 
   const requestCode = async () => {
     setLoading(true);
@@ -65,6 +81,10 @@ export default function SignupPage() {
       const kit = createPasskeyKit();
       const result = await kit.createWallet('Pocketlet', email);
 
+      // Generate the recovery phrase client-side. The phrase itself never
+      // leaves the browser; only its derived public key is sent to the server.
+      const phrase = generateRecoveryPhrase();
+
       const deployRes = await fetch('/api/wallet/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -86,9 +106,73 @@ export default function SignupPage() {
         return;
       }
 
-      window.location.href = '/pin/setup';
+      setDeployResult({
+        contractId: result.contractId,
+        keyIdBase64: result.keyIdBase64,
+      });
+      setRecoveryPhrase(phrase);
+
+      await registerRecoverySigner(kit, phrase, result.keyIdBase64, result.contractId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Passkey registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registerRecoverySigner = async (
+    kit: ReturnType<typeof createPasskeyKit>,
+    phrase: string,
+    keyIdBase64: string,
+    contractId: string
+  ) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const recoveryPublicKey = getRecoveryPublicKey(phrase);
+
+      // Connect the newly deployed wallet so we can administer signers.
+      await kit.connectWallet({ keyId: keyIdBase64 });
+
+      // Register the recovery Ed25519 signer immediately after deploy.
+      const addSignerTx = await kit.addEd25519(
+        recoveryPublicKey,
+        undefined,
+        SignerStore.Persistent
+      );
+      await kit.sign(addSignerTx);
+      const signedXdr = addSignerTx.toXDR();
+
+      const submitRes = await fetch('/api/wallet/recovery-signer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signedXdr, recoveryPublicKey }),
+      });
+
+      const submitData = (await submitRes.json()) as { error?: string; hash?: string };
+      if (!submitRes.ok) {
+        setError(submitData.error ?? 'Failed to register recovery signer');
+        return;
+      }
+
+      // Stash onboarding state in sessionStorage so the recovery-phrase page
+      // can display the phrase once without persisting it on the server.
+      window.sessionStorage.setItem(ONBOARDING_PHRASE_KEY, phrase);
+      window.sessionStorage.setItem(ONBOARDING_KEY_ID_KEY, keyIdBase64);
+      window.sessionStorage.setItem(ONBOARDING_CONTRACT_ID_KEY, contractId);
+
+      // Basic check that the stored phrase is retrievable before navigating.
+      const stored = window.sessionStorage.getItem(ONBOARDING_PHRASE_KEY);
+      const storedWords = stored ? splitRecoveryPhrase(stored) : [];
+      if (storedWords.length !== 12) {
+        setError('Failed to save recovery phrase. Please try again.');
+        return;
+      }
+
+      router.push('/recovery-phrase');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to register recovery signer');
     } finally {
       setLoading(false);
     }
@@ -171,13 +255,33 @@ export default function SignupPage() {
             <p className="text-sm text-gray-600">
               Your email is verified. Register a passkey to create and secure your wallet.
             </p>
-            <button
-              onClick={registerPasskeyAndDeploy}
-              disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-            >
-              {loading ? 'Registering...' : 'Register passkey and create wallet'}
-            </button>
+            {!deployResult ? (
+              <button
+                onClick={registerPasskeyAndDeploy}
+                disabled={loading}
+                className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              >
+                {loading ? 'Registering...' : 'Register passkey and create wallet'}
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const kit = createPasskeyKit();
+                  if (recoveryPhrase) {
+                    registerRecoverySigner(
+                      kit,
+                      recoveryPhrase,
+                      deployResult.keyIdBase64,
+                      deployResult.contractId
+                    );
+                  }
+                }}
+                disabled={loading || !recoveryPhrase}
+                className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              >
+                {loading ? 'Retrying...' : 'Retry adding recovery signer'}
+              </button>
+            )}
           </div>
         )}
       </div>
