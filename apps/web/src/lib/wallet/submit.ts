@@ -1,4 +1,5 @@
 import {
+  Account,
   Address,
   BASE_FEE,
   FeeBumpTransaction,
@@ -46,14 +47,8 @@ function getInvokeHostFunctionResultCode(
   };
 }
 
-function formatFailedResult(
-  tx: rpc.Api.GetFailedTransactionResponse
-): string {
-  if (!tx.resultXdr) {
-    return 'no result XDR';
-  }
-
-  const resultUnion = tx.resultXdr.result();
+function formatTransactionResult(result: xdr.TransactionResult): string {
+  const resultUnion = result.result();
   const txSwitch = resultUnion.switch();
   const txCode = txSwitch.name ?? txSwitch.value ?? 'unknown';
 
@@ -75,6 +70,16 @@ function formatFailedResult(
   return opCodes.length
     ? `tx=${txCode}; ${opCodes.join('; ')}`
     : `tx=${txCode}`;
+}
+
+function formatFailedResult(
+  tx: rpc.Api.GetFailedTransactionResponse
+): string {
+  if (!tx.resultXdr) {
+    return 'no result XDR';
+  }
+
+  return formatTransactionResult(tx.resultXdr);
 }
 
 export async function pollTransaction(
@@ -288,6 +293,7 @@ export async function submitSignedTransaction(signedXdr: string): Promise<{ hash
   }
 
   const feePayerAccount = await server.getAccount(feePayer.publicKey());
+  const feePayerSequence = feePayerAccount.sequenceNumber();
 
   const tempTx = new TransactionBuilder(feePayerAccount, {
     fee: BASE_FEE,
@@ -313,10 +319,16 @@ export async function submitSignedTransaction(signedXdr: string): Promise<{ hash
   const sorobanData = simulation.transactionData.build();
   const fee = String(Number(simulation.minResourceFee) + Number(BASE_FEE));
 
-  const sponsoredTx = new TransactionBuilder(feePayerAccount, {
-    fee,
-    networkPassphrase: NETWORK_PASSPHRASE,
-  })
+  // Build the sponsored transaction from a fresh Account using the sequence we
+  // fetched from the network. Reusing feePayerAccount would use the next
+  // sequence because building tempTx consumed one internally.
+  const sponsoredTx = new TransactionBuilder(
+    new Account(feePayer.publicKey(), feePayerSequence),
+    {
+      fee,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    }
+  )
     .setSorobanData(sorobanData)
     .addOperation(
       Operation.invokeHostFunction({
@@ -330,6 +342,17 @@ export async function submitSignedTransaction(signedXdr: string): Promise<{ hash
   sponsoredTx.sign(feePayer);
 
   const result = await server.sendTransaction(sponsoredTx);
+
+  if (result.status === 'ERROR') {
+    const detail = result.errorResult
+      ? formatTransactionResult(result.errorResult)
+      : 'no error result XDR';
+    throw new Error(`sendTransaction failed: ${detail}`);
+  }
+  if (result.status !== 'PENDING' && result.status !== 'DUPLICATE') {
+    throw new Error(`sendTransaction returned unexpected status: ${result.status}`);
+  }
+
   await pollTransaction(server, result.hash);
 
   return { hash: result.hash };

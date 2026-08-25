@@ -339,6 +339,12 @@ describe('submitSignedTransaction', () => {
     expect(sendSpy).toHaveBeenCalled();
     expect(getTransactionSpy).toHaveBeenCalledWith('test-hash-123');
 
+    // Regression: the sponsored transaction must use the fee payer's next
+    // network sequence (network sequence 0 + 1), not the sequence after the
+    // simulation build consumed one internally (which would be 2).
+    const sentTx = sendSpy.mock.calls[0][0] as Transaction;
+    expect(sentTx.sequence).toBe('1');
+
     getAccountSpy.mockRestore();
     simulateSpy.mockRestore();
     sendSpy.mockRestore();
