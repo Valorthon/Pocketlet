@@ -71,8 +71,6 @@ describe('POST /api/wallet/deploy', () => {
       keyIdBase64: 'test-key-id',
       contractId: 'CABC',
       signedTx: 'AAAA...',
-      recoveryPublicKey:
-        'GAAZIJJQ7WGPQMNZHZHQPIQS2MWKZL3ZBXZEWXBNQP3HB7YHDQJVKMIC',
     });
     const res = await POST(req);
     expect(res.status).toBe(401);
@@ -83,16 +81,12 @@ describe('POST /api/wallet/deploy', () => {
     setEmailVerified('alice@example.com');
     const token = await createSessionToken({ email: 'alice@example.com' });
 
-    const recoveryPublicKey =
-      'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP';
-
     const req = createDeployRequest(
       {
         response: { id: 'test-key-id' },
         keyIdBase64: 'test-key-id',
         contractId: 'CABC',
         signedTx: 'AAAA...',
-        recoveryPublicKey,
       },
       token
     );
@@ -107,7 +101,7 @@ describe('POST /api/wallet/deploy', () => {
     const user = getUserByEmail('alice@example.com');
     expect(user?.walletContractId).toBe('CABC');
     expect(user?.primaryPasskeyKeyId).toBe('test-key-id');
-    expect(user?.recoveryPublicKey).toBe(recoveryPublicKey);
+    expect(user?.recoveryPublicKey).toBeUndefined();
     expect(user?.credential?.id).toBe('test-key-id');
   });
 
@@ -129,8 +123,6 @@ describe('POST /api/wallet/deploy', () => {
         keyIdBase64: 'test-key-id',
         contractId: 'CABC',
         signedTx: 'AAAA...',
-        recoveryPublicKey:
-          'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP',
       },
       token
     );
@@ -153,8 +145,6 @@ describe('POST /api/wallet/deploy', () => {
         keyIdBase64: 'different-key-id',
         contractId: 'CABC',
         signedTx: 'AAAA...',
-        recoveryPublicKey:
-          'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP',
       },
       token
     );
@@ -165,7 +155,7 @@ describe('POST /api/wallet/deploy', () => {
     expect(body.error).toContain('Credential id does not match');
   });
 
-  it('rejects an invalid recovery public key', async () => {
+  it('rejects missing required fields', async () => {
     createUser('alice@example.com', '000000');
     setEmailVerified('alice@example.com');
     const token = await createSessionToken({ email: 'alice@example.com' });
@@ -175,8 +165,6 @@ describe('POST /api/wallet/deploy', () => {
         response: { id: 'test-key-id' },
         keyIdBase64: 'test-key-id',
         contractId: 'CABC',
-        signedTx: 'AAAA...',
-        recoveryPublicKey: 'not-a-valid-key',
       },
       token
     );
@@ -184,6 +172,6 @@ describe('POST /api/wallet/deploy', () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain('valid Stellar public key');
+    expect(body.error).toContain('response, keyIdBase64, contractId, and signedTx are required');
   });
 });

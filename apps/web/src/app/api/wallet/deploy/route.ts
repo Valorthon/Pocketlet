@@ -1,5 +1,4 @@
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
-import { Keypair } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
@@ -7,7 +6,6 @@ import { SESSION_COOKIE_NAME, ORIGIN, RP_ID } from '@/lib/auth/config';
 import {
   getUserByEmail,
   setCredential,
-  setRecoveryPublicKey,
   setWallet,
 } from '@/lib/auth/store';
 import { submitSignedTransaction } from '@/lib/wallet/submit';
@@ -21,8 +19,6 @@ export interface DeployRequest {
   contractId: string;
   /** Base64 XDR of the authorized deploy carrier, ready for fee-payer submission. */
   signedTx: string;
-  /** Recovery Ed25519 public key (G...) derived from the BIP39 phrase. */
-  recoveryPublicKey: string;
 }
 
 /**
@@ -83,23 +79,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { response, keyIdBase64, contractId, signedTx, recoveryPublicKey } = body;
+  const { response, keyIdBase64, contractId, signedTx } = body;
 
-  if (!response || !keyIdBase64 || !contractId || !signedTx || !recoveryPublicKey) {
+  if (!response || !keyIdBase64 || !contractId || !signedTx) {
     return NextResponse.json(
       {
-        error:
-          'response, keyIdBase64, contractId, signedTx, and recoveryPublicKey are required',
+        error: 'response, keyIdBase64, contractId, and signedTx are required',
       },
-      { status: 400 }
-    );
-  }
-
-  try {
-    Keypair.fromPublicKey(recoveryPublicKey);
-  } catch {
-    return NextResponse.json(
-      { error: 'recoveryPublicKey must be a valid Stellar public key' },
       { status: 400 }
     );
   }
@@ -136,8 +122,6 @@ export async function POST(request: NextRequest) {
       stellarAddress: contractId,
       primaryPasskeyKeyId: credential.id,
     });
-
-    setRecoveryPublicKey(user.email, recoveryPublicKey);
 
     return NextResponse.json({
       email: user.email,

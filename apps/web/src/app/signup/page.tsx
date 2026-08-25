@@ -18,6 +18,11 @@ export default function SignupPage() {
   const [step, setStep] = useState<'email' | 'code' | 'passkey'>('email');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deployResult, setDeployResult] = useState<{
+    contractId: string;
+    keyIdBase64: string;
+  } | null>(null);
+  const [recoveryPhrase, setRecoveryPhrase] = useState<string | null>(null);
 
   const requestCode = async () => {
     setLoading(true);
@@ -76,8 +81,7 @@ export default function SignupPage() {
 
       // Generate the recovery phrase client-side. The phrase itself never
       // leaves the browser; only its derived public key is sent to the server.
-      const recoveryPhrase = generateRecoveryPhrase();
-      const recoveryPublicKey = getRecoveryPublicKey(recoveryPhrase);
+      const phrase = generateRecoveryPhrase();
 
       const deployRes = await fetch('/api/wallet/deploy', {
         method: 'POST',
@@ -87,7 +91,6 @@ export default function SignupPage() {
           keyIdBase64: result.keyIdBase64,
           contractId: result.contractId,
           signedTx: result.signedTx,
-          recoveryPublicKey,
         }),
       });
 
@@ -101,8 +104,34 @@ export default function SignupPage() {
         return;
       }
 
+      setDeployResult({
+        contractId: result.contractId,
+        keyIdBase64: result.keyIdBase64,
+      });
+      setRecoveryPhrase(phrase);
+
+      await registerRecoverySigner(kit, phrase, result.keyIdBase64, result.contractId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Passkey registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registerRecoverySigner = async (
+    kit: ReturnType<typeof createPasskeyKit>,
+    phrase: string,
+    keyIdBase64: string,
+    contractId: string
+  ) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const recoveryPublicKey = getRecoveryPublicKey(phrase);
+
       // Connect the newly deployed wallet so we can administer signers.
-      await kit.connectWallet({ keyId: result.keyIdBase64 });
+      await kit.connectWallet({ keyId: keyIdBase64 });
 
       // Register the recovery Ed25519 signer immediately after deploy.
       const addSignerTx = await kit.addEd25519(
@@ -113,10 +142,10 @@ export default function SignupPage() {
       await kit.sign(addSignerTx);
       const signedXdr = addSignerTx.toXDR();
 
-      const submitRes = await fetch('/api/wallet/submit', {
+      const submitRes = await fetch('/api/wallet/recovery-signer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signedXdr }),
+        body: JSON.stringify({ signedXdr, recoveryPublicKey }),
       });
 
       const submitData = (await submitRes.json()) as { error?: string; hash?: string };
@@ -127,12 +156,9 @@ export default function SignupPage() {
 
       // Stash onboarding state in sessionStorage so the recovery-phrase page
       // can display the phrase once without persisting it on the server.
-      window.sessionStorage.setItem(ONBOARDING_PHRASE_KEY, recoveryPhrase);
-      window.sessionStorage.setItem(ONBOARDING_KEY_ID_KEY, result.keyIdBase64);
-      window.sessionStorage.setItem(
-        ONBOARDING_CONTRACT_ID_KEY,
-        result.contractId
-      );
+      window.sessionStorage.setItem(ONBOARDING_PHRASE_KEY, phrase);
+      window.sessionStorage.setItem(ONBOARDING_KEY_ID_KEY, keyIdBase64);
+      window.sessionStorage.setItem(ONBOARDING_CONTRACT_ID_KEY, contractId);
 
       // Basic check that the stored phrase is retrievable before navigating.
       const stored = window.sessionStorage.getItem(ONBOARDING_PHRASE_KEY);
@@ -144,7 +170,7 @@ export default function SignupPage() {
 
       window.location.href = '/recovery-phrase';
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Passkey registration failed');
+      setError(err instanceof Error ? err.message : 'Failed to register recovery signer');
     } finally {
       setLoading(false);
     }
@@ -227,13 +253,33 @@ export default function SignupPage() {
             <p className="text-sm text-gray-600">
               Your email is verified. Register a passkey to create and secure your wallet.
             </p>
-            <button
-              onClick={registerPasskeyAndDeploy}
-              disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-            >
-              {loading ? 'Registering...' : 'Register passkey and create wallet'}
-            </button>
+            {!deployResult ? (
+              <button
+                onClick={registerPasskeyAndDeploy}
+                disabled={loading}
+                className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              >
+                {loading ? 'Registering...' : 'Register passkey and create wallet'}
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const kit = createPasskeyKit();
+                  if (recoveryPhrase) {
+                    registerRecoverySigner(
+                      kit,
+                      recoveryPhrase,
+                      deployResult.keyIdBase64,
+                      deployResult.contractId
+                    );
+                  }
+                }}
+                disabled={loading || !recoveryPhrase}
+                className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              >
+                {loading ? 'Retrying...' : 'Retry adding recovery signer'}
+              </button>
+            )}
           </div>
         )}
       </div>
