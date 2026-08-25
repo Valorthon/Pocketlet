@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserByEmail, setEmailVerified } from '@/lib/auth/store';
+import { createSessionToken, cookieOptions } from '@/lib/auth/session';
 
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as { email?: string; code?: string };
@@ -20,5 +21,17 @@ export async function POST(request: NextRequest) {
   }
 
   setEmailVerified(email);
-  return NextResponse.json({ email, verified: true });
+
+  const token = await createSessionToken({ email });
+  const res = NextResponse.json({ email, verified: true });
+  const opts = cookieOptions();
+  res.cookies.set(opts.name, token, {
+    httpOnly: opts.httpOnly,
+    secure: opts.secure,
+    sameSite: opts.sameSite,
+    domain: opts.domain,
+    maxAge: opts.maxAge,
+    path: opts.path,
+  });
+  return res;
 }
