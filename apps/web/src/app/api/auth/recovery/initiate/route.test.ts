@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -83,5 +83,26 @@ describe('POST /api/auth/recovery/initiate', () => {
     await POST(createRequest({ email: 'alice@example.com' }));
     const res = await POST(createRequest({ email: 'alice@example.com' }));
     expect(res.status).toBe(429);
+  });
+
+  it('enforces the hourly initiation cap', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    makeRecoverableUser('alice@example.com');
+
+    // 5 initiations within an hour should succeed.
+    for (let i = 0; i < 5; i += 1) {
+      if (i > 0) {
+        vi.advanceTimersByTime(2 * 60 * 1000); // advance past the 1-minute retry window
+      }
+      const res = await POST(createRequest({ email: 'alice@example.com' }));
+      expect(res.status).toBe(200);
+    }
+
+    // A 6th initiation within the same hour is blocked.
+    vi.advanceTimersByTime(2 * 60 * 1000);
+    const res = await POST(createRequest({ email: 'alice@example.com' }));
+    expect(res.status).toBe(429);
+
+    vi.useRealTimers();
   });
 });

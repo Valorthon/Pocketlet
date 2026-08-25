@@ -33,6 +33,7 @@ export interface User {
 
   // Lost-passkey recovery state
   recoveryInitiatedAt?: string;
+  recoveryInitiationHistory?: string[];
   recoveryCode?: string;
   recoveryCodeExpiresAt?: string;
   recoveryVerifiedAt?: string;
@@ -380,6 +381,15 @@ export function clearPinResetCode(email: string): User {
   return user;
 }
 
+const RECOVERY_INITIATION_HISTORY_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function pruneRecoveryInitiationHistory(history: string[]): string[] {
+  const cutoff = new Date(
+    Date.now() - RECOVERY_INITIATION_HISTORY_WINDOW_MS
+  ).toISOString();
+  return history.filter((timestamp) => timestamp > cutoff);
+}
+
 export function setRecoveryInitiated(
   email: string,
   code: string,
@@ -391,7 +401,12 @@ export function setRecoveryInitiated(
   if (!user) {
     throw new Error('User not found');
   }
-  user.recoveryInitiatedAt = new Date().toISOString();
+  const now = new Date().toISOString();
+  user.recoveryInitiatedAt = now;
+  user.recoveryInitiationHistory = [
+    ...pruneRecoveryInitiationHistory(user.recoveryInitiationHistory ?? []),
+    now,
+  ];
   user.recoveryCode = code;
   user.recoveryCodeExpiresAt = expiresAt;
   user.recoveryAttempts = 0;
@@ -468,6 +483,7 @@ export function clearRecoveryState(email: string): User {
     throw new Error('User not found');
   }
   delete user.recoveryInitiatedAt;
+  delete user.recoveryInitiationHistory;
   delete user.recoveryCode;
   delete user.recoveryCodeExpiresAt;
   delete user.recoveryVerifiedAt;

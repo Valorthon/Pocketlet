@@ -13,21 +13,13 @@ interface Params {
   hash: string;
 }
 
-export default function TransactionDetailsPage({ params }: { params: Promise<Params> }) {
-  const [hash, setHash] = useState<string | null>(null);
+export default function TransactionDetailsPage({ params }: { params: Params }) {
+  const { hash } = params;
   const [tx, setTx] = useState<TransactionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    params.then((p) => setHash(p.hash));
-  }, [params]);
-
-  useEffect(() => {
-    if (!hash) {
-      return;
-    }
-
     const fetchDetails = async () => {
       const res = await fetch(`/api/wallet/transactions/detail?hash=${encodeURIComponent(hash)}`);
       if (res.status === 401) {

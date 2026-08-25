@@ -105,7 +105,29 @@ describe('recovery helpers', () => {
     expect(isRecoveryInitiationRateLimited(old)).toBe(false);
   });
 
-  it('counts recent initiations within the window', () => {
+  it('counts recent initiations within the window from history', () => {
+    const user: User = {
+      email: 'test@example.com',
+      emailVerified: true,
+      createdAt: new Date().toISOString(),
+      recoveryInitiationHistory: [
+        new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+        new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+        new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      ],
+    };
+    expect(countRecentInitiations(user)).toBe(2);
+
+    const old: User = {
+      ...user,
+      recoveryInitiationHistory: [
+        new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      ],
+    };
+    expect(countRecentInitiations(old)).toBe(0);
+  });
+
+  it('falls back to recoveryInitiatedAt for backward compatibility', () => {
     const user: User = {
       email: 'test@example.com',
       emailVerified: true,

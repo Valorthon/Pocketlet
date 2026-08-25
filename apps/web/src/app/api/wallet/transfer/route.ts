@@ -42,6 +42,13 @@ function validateAmount(amount: string): string | null {
   return null;
 }
 
+class TransferValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TransferValidationError';
+  }
+}
+
 /**
  * Validate that the signed XDR is a SAC `transfer(from, to, amount)` call
  * from the user's wallet contract to the resolved recipient for the stated
@@ -56,30 +63,42 @@ function validateSignedTransfer(
 ) {
   const envelope = TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
   if (envelope.operations.length !== 1) {
-    throw new Error('Transfer transaction must contain exactly one operation');
+    throw new TransferValidationError(
+      'Transfer transaction must contain exactly one operation'
+    );
   }
 
   const op = envelope.operations[0];
   if (!op) {
-    throw new Error('Transfer transaction contains no operations');
+    throw new TransferValidationError(
+      'Transfer transaction contains no operations'
+    );
   }
 
   const details = getInvokeContractDetails(op);
   if (!details) {
-    throw new Error('Transfer transaction does not invoke a contract');
+    throw new TransferValidationError(
+      'Transfer transaction does not invoke a contract'
+    );
   }
 
   if (details.contractId !== tokenContractId) {
-    throw new Error('Transfer transaction invokes the wrong token contract');
+    throw new TransferValidationError(
+      'Transfer transaction invokes the wrong token contract'
+    );
   }
 
   if (details.functionName !== 'transfer') {
-    throw new Error('Transfer transaction must call the transfer function');
+    throw new TransferValidationError(
+      'Transfer transaction must call the transfer function'
+    );
   }
 
   const args = getInvokeContractArgs(op);
   if (!args || args.length !== 3) {
-    throw new Error('Transfer function arguments are malformed');
+    throw new TransferValidationError(
+      'Transfer function arguments are malformed'
+    );
   }
 
   const fromAddress = scValToAddress(args[0]);
@@ -87,15 +106,21 @@ function validateSignedTransfer(
   const amount = i128ToBigInt(args[2]);
 
   if (fromAddress !== walletContractId) {
-    throw new Error('Transfer is not from the user wallet');
+    throw new TransferValidationError(
+      'Transfer is not from the user wallet'
+    );
   }
 
   if (toAddress !== recipientAddress) {
-    throw new Error('Transfer recipient does not match resolved address');
+    throw new TransferValidationError(
+      'Transfer recipient does not match resolved address'
+    );
   }
 
   if (amount !== expectedAmount) {
-    throw new Error('Transfer amount does not match requested amount');
+    throw new TransferValidationError(
+      'Transfer amount does not match requested amount'
+    );
   }
 
   return envelope;
@@ -185,6 +210,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Transfer failed';
     console.error('Transfer failed:', err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = err instanceof TransferValidationError ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
