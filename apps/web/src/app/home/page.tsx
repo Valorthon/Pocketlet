@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { RefreshCw } from 'lucide-react';
 import PinModal from '@/components/PinModal';
+import { clearSessionKey } from '@/lib/wallet/session-key';
 
 interface BalanceData {
   xlm: string;
@@ -69,6 +70,7 @@ export default function HomePage() {
   }, [pinToast]);
 
   const logout = async () => {
+    await clearSessionKey();
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
   };
