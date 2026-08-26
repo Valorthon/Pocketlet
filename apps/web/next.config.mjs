@@ -65,6 +65,7 @@ const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
   experimental: {
+    instrumentationHook: true,
     serverComponentsExternalPackages: ['@simplewebauthn/server'],
   },
 };
