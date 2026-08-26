@@ -66,7 +66,22 @@ const nextConfig = {
   output: 'standalone',
   experimental: {
     instrumentationHook: true,
-    serverComponentsExternalPackages: ['@simplewebauthn/server'],
+    serverComponentsExternalPackages: [
+      '@simplewebauthn/server',
+      'pg',
+      'drizzle-orm',
+    ],
+  },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals.push(({ request }, callback) => {
+        if (request && /^(pg|drizzle-orm)(\/|$)/.test(request)) {
+          return callback(null, `commonjs ${request}`);
+        }
+        return callback();
+      });
+    }
+    return config;
   },
 };
 
