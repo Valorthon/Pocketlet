@@ -4,6 +4,11 @@
 
 Pocketlet is a simple web wallet for holding and sending digital dollars globally. It feels like a familiar money app, but settles on the Stellar blockchain. V1 runs on Stellar Testnet, supports USDC and XLM, and uses passkey-based abstracted custody with a Soroban smart wallet.
 
+## Links
+
+- **Live App**: https://pocketlet.up.railway.app/
+- **Demo Video**: https://youtu.be/FPr7b7jgrFM
+
 ## Features
 
 - **Email + passkey signup** — authenticate with a device passkey; a BIP39 recovery phrase is generated client-side for backup recovery.
