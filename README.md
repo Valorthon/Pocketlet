@@ -165,17 +165,32 @@ Store both in a secrets manager (e.g. AWS Secrets Manager, HashiCorp Vault, or 1
 
 ### Home / Balance
 
-![Home screen showing wallet balance](./screenshots/wallet-connected-balance.png)
+![Home screen showing wallet balance](./screenshots/home.png)
 
 ### Send Flow
 
-![Send review screen](./screenshots/debug-send-review.png)
+![](./screenshots/send_1.png)
 
-![Send PIN confirmation](./screenshots/debug-send-pin.png)
+![](./screenshots/send_2.png)
 
-![Send confirming](./screenshots/debug-send-confirming.png)
+![](./screenshots/send_3.png)
 
-<img width="606" height="518" alt="image" src="https://github.com/user-attachments/assets/fe0a0a74-92dd-46d1-8d49-2546d6dd79ea" />
+![](./screenshots/send_4.png)
+
+![](./screenshots/send_5.png)
+
+![](./screenshots/send_6.png)
+
+### History
+![](./screenshots/history.png)
+
+### Receive
+![](./screenshots/receive.png)
+
+### Profile
+
+![](./screenshots/profile.png)
+
 
 
 ## License
