@@ -35,7 +35,7 @@ export async function GET(
       );
     }
 
-    const user = getUserByEmail(payload.email);
+    const user = await getUserByEmail(payload.email);
     if (!user?.recoveryVerifiedAt) {
       return NextResponse.json(
         { error: 'Recovery not verified' },
@@ -43,7 +43,7 @@ export async function GET(
       );
     }
 
-    if (isRecoveryLocked(payload.email)) {
+    if (await isRecoveryLocked(payload.email)) {
       return NextResponse.json(
         { error: 'Recovery is locked. Try again later.' },
         { status: 429 }

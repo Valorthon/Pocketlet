@@ -3,6 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
+import {
+  checkPasskeySupport,
+  formatPasskeyKitError,
+  logPasskeyKitError,
+} from '@/lib/auth/passkey-errors';
 
 const ONBOARDING_KEY_ID_KEY = 'pocketlet:onboarding:keyIdBase64';
 const ONBOARDING_CONTRACT_ID_KEY = 'pocketlet:onboarding:contractId';
@@ -46,8 +51,9 @@ export default function BackupPasskeyPage() {
     setError(null);
 
     try {
-      if (!window.PublicKeyCredential) {
-        setError('Passkeys are not supported on this device or browser.');
+      const supportError = checkPasskeySupport();
+      if (supportError) {
+        setError(supportError);
         return;
       }
 
@@ -60,7 +66,12 @@ export default function BackupPasskeyPage() {
       const kit = createPasskeyKit();
       await kit.connectWallet({ keyId: keyIdBase64 });
 
-      const backup = await kit.createKey('Pocketlet Backup', email || 'Pocketlet user');
+      const backup = await kit.createKey('Pocketlet Backup', email || 'Pocketlet user', {
+        authenticatorSelection: {
+          residentKey: 'preferred',
+          userVerification: 'required',
+        },
+      });
       const addBackupTx = await kit.addSecp256r1(
         backup.keyId,
         backup.publicKey,
@@ -99,7 +110,8 @@ export default function BackupPasskeyPage() {
 
       redirectToPinSetup();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Backup passkey registration failed');
+      logPasskeyKitError(err);
+      setError(formatPasskeyKitError(err));
     } finally {
       setLoading(false);
     }

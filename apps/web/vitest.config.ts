@@ -7,7 +7,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    setupFiles: [],
+    setupFiles: ['./vitest.setup.ts'],
+    pool: 'forks',
+    maxWorkers: 1,
     alias: {
       '@': join(__dirname, 'src'),
     },

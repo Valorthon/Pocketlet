@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: formatError }, { status: 400 });
   }
 
-  const resolved = resolveRecipient(recipient);
+  const resolved = await resolveRecipient(recipient);
   if (!resolved) {
     return NextResponse.json(
       { error: 'Recipient not found. Check the username, phone, or Stellar address.' },

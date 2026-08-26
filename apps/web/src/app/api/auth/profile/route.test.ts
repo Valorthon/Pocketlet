@@ -1,14 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { PATCH } from './route';
 import { createUser, setEmailVerified, setCredential } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 vi.mock('next/headers', () => ({
@@ -21,21 +17,13 @@ vi.mock('next/headers', () => ({
 }));
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-profile-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
 });
 
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
-});
-
 async function createAuthenticatedUser(email: string) {
-  createUser(email, '000000');
-  setEmailVerified(email);
-  setCredential(email, {
+  await createUser(email, '000000');
+  await setEmailVerified(email);
+  await setCredential(email, {
     id: 'cred-id',
     publicKey: 'base64-pubkey',
     counter: 0,

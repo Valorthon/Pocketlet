@@ -1,7 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { POST } from './route';
 import {
   createUser,
@@ -13,7 +10,6 @@ import {
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 vi.mock('next/headers', () => ({
@@ -26,26 +22,18 @@ vi.mock('next/headers', () => ({
 }));
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-recovery-confirm-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
 });
 
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
-});
-
 async function createConfirmedSession(email: string) {
-  createUser(email, '000000');
-  setEmailVerified(email);
-  setWallet(email, {
+  await createUser(email, '000000');
+  await setEmailVerified(email);
+  await setWallet(email, {
     walletContractId: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
     stellarAddress: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
     primaryPasskeyKeyId: 'test-key-id',
   });
-  setRecoveryPublicKey(
+  await setRecoveryPublicKey(
     email,
     'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP'
   );
@@ -68,14 +56,14 @@ describe('POST /api/wallet/recovery/confirm', () => {
     const body = (await res.json()) as { confirmed: boolean };
     expect(body.confirmed).toBe(true);
 
-    const user = getUserByEmail('alice@example.com');
+    const user = await getUserByEmail('alice@example.com');
     expect(user?.recoveryPhraseConfirmed).toBe(true);
   });
 
   it('returns 400 if recovery signer is not registered', async () => {
-    createUser('bob@example.com', '000000');
-    setEmailVerified('bob@example.com');
-    setWallet('bob@example.com', {
+    await createUser('bob@example.com', '000000');
+    await setEmailVerified('bob@example.com');
+    await setWallet('bob@example.com', {
       walletContractId: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
       stellarAddress: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
       primaryPasskeyKeyId: 'test-key-id',

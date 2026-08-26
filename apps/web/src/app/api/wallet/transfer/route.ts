@@ -13,6 +13,7 @@ import {
 } from '@/lib/wallet/submit';
 import { getTokenBalance } from '@/lib/wallet/token';
 import { amountToBaseUnits, i128ToBigInt } from '@/lib/wallet/amount';
+import { incrementMetric } from '@/lib/metrics';
 import { resolveRecipient } from '@/lib/wallet/recipient';
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
 
@@ -138,7 +139,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Recipient is required' }, { status: 400 });
   }
 
-  const resolved = resolveRecipient(recipient);
+  const resolved = await resolveRecipient(recipient);
   if (!resolved) {
     return NextResponse.json(
       { error: 'Recipient not found. Check the username, phone, or Stellar address.' },
@@ -181,7 +182,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'PIN is required' }, { status: 400 });
   }
 
-  if (!verifyPinForUser(user.email, pin)) {
+  if (!(await verifyPinForUser(user.email, pin))) {
     return NextResponse.json({ error: 'Invalid PIN' }, { status: 401 });
   }
 
@@ -206,10 +207,12 @@ export async function POST(request: NextRequest) {
     );
 
     const result = await submitSignedTransaction(signedXdr);
+    await incrementMetric('wallet.transfer.success');
     return NextResponse.json({ hash: result.hash });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Transfer failed';
     console.error('Transfer failed:', err);
+    await incrementMetric('wallet.transfer.failure');
     const status = err instanceof TransferValidationError ? 400 : 500;
     return NextResponse.json({ error: message }, { status });
   }

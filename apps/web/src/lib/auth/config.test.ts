@@ -123,4 +123,11 @@ describe('auth config', () => {
     expect(mod.RP_ID).toBe('example.com');
     expect(mod.ORIGIN).toBe('https://example.com');
   });
+
+  it('falls back to localhost when WEBAUTHN_RP_ID is empty string', async () => {
+    delete process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE;
+    process.env.WEBAUTHN_RP_ID = '';
+    const mod = await importConfig();
+    expect(mod.RP_ID).toBe('localhost');
+  });
 });

@@ -4,6 +4,11 @@ import { startAuthentication } from '@simplewebauthn/browser';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Wallet } from 'lucide-react';
+import {
+  checkPasskeySupport,
+  formatPasskeyKitError,
+  logPasskeyKitError,
+} from '@/lib/auth/passkey-errors';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,8 +20,9 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      if (!window.PublicKeyCredential) {
-        setError('Passkeys are not supported on this device or browser.');
+      const supportError = checkPasskeySupport();
+      if (supportError) {
+        setError(supportError);
         return;
       }
 
@@ -44,7 +50,8 @@ export default function LoginPage() {
       }
       router.push('/home');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      logPasskeyKitError(err);
+      setError(formatPasskeyKitError(err));
     } finally {
       setLoading(false);
     }

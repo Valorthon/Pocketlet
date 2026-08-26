@@ -9,6 +9,11 @@ import {
   getRecoveryPublicKey,
   splitRecoveryPhrase,
 } from '@/lib/wallet/recovery';
+import {
+  checkPasskeySupport,
+  formatPasskeyKitError,
+  logPasskeyKitError,
+} from '@/lib/auth/passkey-errors';
 
 const ONBOARDING_PHRASE_KEY = 'pocketlet:onboarding:recoveryPhrase';
 const ONBOARDING_KEY_ID_KEY = 'pocketlet:onboarding:keyIdBase64';
@@ -74,13 +79,19 @@ export default function SignupPage() {
     setError(null);
 
     try {
-      if (!window.PublicKeyCredential) {
-        setError('Passkeys are not supported on this device or browser.');
+      const supportError = checkPasskeySupport();
+      if (supportError) {
+        setError(supportError);
         return;
       }
 
       const kit = createPasskeyKit();
-      const result = await kit.createWallet('Pocketlet', email);
+      const result = await kit.createWallet('Pocketlet', email, {
+        authenticatorSelection: {
+          residentKey: 'preferred',
+          userVerification: 'required',
+        },
+      });
 
       // Generate the recovery phrase client-side. The phrase itself never
       // leaves the browser; only its derived public key is sent to the server.
@@ -115,7 +126,8 @@ export default function SignupPage() {
 
       await registerRecoverySigner(kit, phrase, result.keyIdBase64, result.contractId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Passkey registration failed');
+      logPasskeyKitError(err);
+      setError(formatPasskeyKitError(err));
     } finally {
       setLoading(false);
     }
@@ -173,7 +185,8 @@ export default function SignupPage() {
 
       router.push('/recovery-phrase');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to register recovery signer');
+      logPasskeyKitError(err);
+      setError(formatPasskeyKitError(err));
     } finally {
       setLoading(false);
     }

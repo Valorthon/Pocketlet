@@ -1,21 +1,14 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
+import { eq } from 'drizzle-orm';
+import { db, schema } from '@/lib/db';
 import { hashPin, verifyPin } from './pin';
-import {
-  normalizeUsername,
-  normalizePhone,
-  isValidUsernameFormat,
-  isValidPhoneFormat,
-} from '@/lib/wallet/recipient-format';
 
-export { normalizeUsername, normalizePhone };
+const { users } = schema;
 
 export interface Credential {
   id: string;
   publicKey: string;
   counter: number;
-  transports?: AuthenticatorTransportFuture[];
+  transports?: string[];
 }
 
 export interface User {
@@ -24,22 +17,15 @@ export interface User {
   verificationCode?: string;
   pendingChallenge?: string;
   credential?: Credential;
-
-  // Passkey smart wallet
   walletContractId?: string;
   stellarAddress?: string;
   primaryPasskeyKeyId?: string;
-
-  // Recovery phrase + optional backup passkey
   recoveryPublicKey?: string;
   recoveryPhraseConfirmed?: boolean;
   hasBackupPasskey?: boolean;
   backupCredential?: Credential;
-
   pinHash?: string;
   pinResetCode?: string;
-
-  // Lost-passkey recovery state
   recoveryInitiatedAt?: string;
   recoveryInitiationHistory?: string[];
   recoveryCode?: string;
@@ -47,72 +33,121 @@ export interface User {
   recoveryVerifiedAt?: string;
   recoveryAttempts?: number;
   recoveryLockedUntil?: string;
-
   createdAt: string;
   updatedAt?: string;
   username?: string;
   phone?: string;
 }
 
-function getDataDir(): string {
-  return process.env.POCKETLET_DATA_DIR ?? join(process.cwd(), '.data');
+function toCredential(
+  raw: unknown
+): Credential | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.publicKey !== 'string' ||
+    typeof r.counter !== 'number'
+  ) {
+    return undefined;
+  }
+  const cred: Credential = {
+    id: r.id,
+    publicKey: r.publicKey,
+    counter: r.counter,
+  };
+  if (Array.isArray(r.transports)) {
+    cred.transports = r.transports.filter((t): t is string => typeof t === 'string');
+  }
+  return cred;
 }
 
-function getUsersFile(): string {
-  return join(getDataDir(), 'users.json');
-}
-
-function loadUsers(): Record<string, User> {
-  const file = getUsersFile();
-  if (!existsSync(file)) {
-    return {};
-  }
-  const raw = readFileSync(file, 'utf-8');
-  let users: Record<string, User>;
-  try {
-    users = JSON.parse(raw) as Record<string, User>;
-  } catch {
-    return {};
-  }
-
-  return users;
-}
-
-function saveUsers(users: Record<string, User>): void {
-  const dir = getDataDir();
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  writeFileSync(getUsersFile(), JSON.stringify(users, null, 2));
+function mapUser(row: typeof schema.users.$inferSelect): User {
+  return {
+    email: row.email,
+    emailVerified: row.emailVerified,
+    verificationCode: row.verificationCode ?? undefined,
+    pendingChallenge: row.pendingChallenge ?? undefined,
+    credential: toCredential(row.credential),
+    walletContractId: row.walletContractId ?? undefined,
+    stellarAddress: row.stellarAddress ?? undefined,
+    primaryPasskeyKeyId: row.primaryPasskeyKeyId ?? undefined,
+    recoveryPublicKey: row.recoveryPublicKey ?? undefined,
+    recoveryPhraseConfirmed: row.recoveryPhraseConfirmed ?? undefined,
+    hasBackupPasskey: row.hasBackupPasskey ?? undefined,
+    backupCredential: toCredential(row.backupCredential),
+    pinHash: row.pinHash ?? undefined,
+    pinResetCode: row.pinResetCode ?? undefined,
+    recoveryInitiatedAt: row.recoveryInitiatedAt?.toISOString(),
+    recoveryInitiationHistory: row.recoveryInitiationHistory ?? undefined,
+    recoveryCode: row.recoveryCode ?? undefined,
+    recoveryCodeExpiresAt: row.recoveryCodeExpiresAt?.toISOString(),
+    recoveryVerifiedAt: row.recoveryVerifiedAt?.toISOString(),
+    recoveryAttempts: row.recoveryAttempts ?? undefined,
+    recoveryLockedUntil: row.recoveryLockedUntil?.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt?.toISOString(),
+    username: row.username ?? undefined,
+    phone: row.phone ?? undefined,
+  };
 }
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+export function normalizeUsername(username: string): string {
+  return username.trim().toLowerCase().replace(/^@/, '');
+}
+
 export function isValidUsername(username: string): boolean {
-  return isValidUsernameFormat(username);
+  const normalized = normalizeUsername(username);
+  if (normalized.length < 3 || normalized.length > 30) {
+    return false;
+  }
+  return /^[a-z0-9_.-]+$/.test(normalized);
+}
+
+export function normalizePhone(phone: string): string {
+  const trimmed = phone.trim();
+  const hasPlus = trimmed.startsWith('+');
+  const digits = trimmed.replace(/\D/g, '');
+  return hasPlus ? `+${digits}` : digits;
 }
 
 export function isValidPhone(phone: string): boolean {
-  return isValidPhoneFormat(phone);
-}
-
-export function getUserByEmail(email: string): User | undefined {
-  const users = loadUsers();
-  return users[normalizeEmail(email)];
-}
-
-export function getUserByUsername(username: string): User | undefined {
-  const normalized = normalizeUsername(username);
-  const users = loadUsers();
-  return Object.values(users).find((user) => user.username === normalized);
-}
-
-export function getUserByPhone(phone: string): User | undefined {
   const normalized = normalizePhone(phone);
-  const users = loadUsers();
-  return Object.values(users).find((user) => user.phone === normalized);
+  if (!normalized.startsWith('+')) {
+    return false;
+  }
+  const digits = normalized.slice(1);
+  if (digits.length < 10 || digits.length > 15) {
+    return false;
+  }
+  return /^\d+$/.test(digits);
+}
+
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  const row = await db.query.users.findFirst({
+    where: eq(users.email, normalizeEmail(email)),
+  });
+  return row ? mapUser(row) : undefined;
+}
+
+export async function getUserByUsername(
+  username: string
+): Promise<User | undefined> {
+  const row = await db.query.users.findFirst({
+    where: eq(users.username, normalizeUsername(username)),
+  });
+  return row ? mapUser(row) : undefined;
+}
+
+export async function getUserByPhone(phone: string): Promise<User | undefined> {
+  const row = await db.query.users.findFirst({
+    where: eq(users.phone, normalizePhone(phone)),
+  });
+  return row ? mapUser(row) : undefined;
 }
 
 export interface ProfileUpdate {
@@ -120,19 +155,27 @@ export interface ProfileUpdate {
   phone?: string | null;
 }
 
-export function setProfile(email: string, profile: ProfileUpdate): User {
-  const users = loadUsers();
+export async function setProfile(
+  email: string,
+  profile: ProfileUpdate
+): Promise<User> {
   const normalizedEmail = normalizeEmail(email);
-  const user = users[normalizedEmail];
-  if (!user) {
+  const existing = await db.query.users.findFirst({
+    where: eq(users.email, normalizedEmail),
+  });
+  if (!existing) {
     throw new Error('User not found');
   }
+
+  const updates: Partial<typeof schema.users.$inferInsert> = {
+    updatedAt: new Date(),
+  };
 
   const { username, phone } = profile;
 
   if (username !== undefined) {
     if (username === null || username.trim() === '') {
-      delete user.username;
+      updates.username = null;
     } else {
       if (!isValidUsername(username)) {
         throw new Error(
@@ -140,88 +183,126 @@ export function setProfile(email: string, profile: ProfileUpdate): User {
         );
       }
       const normalizedUsername = normalizeUsername(username);
-      const existing = getUserByUsername(normalizedUsername);
-      if (existing && normalizeEmail(existing.email) !== normalizedEmail) {
+      const other = await getUserByUsername(normalizedUsername);
+      if (other && normalizeEmail(other.email) !== normalizedEmail) {
         throw new Error('Username already taken');
       }
-      user.username = normalizedUsername;
+      updates.username = normalizedUsername;
     }
   }
 
   if (phone !== undefined) {
     if (phone === null || phone.trim() === '') {
-      delete user.phone;
+      updates.phone = null;
     } else {
       if (!isValidPhone(phone)) {
-        throw new Error('Phone number must include a country code starting with + and 10-15 digits');
+        throw new Error(
+          'Phone number must include a country code starting with + and 10-15 digits'
+        );
       }
       const normalizedPhone = normalizePhone(phone);
-      const existing = getUserByPhone(normalizedPhone);
-      if (existing && normalizeEmail(existing.email) !== normalizedEmail) {
+      const other = await getUserByPhone(normalizedPhone);
+      if (other && normalizeEmail(other.email) !== normalizedEmail) {
         throw new Error('Phone number already registered');
       }
-      user.phone = normalizedPhone;
+      updates.phone = normalizedPhone;
     }
   }
 
-  user.updatedAt = new Date().toISOString();
-  saveUsers(users);
-  return user;
+  const [updated] = await db
+    .update(users)
+    .set(updates)
+    .where(eq(users.email, normalizedEmail))
+    .returning();
+
+  if (!updated) {
+    throw new Error('User not found');
+  }
+
+  return mapUser(updated);
 }
 
-export function createUser(email: string, verificationCode: string): User {
-  const users = loadUsers();
+export async function createUser(
+  email: string,
+  verificationCode: string
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  if (users[normalized]) {
+  const existing = await db.query.users.findFirst({
+    where: eq(users.email, normalized),
+  });
+  if (existing) {
     throw new Error('Email already registered');
   }
-  const user: User = {
-    email: normalized,
-    emailVerified: false,
-    verificationCode,
-    createdAt: new Date().toISOString(),
-  };
-  users[normalized] = user;
-  saveUsers(users);
-  return user;
+
+  const [row] = await db
+    .insert(users)
+    .values({
+      email: normalized,
+      emailVerified: false,
+      verificationCode,
+    })
+    .returning();
+
+  return mapUser(row);
 }
 
-export function setEmailVerified(email: string): User {
-  const users = loadUsers();
+export async function setEmailVerified(email: string): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({ emailVerified: true, verificationCode: null })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  user.emailVerified = true;
-  delete user.verificationCode;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
-export function setPendingChallenge(email: string, challenge: string): User {
-  const users = loadUsers();
+export async function setPendingChallenge(
+  email: string,
+  challenge: string
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({ pendingChallenge: challenge })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  user.pendingChallenge = challenge;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
-export function setCredential(email: string, credential: Credential): User {
-  const users = loadUsers();
+export async function setCredential(
+  email: string,
+  credential: Credential
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({
+      credential: {
+        id: credential.id,
+        publicKey: credential.publicKey,
+        counter: credential.counter,
+        transports: credential.transports,
+      },
+      pendingChallenge: null,
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  user.credential = credential;
-  delete user.pendingChallenge;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
 export interface WalletInfo {
@@ -230,140 +311,219 @@ export interface WalletInfo {
   primaryPasskeyKeyId: string;
 }
 
-export function setWallet(email: string, wallet: WalletInfo): User {
-  const users = loadUsers();
+export async function setWallet(
+  email: string,
+  wallet: WalletInfo
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({
+      walletContractId: wallet.walletContractId,
+      stellarAddress: wallet.stellarAddress,
+      primaryPasskeyKeyId: wallet.primaryPasskeyKeyId,
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  user.walletContractId = wallet.walletContractId;
-  user.stellarAddress = wallet.stellarAddress;
-  user.primaryPasskeyKeyId = wallet.primaryPasskeyKeyId;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
-export function setRecoveryPublicKey(email: string, publicKey: string): User {
-  const users = loadUsers();
+export async function setRecoveryPublicKey(
+  email: string,
+  publicKey: string
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({ recoveryPublicKey: publicKey })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  user.recoveryPublicKey = publicKey;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
-export function markRecoveryPhraseConfirmed(email: string): User {
-  const users = loadUsers();
+export async function markRecoveryPhraseConfirmed(
+  email: string
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({ recoveryPhraseConfirmed: true })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  user.recoveryPhraseConfirmed = true;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
 export interface BackupPasskeyInfo {
   credential: Credential;
 }
 
-export function setBackupPasskey(email: string, info: BackupPasskeyInfo): User {
-  const users = loadUsers();
+export async function setBackupPasskey(
+  email: string,
+  info: BackupPasskeyInfo
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({
+      hasBackupPasskey: true,
+      backupCredential: {
+        id: info.credential.id,
+        publicKey: info.credential.publicKey,
+        counter: info.credential.counter,
+        transports: info.credential.transports,
+      },
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  user.hasBackupPasskey = true;
-  user.backupCredential = info.credential;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
-export function updateCredentialCounter(email: string, counter: number): User {
-  const users = loadUsers();
+export async function updateCredentialCounter(
+  email: string,
+  counter: number
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
+  const user = await getUserByEmail(normalized);
   if (!user || !user.credential) {
     throw new Error('User or credential not found');
   }
-  user.credential.counter = counter;
-  saveUsers(users);
-  return user;
+
+  const [updated] = await db
+    .update(users)
+    .set({
+      credential: {
+        ...user.credential,
+        counter,
+      },
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
+    throw new Error('User or credential not found');
+  }
+
+  return mapUser(updated);
 }
 
-export function updateBackupCredentialCounter(
+export async function updateBackupCredentialCounter(
   email: string,
   counter: number
-): User {
-  const users = loadUsers();
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
+  const user = await getUserByEmail(normalized);
   if (!user || !user.backupCredential) {
     throw new Error('User or backup credential not found');
   }
-  user.backupCredential.counter = counter;
-  saveUsers(users);
-  return user;
+
+  const [updated] = await db
+    .update(users)
+    .set({
+      backupCredential: {
+        ...user.backupCredential,
+        counter,
+      },
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
+    throw new Error('User or backup credential not found');
+  }
+
+  return mapUser(updated);
 }
 
-export function setPin(email: string, pin: string): User {
-  const users = loadUsers();
+export async function setPin(email: string, pin: string): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({ pinHash: hashPin(pin) })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  user.pinHash = hashPin(pin);
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
-export function verifyPinForUser(email: string, pin: string): boolean {
-  const user = getUserByEmail(email);
+export async function verifyPinForUser(
+  email: string,
+  pin: string
+): Promise<boolean> {
+  const user = await getUserByEmail(email);
   if (!user || !user.pinHash) {
     return false;
   }
   return verifyPin(pin, user.pinHash);
 }
 
-export function hasPin(email: string): boolean {
-  const user = getUserByEmail(email);
+export async function hasPin(email: string): Promise<boolean> {
+  const user = await getUserByEmail(email);
   return Boolean(user?.pinHash);
 }
 
-export function setPinResetCode(email: string, code: string): User {
-  const users = loadUsers();
+export async function setPinResetCode(
+  email: string,
+  code: string
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({ pinResetCode: code })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  user.pinResetCode = code;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
-export function verifyPinResetCode(email: string, code: string): boolean {
-  const user = getUserByEmail(email);
+export async function verifyPinResetCode(
+  email: string,
+  code: string
+): Promise<boolean> {
+  const user = await getUserByEmail(email);
   return user?.pinResetCode === code;
 }
 
-export function clearPinResetCode(email: string): User {
-  const users = loadUsers();
+export async function clearPinResetCode(email: string): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({ pinResetCode: null })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  delete user.pinResetCode;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
 
 const RECOVERY_INITIATION_HISTORY_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -375,107 +535,141 @@ function pruneRecoveryInitiationHistory(history: string[]): string[] {
   return history.filter((timestamp) => timestamp > cutoff);
 }
 
-export function setRecoveryInitiated(
+export async function setRecoveryInitiated(
   email: string,
   code: string,
   expiresAt: string
-): User {
-  const users = loadUsers();
+): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
+  const user = await getUserByEmail(normalized);
   if (!user) {
     throw new Error('User not found');
   }
+
   const now = new Date().toISOString();
-  user.recoveryInitiatedAt = now;
-  user.recoveryInitiationHistory = [
+  const history = [
     ...pruneRecoveryInitiationHistory(user.recoveryInitiationHistory ?? []),
     now,
   ];
-  user.recoveryCode = code;
-  user.recoveryCodeExpiresAt = expiresAt;
-  user.recoveryAttempts = 0;
-  delete user.recoveryVerifiedAt;
-  saveUsers(users);
-  return user;
+
+  const [updated] = await db
+    .update(users)
+    .set({
+      recoveryInitiatedAt: new Date(),
+      recoveryInitiationHistory: history,
+      recoveryCode: code,
+      recoveryCodeExpiresAt: new Date(expiresAt),
+      recoveryAttempts: 0,
+      recoveryVerifiedAt: null,
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
+    throw new Error('User not found');
+  }
+
+  return mapUser(updated);
 }
 
-export function recordRecoveryAttempt(email: string): User {
-  const users = loadUsers();
+export async function recordRecoveryAttempt(email: string): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
+  const user = await getUserByEmail(normalized);
   if (!user) {
     throw new Error('User not found');
   }
+
   const attempts = (user.recoveryAttempts ?? 0) + 1;
-  user.recoveryAttempts = attempts;
+  const updates: Partial<typeof schema.users.$inferInsert> = {
+    recoveryAttempts: attempts,
+  };
+
   if (attempts >= 3) {
-    user.recoveryLockedUntil = new Date(
-      Date.now() + 60 * 60 * 1000
-    ).toISOString();
+    updates.recoveryLockedUntil = new Date(Date.now() + 60 * 60 * 1000);
   }
-  saveUsers(users);
-  return user;
+
+  const [updated] = await db
+    .update(users)
+    .set(updates)
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
+    throw new Error('User not found');
+  }
+
+  return mapUser(updated);
 }
 
-export function isRecoveryLocked(email: string): boolean {
-  const user = getUserByEmail(email);
+export async function isRecoveryLocked(email: string): Promise<boolean> {
+  const user = await getUserByEmail(email);
   if (!user?.recoveryLockedUntil) {
     return false;
   }
   return new Date(user.recoveryLockedUntil).getTime() > Date.now();
 }
 
-export function verifyRecoveryCode(email: string, code: string): User {
-  const user = getUserByEmail(email);
+export async function verifyRecoveryCode(
+  email: string,
+  code: string
+): Promise<User> {
+  const normalized = normalizeEmail(email);
+  const user = await getUserByEmail(normalized);
   if (!user) {
     throw new Error('User not found');
   }
-  if (isRecoveryLocked(email)) {
+  if (await isRecoveryLocked(email)) {
     throw new Error('Recovery is locked. Try again later.');
   }
   if (!user.recoveryCode || !user.recoveryCodeExpiresAt) {
     throw new Error('No active recovery request');
   }
   if (new Date(user.recoveryCodeExpiresAt).getTime() <= Date.now()) {
-    recordRecoveryAttempt(email);
+    await recordRecoveryAttempt(email);
     throw new Error('Recovery code expired');
   }
   if (user.recoveryCode !== code) {
-    recordRecoveryAttempt(email);
+    await recordRecoveryAttempt(email);
     throw new Error('Invalid recovery code');
   }
 
-  const users = loadUsers();
-  const normalized = normalizeEmail(email);
-  const stored = users[normalized];
-  if (!stored) {
+  const [updated] = await db
+    .update(users)
+    .set({
+      recoveryVerifiedAt: new Date(),
+      recoveryCode: null,
+      recoveryCodeExpiresAt: null,
+      recoveryAttempts: null,
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  stored.recoveryVerifiedAt = new Date().toISOString();
-  delete stored.recoveryCode;
-  delete stored.recoveryCodeExpiresAt;
-  delete stored.recoveryAttempts;
-  saveUsers(users);
-  return stored;
+
+  return mapUser(updated);
 }
 
-export function clearRecoveryState(email: string): User {
-  const users = loadUsers();
+export async function clearRecoveryState(email: string): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = users[normalized];
-  if (!user) {
+  const [updated] = await db
+    .update(users)
+    .set({
+      recoveryInitiatedAt: null,
+      recoveryInitiationHistory: null,
+      recoveryCode: null,
+      recoveryCodeExpiresAt: null,
+      recoveryVerifiedAt: null,
+      recoveryAttempts: null,
+      recoveryLockedUntil: null,
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
     throw new Error('User not found');
   }
-  delete user.recoveryInitiatedAt;
-  delete user.recoveryInitiationHistory;
-  delete user.recoveryCode;
-  delete user.recoveryCodeExpiresAt;
-  delete user.recoveryVerifiedAt;
-  delete user.recoveryAttempts;
-  delete user.recoveryLockedUntil;
-  saveUsers(users);
-  return user;
+
+  return mapUser(updated);
 }
-
-
