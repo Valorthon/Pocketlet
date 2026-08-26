@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db, schema } from './db';
 
 const { metrics } = schema;
@@ -54,7 +54,7 @@ export async function getMetric(
   period?: string
 ): Promise<number> {
   const row = await db.query.metrics.findFirst({
-    where: eq(metrics.key, key) && eq(metrics.period, period ?? 'total'),
+    where: and(eq(metrics.key, key), eq(metrics.period, period ?? 'total')),
   });
   return row?.value ?? 0;
 }
@@ -109,8 +109,8 @@ export async function getAggregateStats(): Promise<AggregateStats> {
   ]);
 
   return {
-    totalUsers: usersResult[0]?.count ?? 0,
-    totalWallets: walletsResult[0]?.count ?? 0,
+    totalUsers: Number(usersResult[0]?.count ?? 0),
+    totalWallets: Number(walletsResult[0]?.count ?? 0),
     totalSignups: signups,
     totalLogins: logins,
     deploymentsToday: deployToday,
