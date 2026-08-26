@@ -17,14 +17,14 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
 
   return NextResponse.json({
     email: user.email,
-    hasPin: hasPin(user.email),
+    hasPin: await hasPin(user.email),
   });
 }
 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
@@ -55,6 +55,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  setPin(user.email, pin);
+  await setPin(user.email, pin);
   return NextResponse.json({ success: true });
 }

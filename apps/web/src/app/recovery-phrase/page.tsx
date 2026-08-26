@@ -119,13 +119,13 @@ export default function RecoveryPhrasePage() {
 
   if (error && !phrase) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg text-center">
-          <h1 className="mb-2 text-xl font-semibold text-red-600">Recovery phrase unavailable</h1>
-          <p className="mb-6 text-sm text-gray-600">{error}</p>
+      <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+        <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 text-center shadow-sm">
+          <h1 className="mb-2 text-xl font-semibold text-rose-600">Recovery phrase unavailable</h1>
+          <p className="mb-6 text-sm text-slate-600">{error}</p>
           <a
             href="/signup"
-            className="inline-block rounded-lg bg-pocketlet-600 px-4 py-2 font-semibold text-white hover:bg-pocketlet-700"
+            className="inline-block rounded-xl bg-pocketlet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-pocketlet-700"
           >
             Start over
           </a>
@@ -137,33 +137,31 @@ export default function RecoveryPhrasePage() {
   if (!phrase) {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <div className="text-gray-600">Loading recovery phrase...</div>
+        <div className="text-slate-600">Loading recovery phrase...</div>
       </main>
     );
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="mb-2 text-2xl font-bold text-pocketlet-600">Save your recovery phrase</h1>
-        <p className="mb-6 text-sm text-gray-500">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+        <h1 className="mb-2 text-2xl font-bold text-slate-900">Save your recovery phrase</h1>
+        <p className="mb-6 text-sm text-slate-500">
           This 12-word phrase is the only way to recover your wallet if you lose your passkey.
           Pocketlet does not store it.
         </p>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        )}
+        {error && <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
 
         {!saved ? (
           <>
-            <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-gray-50 p-4 sm:grid-cols-3">
+            <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-4 sm:grid-cols-3">
               {words.map((word, index) => (
                 <div
                   key={index}
                   className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm shadow-sm"
                 >
-                  <span className="text-xs text-gray-400">{index + 1}.</span>
+                  <span className="text-xs text-slate-400">{index + 1}.</span>
                   <span className="font-mono font-medium">{word}</span>
                 </div>
               ))}
@@ -172,14 +170,14 @@ export default function RecoveryPhrasePage() {
             <div className="mb-6 flex gap-3">
               <button
                 onClick={copyPhrase}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-gray-100 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200"
               >
                 {copied ? <Check size={16} /> : <Copy size={16} />}
                 {copied ? 'Copied' : 'Copy'}
               </button>
               <button
                 onClick={downloadPhrase}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-gray-100 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200"
               >
                 <Download size={16} />
                 Download
@@ -193,21 +191,21 @@ export default function RecoveryPhrasePage() {
 
             <button
               onClick={startConfirmation}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700"
+              className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700"
             >
               I&apos;ve saved it
             </button>
           </>
         ) : (
           <>
-            <p className="mb-4 text-sm text-gray-600">
+            <p className="mb-4 text-sm text-slate-600">
               Confirm you saved your phrase by typing the requested words.
             </p>
             <div className="mb-6 space-y-4">
               {prompts.map((prompt, promptIndex) => (
                 <div key={prompt.index}>
                   <label
-                    className="block text-sm font-medium text-gray-700"
+                    className="block text-sm font-medium text-slate-700"
                     htmlFor={`word-${prompt.index}`}
                   >
                     Word #{prompt.index + 1}
@@ -217,7 +215,7 @@ export default function RecoveryPhrasePage() {
                     type="text"
                     value={prompt.input}
                     onChange={(e) => updatePromptInput(promptIndex, e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500"
                     placeholder={`Word ${prompt.index + 1}`}
                     autoComplete="off"
                   />
@@ -228,7 +226,7 @@ export default function RecoveryPhrasePage() {
             <button
               onClick={confirmPhrase}
               disabled={loading || prompts.some((p) => !p.input)}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
               {loading ? 'Confirming...' : 'Confirm and continue'}
             </button>

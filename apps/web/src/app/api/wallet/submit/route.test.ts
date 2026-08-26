@@ -3,13 +3,9 @@ import {
   it,
   expect,
   beforeEach,
-  afterEach,
   vi,
 } from 'vitest';
 import { NextRequest } from 'next/server';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import {
   Account,
   Address,
@@ -23,7 +19,6 @@ import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 vi.mock('next/headers', () => ({
@@ -52,15 +47,7 @@ const OTHER_CONTRACT =
   'CCTTR6BVBPGWW76HFCRSPQAXZCOC4HKUF5BKK3ZDO7V7B6PIPDKP2BFQ';
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-submit-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
-});
-
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
 });
 
 function buildAddressAuthEntry(address: string): xdr.SorobanAuthorizationEntry {
@@ -154,9 +141,9 @@ function createSubmitRequest(body: unknown, token?: string) {
 }
 
 async function createUserWithWallet(walletContractId: string) {
-  createUser('alice@example.com', '000000');
-  setEmailVerified('alice@example.com');
-  setWallet('alice@example.com', {
+  await createUser('alice@example.com', '000000');
+  await setEmailVerified('alice@example.com');
+  await setWallet('alice@example.com', {
     walletContractId,
     stellarAddress: walletContractId,
     primaryPasskeyKeyId: 'test-key-id',
@@ -172,8 +159,8 @@ describe('POST /api/wallet/submit', () => {
   });
 
   it('returns 404 if wallet is not deployed', async () => {
-    createUser('alice@example.com', '000000');
-    setEmailVerified('alice@example.com');
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
     const token = await createSessionToken({ email: 'alice@example.com' });
 
     const req = createSubmitRequest({ signedXdr: 'AAAA...' }, token);

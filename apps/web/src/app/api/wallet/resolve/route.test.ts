@@ -1,8 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { POST } from './route';
 import {
   createUser,
@@ -14,7 +11,6 @@ import {
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 vi.mock('next/headers', () => ({
@@ -27,32 +23,24 @@ vi.mock('next/headers', () => ({
 }));
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-resolve-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
 });
 
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
-});
-
 async function createUserWithWallet(email: string, username?: string, phone?: string) {
-  createUser(email, '000000');
-  setEmailVerified(email);
-  setCredential(email, {
+  await createUser(email, '000000');
+  await setEmailVerified(email);
+  await setCredential(email, {
     id: 'cred-id',
     publicKey: 'base64-pubkey',
     counter: 0,
   });
-  setWallet(email, {
+  await setWallet(email, {
     walletContractId: 'CRECIPIENT',
     stellarAddress: 'GCHCVLYHMRISIGAYR6HA6LNNMD5OTLLUFKIEZMXEZ4ZPM27SAK5TI46P',
     primaryPasskeyKeyId: 'cred-id',
   });
   if (username || phone) {
-    setProfile(email, { username, phone });
+    await setProfile(email, { username, phone });
   }
   return createSessionToken({ email });
 }

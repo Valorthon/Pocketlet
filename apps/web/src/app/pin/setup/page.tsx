@@ -64,26 +64,25 @@ export default function PinSetupPage() {
   if (hasPin === null) {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+        <div className="text-slate-600">Loading...</div>
       </main>
     );
   }
 
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="mb-2 text-2xl font-bold text-pocketlet-600">Create your PIN</h1>
-        <p className="mb-6 text-sm text-gray-500">
-          Choose a 6-digit PIN to confirm payments.
-        </p>
+  const inputClass =
+    'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center font-mono text-lg tracking-widest text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500';
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        )}
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+        <h1 className="mb-2 text-2xl font-bold text-slate-900">Create your PIN</h1>
+        <p className="mb-6 text-sm text-slate-500">Choose a 6-digit PIN to confirm payments.</p>
+
+        {error && <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700" htmlFor="pin">
+            <label className="mb-1.5 block text-xs font-bold text-slate-700" htmlFor="pin">
               PIN
             </label>
             <input
@@ -93,13 +92,13 @@ export default function PinSetupPage() {
               maxLength={6}
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-center font-mono text-lg tracking-widest focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              className={inputClass}
               placeholder="000000"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700" htmlFor="confirm">
+            <label className="mb-1.5 block text-xs font-bold text-slate-700" htmlFor="confirm">
               Confirm PIN
             </label>
             <input
@@ -109,7 +108,7 @@ export default function PinSetupPage() {
               maxLength={6}
               value={confirmPin}
               onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-center font-mono text-lg tracking-widest focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              className={inputClass}
               placeholder="000000"
             />
           </div>
@@ -117,7 +116,7 @@ export default function PinSetupPage() {
           <button
             onClick={submit}
             disabled={loading || pin.length !== 6 || confirmPin.length !== 6}
-            className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+            className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
           >
             {loading ? 'Saving...' : 'Set PIN'}
           </button>

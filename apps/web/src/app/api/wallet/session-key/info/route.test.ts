@@ -1,7 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GET } from './route';
 import {
   createUser,
@@ -12,7 +9,6 @@ import {
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 vi.mock('next/headers', () => ({
@@ -25,15 +21,7 @@ vi.mock('next/headers', () => ({
 }));
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-session-key-info-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
-});
-
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
 });
 
 describe('GET /api/wallet/session-key/info', () => {
@@ -43,14 +31,14 @@ describe('GET /api/wallet/session-key/info', () => {
   });
 
   it('returns wallet info for an authenticated user', async () => {
-    createUser('alice@example.com', '000000');
-    setEmailVerified('alice@example.com');
-    setCredential('alice@example.com', {
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
+    await setCredential('alice@example.com', {
       id: 'cred-id',
       publicKey: 'base64-pubkey',
       counter: 0,
     });
-    setWallet('alice@example.com', {
+    await setWallet('alice@example.com', {
       walletContractId: 'CABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNO',
       stellarAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNO',
       primaryPasskeyKeyId: 'key-id-123',
@@ -70,8 +58,8 @@ describe('GET /api/wallet/session-key/info', () => {
   });
 
   it('returns 404 when wallet is not deployed', async () => {
-    createUser('bob@example.com', '000000');
-    setEmailVerified('bob@example.com');
+    await createUser('bob@example.com', '000000');
+    await setEmailVerified('bob@example.com');
 
     const token = await createSessionToken({ email: 'bob@example.com' });
     cookieJar[SESSION_COOKIE_NAME] = token;

@@ -9,7 +9,9 @@ export interface ResolvedRecipient {
   display: string;
 }
 
-export function resolveRecipient(input: string): ResolvedRecipient | null {
+export async function resolveRecipient(
+  input: string
+): Promise<ResolvedRecipient | null> {
   const trimmed = input.trim();
   if (!trimmed) {
     return null;
@@ -26,7 +28,7 @@ export function resolveRecipient(input: string): ResolvedRecipient | null {
   // 2. Phone number (+...)
   if (isValidPhone(trimmed)) {
     const normalized = normalizePhone(trimmed);
-    const user = getUserByPhone(normalized);
+    const user = await getUserByPhone(normalized);
     if (user?.stellarAddress) {
       return {
         type: 'phone',
@@ -39,7 +41,7 @@ export function resolveRecipient(input: string): ResolvedRecipient | null {
   // 3. Username (@... or plain)
   if (isValidUsername(trimmed)) {
     const normalized = normalizeUsername(trimmed);
-    const user = getUserByUsername(normalized);
+    const user = await getUserByUsername(normalized);
     if (user?.stellarAddress) {
       return {
         type: 'username',

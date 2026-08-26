@@ -1,14 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Address, xdr } from '@stellar/stellar-sdk';
 import { GET } from './route';
 import { createUser, setEmailVerified, setWallet } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 const USDC_CONTRACT_ID =
@@ -189,21 +185,13 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
 });
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-transactions-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
 });
 
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
-});
-
 async function createSession(): Promise<string> {
-  createUser('alice@example.com', '000000');
-  setEmailVerified('alice@example.com');
-  setWallet('alice@example.com', {
+  await createUser('alice@example.com', '000000');
+  await setEmailVerified('alice@example.com');
+  await setWallet('alice@example.com', {
     walletContractId: WALLET_CONTRACT_ID,
     stellarAddress: WALLET_CONTRACT_ID,
     primaryPasskeyKeyId: 'test-key-id',
@@ -218,8 +206,8 @@ describe('GET /api/wallet/transactions', () => {
   });
 
   it('returns 404 if wallet is not deployed', async () => {
-    createUser('alice@example.com', '000000');
-    setEmailVerified('alice@example.com');
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
     const token = await createSessionToken({ email: 'alice@example.com' });
     cookieJar[SESSION_COOKIE_NAME] = token;
 

@@ -17,7 +17,7 @@ export async function GET() {
     return NextResponse.json({ user: null }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user) {
     return NextResponse.json({ user: null }, { status: 401 });
   }

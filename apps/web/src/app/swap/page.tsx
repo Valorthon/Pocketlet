@@ -12,27 +12,19 @@ import Link from 'next/link';
  */
 export default function SwapPage() {
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
-      <div className="mx-auto max-w-md">
-        <div className="mb-6 flex items-center justify-between">
-          <Link href="/home" className="text-2xl font-bold text-pocketlet-600">
-            ← Pocketlet
-          </Link>
-        </div>
-
-        <div className="rounded-2xl bg-white p-6 shadow-lg text-center">
-          <h1 className="mb-2 text-xl font-semibold text-gray-900">Swaps coming soon</h1>
-          <p className="mb-4 text-sm text-gray-600">
-            USDC ↔ XLM swaps are being rebuilt for the new passkey-kit wallet.
-            You can still send and receive USDC and XLM from the home screen.
-          </p>
-          <Link
-            href="/home"
-            className="inline-block rounded-lg bg-pocketlet-600 px-6 py-2.5 font-semibold text-white hover:bg-pocketlet-700"
-          >
-            Back to home
-          </Link>
-        </div>
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-6 text-center shadow-lg">
+        <h1 className="mb-2 text-xl font-bold text-slate-900">Swaps coming soon</h1>
+        <p className="mb-4 text-sm text-slate-600">
+          USDC ↔ XLM swaps are being rebuilt for the new passkey-kit wallet. You can still send
+          and receive USDC and XLM from the home screen.
+        </p>
+        <Link
+          href="/home"
+          className="inline-block rounded-xl bg-pocketlet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-pocketlet-700"
+        >
+          Back to home
+        </Link>
       </div>
     </main>
   );

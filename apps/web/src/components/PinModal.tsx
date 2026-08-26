@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { PinKeypad } from '@/components/ui/PinKeypad';
 
 interface PinModalProps {
   isOpen: boolean;
   title?: string;
+  subtitle?: string;
   onConfirm: (pin: string) => void;
   onCancel: () => void;
 }
@@ -12,10 +14,10 @@ interface PinModalProps {
 export default function PinModal({
   isOpen,
   title = 'Confirm with PIN',
+  subtitle = 'Enter your 6-digit PIN to continue.',
   onConfirm,
   onCancel,
 }: PinModalProps) {
-  const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -23,13 +25,8 @@ export default function PinModal({
     return null;
   }
 
-  const submit = async () => {
+  const submit = async (pin: string) => {
     setError(null);
-    if (pin.length !== 6 || !/^\d{6}$/.test(pin)) {
-      setError('PIN must be 6 digits');
-      return;
-    }
-
     setLoading(true);
     try {
       const res = await fetch('/api/auth/pin/verify', {
@@ -40,10 +37,8 @@ export default function PinModal({
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
         setError(data.error ?? 'PIN verification failed');
-        setPin('');
         return;
       }
-      setPin('');
       onConfirm(pin);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'PIN verification failed');
@@ -53,44 +48,26 @@ export default function PinModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="mb-2 text-lg font-semibold text-gray-900">{title}</h2>
-        <p className="mb-4 text-sm text-gray-500">
-          Enter your 6-digit PIN to continue.
-        </p>
-
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        )}
-
-        <input
-          type="password"
-          inputMode="numeric"
-          maxLength={6}
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-          className="mb-4 w-full rounded-lg border border-gray-300 px-4 py-3 text-center font-mono text-xl tracking-widest focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
-          placeholder="000000"
-          autoFocus
-        />
-
-        <div className="grid grid-cols-2 gap-3">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-xs sm:items-center sm:p-4">
+      <div className="w-full max-w-sm rounded-t-3xl bg-white p-6 shadow-2xl sm:rounded-3xl">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-lg font-bold tracking-tight text-slate-900">{title}</h2>
           <button
             onClick={onCancel}
             disabled={loading}
-            className="rounded-lg bg-gray-100 py-2.5 font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+            className="rounded-lg px-2 py-1 text-xs font-bold text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
           >
             Cancel
           </button>
-          <button
-            onClick={submit}
-            disabled={loading || pin.length !== 6}
-            className="rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-          >
-            {loading ? 'Verifying...' : 'Confirm'}
-          </button>
         </div>
+
+        <PinKeypad
+          title=""
+          subtitle={subtitle}
+          disabled={loading}
+          error={error}
+          onComplete={submit}
+        />
       </div>
     </div>
   );
