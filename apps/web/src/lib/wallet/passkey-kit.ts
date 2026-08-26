@@ -26,7 +26,10 @@ export const WALLET_WASM_HASH =
  * WebAuthn relying party ID used by passkey-kit.
  * Defaults to the existing WebAuthn config, or the browser origin if unset.
  */
-export const RP_ID = process.env.NEXT_PUBLIC_PASSKEY_RP_ID ?? process.env.WEBAUTHN_RP_ID;
+export const RP_ID =
+  process.env.NEXT_PUBLIC_PASSKEY_RP_ID?.trim() ||
+  process.env.WEBAUTHN_RP_ID?.trim() ||
+  undefined;
 
 /**
  * Create a browser-side PasskeyKit client for the current network.
@@ -41,6 +44,7 @@ export function createPasskeyKit(): PasskeyKit {
     walletWasmHash: WALLET_WASM_HASH,
     rpId: RP_ID,
     storage: new IndexedDBStorage(),
+    timeoutInSeconds: 300,
   });
 }
 

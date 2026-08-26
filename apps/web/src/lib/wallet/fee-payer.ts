@@ -6,7 +6,7 @@ import { NETWORK_PASSPHRASE, RPC_URL, isProductionNetwork } from './network';
 const FEE_PAYER_SECRET_KEY = process.env.FEE_PAYER_SECRET_KEY;
 
 function getDataDir(): string {
-  return process.env.POCKETLET_DATA_DIR ?? join(process.cwd(), '.data');
+  return process.env.POCKETLET_DATA_DIR?.trim() || join(process.cwd(), '.data');
 }
 
 function loadOrCreateFeePayerSecret(): string {

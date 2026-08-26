@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
+import type { PasskeyKit } from 'passkey-kit';
 import {
   generateSessionKeypair,
   encryptSessionKey,
@@ -8,6 +9,7 @@ import {
   loadSessionKey,
   clearSessionKey,
   hasUsableSessionKey,
+  verifySessionKeyOnChain,
 } from './session-key';
 
 describe('session-key', () => {
@@ -109,6 +111,51 @@ describe('session-key', () => {
       await saveSessionKey(expired);
       expect(await hasUsableSessionKey()).toBe(false);
       expect(await loadSessionKey()).toBeNull();
+    });
+  });
+
+  describe('verifySessionKeyOnChain', () => {
+    it('returns false when no local session key exists', async () => {
+      const mockKit = { getSigner: vi.fn() } as unknown as PasskeyKit;
+      expect(await verifySessionKeyOnChain(mockKit)).toBe(false);
+      expect(mockKit.getSigner).not.toHaveBeenCalled();
+    });
+
+    it('returns true when the session key is registered on-chain', async () => {
+      const { secret } = await generateSessionKeypair();
+      const encrypted = await encryptSessionKey(secret, '123456');
+      await saveSessionKey(encrypted);
+
+      const mockKit = {
+        getSigner: vi.fn().mockResolvedValue({ tag: 'Ed25519' }),
+      } as unknown as PasskeyKit;
+
+      expect(await verifySessionKeyOnChain(mockKit)).toBe(true);
+      expect(mockKit.getSigner).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns false when the session key is not on-chain', async () => {
+      const { secret } = await generateSessionKeypair();
+      const encrypted = await encryptSessionKey(secret, '123456');
+      await saveSessionKey(encrypted);
+
+      const mockKit = {
+        getSigner: vi.fn().mockResolvedValue(null),
+      } as unknown as PasskeyKit;
+
+      expect(await verifySessionKeyOnChain(mockKit)).toBe(false);
+    });
+
+    it('returns false when the on-chain lookup throws', async () => {
+      const { secret } = await generateSessionKeypair();
+      const encrypted = await encryptSessionKey(secret, '123456');
+      await saveSessionKey(encrypted);
+
+      const mockKit = {
+        getSigner: vi.fn().mockRejectedValue(new Error('RPC timeout')),
+      } as unknown as PasskeyKit;
+
+      expect(await verifySessionKeyOnChain(mockKit)).toBe(false);
     });
   });
 });

@@ -14,6 +14,8 @@ import {
   hasUsableSessionKey,
   ensureSessionKey,
   getSessionSigner,
+  verifySessionKeyOnChain,
+  clearSessionKey,
 } from '@/lib/wallet/session-key';
 
 interface TransferForm {
@@ -282,9 +284,21 @@ export default function SendPage() {
         await ensureSessionKey(kit, pin);
       }
 
+      // Defensive check: confirm the session key is actually registered on-chain.
+      const onChainValid = await verifySessionKeyOnChain(kit);
+      if (!onChainValid) {
+        console.warn(
+          'Session key missing on-chain; clearing local copy and re-authorizing.'
+        );
+        await clearSessionKey();
+        await ensureSessionKey(kit, pin);
+      }
+
       const signer = await getSessionSigner(pin);
+      console.log('Signing transfer with session key:', signer.address);
       await kit.sign(tx, signer);
       const signedXdr = tx.toXDR();
+      console.log('Transfer signed; submitting to server...');
 
       const res = await fetch('/api/wallet/transfer', {
         method: 'POST',

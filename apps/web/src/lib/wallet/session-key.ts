@@ -1,6 +1,6 @@
 import { Keypair } from '@stellar/stellar-sdk';
 import type { PasskeyKit } from 'passkey-kit';
-import { Ed25519Signer, SignerStore } from 'passkey-kit';
+import { Ed25519Signer, SignerKey, SignerStore } from 'passkey-kit';
 import { getUsdcContractId, getXlmContractId } from './assets';
 
 export interface StoredSessionKey {
@@ -199,4 +199,22 @@ export async function getSessionSigner(pin: string): Promise<Ed25519Signer> {
 
   const secret = await decryptSessionKey(stored, pin);
   return Ed25519Signer.fromSecret(secret);
+}
+
+/**
+ * Verify that the locally stored session key is still a registered signer on the
+ * connected wallet. Returns true if it exists on-chain; false if it is missing
+ * or the lookup fails.
+ */
+export async function verifySessionKeyOnChain(kit: PasskeyKit): Promise<boolean> {
+  const stored = await loadSessionKey();
+  if (!stored) {
+    return false;
+  }
+  try {
+    const signerVal = await kit.getSigner(SignerKey.Ed25519(stored.publicKey));
+    return signerVal !== null;
+  } catch {
+    return false;
+  }
 }

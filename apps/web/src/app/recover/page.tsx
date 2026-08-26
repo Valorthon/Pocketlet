@@ -13,6 +13,11 @@ import {
   deriveRecoveryKeypair,
   isValidRecoveryPhrase,
 } from '@/lib/wallet/recovery';
+import {
+  checkPasskeySupport,
+  formatPasskeyKitError,
+  logPasskeyKitError,
+} from '@/lib/auth/passkey-errors';
 
 import type { Keypair } from '@stellar/stellar-sdk';
 
@@ -177,8 +182,9 @@ export default function RecoverPage() {
     setLoading(true);
 
     try {
-      if (!window.PublicKeyCredential) {
-        setError('Passkeys are not supported on this device or browser.');
+      const supportError = checkPasskeySupport();
+      if (supportError) {
+        setError(supportError);
         return;
       }
       if (!recoveryKeypair || !status?.contractId) {
@@ -189,7 +195,12 @@ export default function RecoverPage() {
       const kit = createPasskeyKit();
       connectPasskeyKitByContractId(kit, status.contractId);
 
-      const newPasskey = await kit.createKey('Pocketlet Recovery', email || 'Pocketlet user');
+      const newPasskey = await kit.createKey('Pocketlet Recovery', email || 'Pocketlet user', {
+        authenticatorSelection: {
+          residentKey: 'preferred',
+          userVerification: 'required',
+        },
+      });
 
       const addSignerTx = await kit.addSecp256r1(
         newPasskey.keyId,
@@ -228,7 +239,8 @@ export default function RecoverPage() {
 
       setStep('success');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to register new passkey');
+      logPasskeyKitError(err);
+      setError(formatPasskeyKitError(err));
     } finally {
       setLoading(false);
     }
