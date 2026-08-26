@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function PinResetPage() {
+  const router = useRouter();
   const [code, setCode] = useState('');
   const [showCode, setShowCode] = useState(false);
   const [pin, setPin] = useState('');
@@ -16,7 +18,7 @@ export default function PinResetPage() {
       .then((res) => res.json())
       .then((data: { user?: { email: string } }) => {
         if (!data.user) {
-          window.location.href = '/login';
+          router.push('/login');
         }
       });
   }, []);
@@ -70,7 +72,7 @@ export default function PinResetPage() {
         setError(data.error ?? 'Failed to reset PIN');
         return;
       }
-      window.location.href = '/home';
+      router.push('/home');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset PIN');
     } finally {

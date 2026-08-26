@@ -2,6 +2,14 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
 import { hashPin, verifyPin } from './pin';
+import {
+  normalizeUsername,
+  normalizePhone,
+  isValidUsernameFormat,
+  isValidPhoneFormat,
+} from '@/lib/wallet/recipient-format';
+
+export { normalizeUsername, normalizePhone };
 
 export interface Credential {
   id: string;
@@ -16,23 +24,34 @@ export interface User {
   verificationCode?: string;
   pendingChallenge?: string;
   credential?: Credential;
-  contractId?: string;
-  ownerSecretKey?: string;
+
+  // Passkey smart wallet
+  walletContractId?: string;
   stellarAddress?: string;
+  primaryPasskeyKeyId?: string;
+
+  // Recovery phrase + optional backup passkey
+  recoveryPublicKey?: string;
+  recoveryPhraseConfirmed?: boolean;
+  hasBackupPasskey?: boolean;
+  backupCredential?: Credential;
+
   pinHash?: string;
   pinResetCode?: string;
-  createdAt: string;
-  updatedAt?: string;
-  username?: string;
-  phone?: string;
 
   // Lost-passkey recovery state
   recoveryInitiatedAt?: string;
+  recoveryInitiationHistory?: string[];
   recoveryCode?: string;
   recoveryCodeExpiresAt?: string;
   recoveryVerifiedAt?: string;
   recoveryAttempts?: number;
   recoveryLockedUntil?: string;
+
+  createdAt: string;
+  updatedAt?: string;
+  username?: string;
+  phone?: string;
 }
 
 function getDataDir(): string {
@@ -49,11 +68,14 @@ function loadUsers(): Record<string, User> {
     return {};
   }
   const raw = readFileSync(file, 'utf-8');
+  let users: Record<string, User>;
   try {
-    return JSON.parse(raw) as Record<string, User>;
+    users = JSON.parse(raw) as Record<string, User>;
   } catch {
     return {};
   }
+
+  return users;
 }
 
 function saveUsers(users: Record<string, User>): void {
@@ -68,35 +90,12 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export function normalizeUsername(username: string): string {
-  return username.trim().toLowerCase().replace(/^@/, '');
-}
-
 export function isValidUsername(username: string): boolean {
-  const normalized = normalizeUsername(username);
-  if (normalized.length < 3 || normalized.length > 30) {
-    return false;
-  }
-  return /^[a-z0-9_.-]+$/.test(normalized);
-}
-
-export function normalizePhone(phone: string): string {
-  const trimmed = phone.trim();
-  const hasPlus = trimmed.startsWith('+');
-  const digits = trimmed.replace(/\D/g, '');
-  return hasPlus ? `+${digits}` : digits;
+  return isValidUsernameFormat(username);
 }
 
 export function isValidPhone(phone: string): boolean {
-  const normalized = normalizePhone(phone);
-  if (!normalized.startsWith('+')) {
-    return false;
-  }
-  const digits = normalized.slice(1);
-  if (digits.length < 10 || digits.length > 15) {
-    return false;
-  }
-  return /^\d+$/.test(digits);
+  return isValidPhoneFormat(phone);
 }
 
 export function getUserByEmail(email: string): User | undefined {
@@ -226,9 +225,9 @@ export function setCredential(email: string, credential: Credential): User {
 }
 
 export interface WalletInfo {
-  contractId: string;
-  ownerSecretKey: string;
+  walletContractId: string;
   stellarAddress: string;
+  primaryPasskeyKeyId: string;
 }
 
 export function setWallet(email: string, wallet: WalletInfo): User {
@@ -238,9 +237,50 @@ export function setWallet(email: string, wallet: WalletInfo): User {
   if (!user) {
     throw new Error('User not found');
   }
-  user.contractId = wallet.contractId;
-  user.ownerSecretKey = wallet.ownerSecretKey;
+  user.walletContractId = wallet.walletContractId;
   user.stellarAddress = wallet.stellarAddress;
+  user.primaryPasskeyKeyId = wallet.primaryPasskeyKeyId;
+  saveUsers(users);
+  return user;
+}
+
+export function setRecoveryPublicKey(email: string, publicKey: string): User {
+  const users = loadUsers();
+  const normalized = normalizeEmail(email);
+  const user = users[normalized];
+  if (!user) {
+    throw new Error('User not found');
+  }
+  user.recoveryPublicKey = publicKey;
+  saveUsers(users);
+  return user;
+}
+
+export function markRecoveryPhraseConfirmed(email: string): User {
+  const users = loadUsers();
+  const normalized = normalizeEmail(email);
+  const user = users[normalized];
+  if (!user) {
+    throw new Error('User not found');
+  }
+  user.recoveryPhraseConfirmed = true;
+  saveUsers(users);
+  return user;
+}
+
+export interface BackupPasskeyInfo {
+  credential: Credential;
+}
+
+export function setBackupPasskey(email: string, info: BackupPasskeyInfo): User {
+  const users = loadUsers();
+  const normalized = normalizeEmail(email);
+  const user = users[normalized];
+  if (!user) {
+    throw new Error('User not found');
+  }
+  user.hasBackupPasskey = true;
+  user.backupCredential = info.credential;
   saveUsers(users);
   return user;
 }
@@ -253,6 +293,21 @@ export function updateCredentialCounter(email: string, counter: number): User {
     throw new Error('User or credential not found');
   }
   user.credential.counter = counter;
+  saveUsers(users);
+  return user;
+}
+
+export function updateBackupCredentialCounter(
+  email: string,
+  counter: number
+): User {
+  const users = loadUsers();
+  const normalized = normalizeEmail(email);
+  const user = users[normalized];
+  if (!user || !user.backupCredential) {
+    throw new Error('User or backup credential not found');
+  }
+  user.backupCredential.counter = counter;
   saveUsers(users);
   return user;
 }
@@ -311,6 +366,15 @@ export function clearPinResetCode(email: string): User {
   return user;
 }
 
+const RECOVERY_INITIATION_HISTORY_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function pruneRecoveryInitiationHistory(history: string[]): string[] {
+  const cutoff = new Date(
+    Date.now() - RECOVERY_INITIATION_HISTORY_WINDOW_MS
+  ).toISOString();
+  return history.filter((timestamp) => timestamp > cutoff);
+}
+
 export function setRecoveryInitiated(
   email: string,
   code: string,
@@ -322,7 +386,12 @@ export function setRecoveryInitiated(
   if (!user) {
     throw new Error('User not found');
   }
-  user.recoveryInitiatedAt = new Date().toISOString();
+  const now = new Date().toISOString();
+  user.recoveryInitiatedAt = now;
+  user.recoveryInitiationHistory = [
+    ...pruneRecoveryInitiationHistory(user.recoveryInitiationHistory ?? []),
+    now,
+  ];
   user.recoveryCode = code;
   user.recoveryCodeExpiresAt = expiresAt;
   user.recoveryAttempts = 0;
@@ -341,8 +410,9 @@ export function recordRecoveryAttempt(email: string): User {
   const attempts = (user.recoveryAttempts ?? 0) + 1;
   user.recoveryAttempts = attempts;
   if (attempts >= 3) {
-    const lockoutUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    user.recoveryLockedUntil = lockoutUntil;
+    user.recoveryLockedUntil = new Date(
+      Date.now() + 60 * 60 * 1000
+    ).toISOString();
   }
   saveUsers(users);
   return user;
@@ -390,19 +460,6 @@ export function verifyRecoveryCode(email: string, code: string): User {
   return stored;
 }
 
-export function isRecoveryReady(email: string, now = Date.now()): boolean {
-  const user = getUserByEmail(email);
-  if (!user?.recoveryVerifiedAt) {
-    return false;
-  }
-  const waitingPeriodMs = Number(process.env.RECOVERY_WAITING_PERIOD_MS ?? 24 * 60 * 60 * 1000);
-  return new Date(user.recoveryVerifiedAt).getTime() + waitingPeriodMs <= now;
-}
-
-export function getRecoveryVerifiedAt(email: string): string | undefined {
-  return getUserByEmail(email)?.recoveryVerifiedAt;
-}
-
 export function clearRecoveryState(email: string): User {
   const users = loadUsers();
   const normalized = normalizeEmail(email);
@@ -411,6 +468,7 @@ export function clearRecoveryState(email: string): User {
     throw new Error('User not found');
   }
   delete user.recoveryInitiatedAt;
+  delete user.recoveryInitiationHistory;
   delete user.recoveryCode;
   delete user.recoveryCodeExpiresAt;
   delete user.recoveryVerifiedAt;
@@ -419,3 +477,5 @@ export function clearRecoveryState(email: string): User {
   saveUsers(users);
   return user;
 }
+
+

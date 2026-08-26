@@ -1,14 +1,23 @@
+import { TransactionBuilder } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { getUserByEmail, verifyPinForUser } from '@/lib/auth/store';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
-import { invokeWalletContract, amountToBaseUnits, i128ScVal, addressScVal } from '@/lib/wallet/invoke';
-import { getTokenBalance } from '@/lib/wallet/deploy';
+import {
+  getInvokeContractDetails,
+  getInvokeContractArgs,
+  scValToAddress,
+  submitSignedTransaction,
+} from '@/lib/wallet/submit';
+import { getTokenBalance } from '@/lib/wallet/token';
+import { amountToBaseUnits, i128ToBigInt } from '@/lib/wallet/amount';
 import { resolveRecipient } from '@/lib/wallet/recipient';
+import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
 
 export interface TransferRequest {
+  signedXdr: string;
   asset: 'USDC' | 'XLM';
   amount: string;
   recipient: string;
@@ -33,6 +42,90 @@ function validateAmount(amount: string): string | null {
   return null;
 }
 
+class TransferValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TransferValidationError';
+  }
+}
+
+/**
+ * Validate that the signed XDR is a SAC `transfer(from, to, amount)` call
+ * from the user's wallet contract to the resolved recipient for the stated
+ * amount. Returns the parsed transaction on success.
+ */
+function validateSignedTransfer(
+  signedXdr: string,
+  walletContractId: string,
+  tokenContractId: string,
+  recipientAddress: string,
+  expectedAmount: bigint
+) {
+  const envelope = TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
+  if (envelope.operations.length !== 1) {
+    throw new TransferValidationError(
+      'Transfer transaction must contain exactly one operation'
+    );
+  }
+
+  const op = envelope.operations[0];
+  if (!op) {
+    throw new TransferValidationError(
+      'Transfer transaction contains no operations'
+    );
+  }
+
+  const details = getInvokeContractDetails(op);
+  if (!details) {
+    throw new TransferValidationError(
+      'Transfer transaction does not invoke a contract'
+    );
+  }
+
+  if (details.contractId !== tokenContractId) {
+    throw new TransferValidationError(
+      'Transfer transaction invokes the wrong token contract'
+    );
+  }
+
+  if (details.functionName !== 'transfer') {
+    throw new TransferValidationError(
+      'Transfer transaction must call the transfer function'
+    );
+  }
+
+  const args = getInvokeContractArgs(op);
+  if (!args || args.length !== 3) {
+    throw new TransferValidationError(
+      'Transfer function arguments are malformed'
+    );
+  }
+
+  const fromAddress = scValToAddress(args[0]);
+  const toAddress = scValToAddress(args[1]);
+  const amount = i128ToBigInt(args[2]);
+
+  if (fromAddress !== walletContractId) {
+    throw new TransferValidationError(
+      'Transfer is not from the user wallet'
+    );
+  }
+
+  if (toAddress !== recipientAddress) {
+    throw new TransferValidationError(
+      'Transfer recipient does not match resolved address'
+    );
+  }
+
+  if (amount !== expectedAmount) {
+    throw new TransferValidationError(
+      'Transfer amount does not match requested amount'
+    );
+  }
+
+  return envelope;
+}
+
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -46,7 +139,7 @@ export async function POST(request: NextRequest) {
   }
 
   const user = getUserByEmail(session.email);
-  if (!user || !user.contractId || !user.ownerSecretKey) {
+  if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
 
@@ -57,7 +150,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { asset, amount, recipient, pin } = body;
+  const { signedXdr, asset, amount, recipient, pin } = body;
+
+  if (!signedXdr || typeof signedXdr !== 'string') {
+    return NextResponse.json({ error: 'signedXdr is required' }, { status: 400 });
+  }
 
   if (!asset || (asset !== 'USDC' && asset !== 'XLM')) {
     return NextResponse.json({ error: 'Asset must be USDC or XLM' }, { status: 400 });
@@ -92,7 +189,7 @@ export async function POST(request: NextRequest) {
     const tokenContractId = getTokenContractId(asset);
     const baseAmount = amountToBaseUnits(amount);
 
-    const balance = await getTokenBalance(tokenContractId, user.contractId);
+    const balance = await getTokenBalance(tokenContractId, user.walletContractId);
     if (baseAmount > balance) {
       return NextResponse.json(
         { error: `Insufficient ${asset} balance` },
@@ -100,16 +197,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await invokeWalletContract(user, 'transfer', [
-      addressScVal(tokenContractId),
-      addressScVal(resolved.address),
-      i128ScVal(baseAmount),
-    ]);
+    validateSignedTransfer(
+      signedXdr,
+      user.walletContractId,
+      tokenContractId,
+      resolved.address,
+      baseAmount
+    );
 
+    const result = await submitSignedTransaction(signedXdr);
     return NextResponse.json({ hash: result.hash });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Transfer failed';
     console.error('Transfer failed:', err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = err instanceof TransferValidationError ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

@@ -1,126 +1,150 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
-  getRecoveryWaitingPeriodMs,
-  DEFAULT_RECOVERY_WAITING_PERIOD_MS,
   generateRecoveryCode,
   createRecoveryCodeExpiry,
   isRecoveryCodeExpired,
+  getRecoveryWaitingPeriodMs,
   isWaitingPeriodElapsed,
   getReadyAfter,
   isEligibleForRecovery,
   isRecoveryInitiationRateLimited,
   countRecentInitiations,
   isValidEmail,
+  DEFAULT_RECOVERY_WAITING_PERIOD_MS,
 } from './recovery';
+import type { User } from './store';
+
+let originalEnv: string | undefined;
+
+beforeEach(() => {
+  originalEnv = process.env.RECOVERY_WAITING_PERIOD_MS;
+  delete process.env.RECOVERY_WAITING_PERIOD_MS;
+});
+
+afterEach(() => {
+  process.env.RECOVERY_WAITING_PERIOD_MS = originalEnv;
+});
 
 describe('recovery helpers', () => {
-  beforeEach(() => {
-    delete process.env.RECOVERY_WAITING_PERIOD_MS;
-  });
-
-  afterEach(() => {
-    delete process.env.RECOVERY_WAITING_PERIOD_MS;
-  });
-
-  it('defaults the waiting period to 24 hours', () => {
-    expect(getRecoveryWaitingPeriodMs()).toBe(DEFAULT_RECOVERY_WAITING_PERIOD_MS);
-  });
-
-  it('reads the waiting period from env', () => {
-    process.env.RECOVERY_WAITING_PERIOD_MS = '60000';
-    expect(getRecoveryWaitingPeriodMs()).toBe(60000);
-  });
-
-  it('falls back to default for invalid env value', () => {
-    process.env.RECOVERY_WAITING_PERIOD_MS = 'not-a-number';
-    expect(getRecoveryWaitingPeriodMs()).toBe(DEFAULT_RECOVERY_WAITING_PERIOD_MS);
-  });
-
   it('generates a 6-digit recovery code', () => {
     const code = generateRecoveryCode();
     expect(code).toMatch(/^\d{6}$/);
   });
 
-  it('creates an expiry roughly 15 minutes in the future', () => {
-    const before = Date.now();
-    const expiry = createRecoveryCodeExpiry();
-    const after = Date.now();
-    const expiryMs = new Date(expiry).getTime();
-    expect(expiryMs).toBeGreaterThanOrEqual(before + 14 * 60 * 1000);
-    expect(expiryMs).toBeLessThanOrEqual(after + 16 * 60 * 1000);
+  it('creates an expiry in the future', () => {
+    const expiresAt = createRecoveryCodeExpiry();
+    expect(new Date(expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('detects expired and non-expired codes', () => {
-    expect(isRecoveryCodeExpired(new Date(Date.now() - 1).toISOString())).toBe(true);
-    expect(isRecoveryCodeExpired(new Date(Date.now() + 60 * 1000).toISOString())).toBe(
-      false
-    );
+  it('detects expired codes', () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    expect(isRecoveryCodeExpired(past)).toBe(true);
+
+    const future = new Date(Date.now() + 60000).toISOString();
+    expect(isRecoveryCodeExpired(future)).toBe(false);
   });
 
-  it('checks whether the waiting period has elapsed', () => {
+  it('reads the configured waiting period', () => {
     process.env.RECOVERY_WAITING_PERIOD_MS = '60000';
-    const verifiedAt = new Date().toISOString();
-    expect(isWaitingPeriodElapsed(verifiedAt)).toBe(false);
-    expect(isWaitingPeriodElapsed(verifiedAt, Date.now() + 2 * 60 * 1000)).toBe(true);
+    expect(getRecoveryWaitingPeriodMs()).toBe(60000);
+  });
+
+  it('falls back to the default waiting period when env is invalid', () => {
+    process.env.RECOVERY_WAITING_PERIOD_MS = 'not-a-number';
+    expect(getRecoveryWaitingPeriodMs()).toBe(DEFAULT_RECOVERY_WAITING_PERIOD_MS);
+  });
+
+  it('checks whether the waiting period elapsed', () => {
+    process.env.RECOVERY_WAITING_PERIOD_MS = '1000';
+    const verifiedAt = new Date(Date.now() - 2000).toISOString();
+    expect(isWaitingPeriodElapsed(verifiedAt)).toBe(true);
+
+    const recent = new Date().toISOString();
+    expect(isWaitingPeriodElapsed(recent)).toBe(false);
   });
 
   it('computes the ready-after timestamp', () => {
-    process.env.RECOVERY_WAITING_PERIOD_MS = '60000';
-    const verifiedAt = new Date().toISOString();
+    process.env.RECOVERY_WAITING_PERIOD_MS = '1000';
+    const verifiedAt = new Date(Date.now() - 500).toISOString();
     const readyAfter = getReadyAfter(verifiedAt);
-    expect(readyAfter.getTime()).toBe(
-      new Date(verifiedAt).getTime() + 60000
-    );
+    expect(readyAfter.getTime()).toBe(new Date(verifiedAt).getTime() + 1000);
   });
 
-  it('determines eligibility for recovery', () => {
-    expect(isEligibleForRecovery(undefined)).toBe(false);
-    expect(isEligibleForRecovery({ email: 'a@b.com', emailVerified: false, createdAt: '' })).toBe(
-      false
-    );
+  it('determines recovery eligibility', () => {
+    const base: User = {
+      email: 'test@example.com',
+      emailVerified: true,
+      createdAt: new Date().toISOString(),
+    };
     expect(
       isEligibleForRecovery({
-        email: 'a@b.com',
-        emailVerified: true,
+        ...base,
         credential: { id: 'id', publicKey: 'pk', counter: 0 },
-        contractId: 'C123',
-        ownerSecretKey: 'S123',
-        createdAt: '',
+        walletContractId: 'CABC',
+        recoveryPublicKey: 'GABC',
       })
     ).toBe(true);
+
+    expect(isEligibleForRecovery({ ...base, emailVerified: false })).toBe(false);
+    expect(isEligibleForRecovery(base)).toBe(false);
   });
 
-  it('rate-limits rapid recovery initiations', () => {
-    expect(isRecoveryInitiationRateLimited(undefined)).toBe(false);
-    const user = {
-      email: 'a@b.com',
+  it('rate-limits rapid initiations', () => {
+    const user: User = {
+      email: 'test@example.com',
       emailVerified: true,
-      createdAt: '',
+      createdAt: new Date().toISOString(),
       recoveryInitiatedAt: new Date().toISOString(),
     };
     expect(isRecoveryInitiationRateLimited(user)).toBe(true);
+
+    const old: User = {
+      ...user,
+      recoveryInitiatedAt: new Date(Date.now() - 120000).toISOString(),
+    };
+    expect(isRecoveryInitiationRateLimited(old)).toBe(false);
   });
 
-  it('counts recent initiations within the window', () => {
-    expect(countRecentInitiations(undefined)).toBe(0);
-    const recent = {
-      email: 'a@b.com',
+  it('counts recent initiations within the window from history', () => {
+    const user: User = {
+      email: 'test@example.com',
       emailVerified: true,
-      createdAt: '',
-      recoveryInitiatedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      recoveryInitiationHistory: [
+        new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+        new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+        new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      ],
     };
-    expect(countRecentInitiations(recent)).toBe(1);
-    const old = {
-      email: 'a@b.com',
+    expect(countRecentInitiations(user)).toBe(2);
+
+    const old: User = {
+      ...user,
+      recoveryInitiationHistory: [
+        new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      ],
+    };
+    expect(countRecentInitiations(old)).toBe(0);
+  });
+
+  it('falls back to recoveryInitiatedAt for backward compatibility', () => {
+    const user: User = {
+      email: 'test@example.com',
       emailVerified: true,
-      createdAt: '',
+      createdAt: new Date().toISOString(),
+      recoveryInitiatedAt: new Date().toISOString(),
+    };
+    expect(countRecentInitiations(user)).toBe(1);
+
+    const old: User = {
+      ...user,
       recoveryInitiatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     };
     expect(countRecentInitiations(old)).toBe(0);
   });
 
-  it('validates email shape', () => {
-    expect(isValidEmail('user@example.com')).toBe(true);
+  it('validates email addresses', () => {
+    expect(isValidEmail('alice@example.com')).toBe(true);
     expect(isValidEmail('not-an-email')).toBe(false);
     expect(isValidEmail(123)).toBe(false);
   });

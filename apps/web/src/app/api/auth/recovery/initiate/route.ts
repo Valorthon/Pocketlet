@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserByEmail, setRecoveryInitiated } from '@/lib/auth/store';
 import {
-  generateRecoveryCode,
+  getUserByEmail,
+  isRecoveryLocked,
+  setRecoveryInitiated,
+} from '@/lib/auth/store';
+import {
+  countRecentInitiations,
   createRecoveryCodeExpiry,
+  generateRecoveryCode,
   isEligibleForRecovery,
   isRecoveryInitiationRateLimited,
-  countRecentInitiations,
   isValidEmail,
 } from '@/lib/auth/recovery';
 
@@ -25,6 +29,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json(
         { error: 'No recoverable account found for this email' },
         { status: 404 }
+      );
+    }
+
+    if (isRecoveryLocked(normalizedEmail)) {
+      return NextResponse.json(
+        { error: 'Recovery is locked. Try again later.' },
+        { status: 429 }
       );
     }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,13 +9,14 @@ import {
   setEmailVerified,
   setCredential,
   setWallet,
+  setRecoveryPublicKey,
   getUserByEmail,
 } from '@/lib/auth/store';
 
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-recovery-'));
+  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-recovery-initiate-'));
   process.env.POCKETLET_DATA_DIR = dataDir;
 });
 
@@ -24,78 +25,84 @@ afterEach(() => {
   delete process.env.POCKETLET_DATA_DIR;
 });
 
-function createEligibleUser(email: string) {
-  createUser(email, '000000');
-  setEmailVerified(email);
-  setCredential(email, {
-    id: 'cred-id',
-    publicKey: 'base64-pubkey',
-    counter: 0,
-  });
-  setWallet(email, {
-    contractId: 'CABC',
-    ownerSecretKey: 'SABC',
-    stellarAddress: 'CABC',
+function createRequest(body: unknown) {
+  return new NextRequest('http://localhost/api/auth/recovery/initiate', {
+    method: 'POST',
+    body: JSON.stringify(body),
   });
 }
 
-describe('POST /api/auth/recovery/initiate', () => {
-  it('returns a recovery code for an eligible user', async () => {
-    createEligibleUser('user@example.com');
-    const req = new NextRequest('http://localhost/api/auth/recovery/initiate', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'user@example.com' }),
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { code: string; email: string };
-    expect(body.email).toBe('user@example.com');
-    expect(body.code).toMatch(/^\d{6}$/);
-    const user = getUserByEmail('user@example.com');
-    expect(user?.recoveryCode).toBe(body.code);
+function makeRecoverableUser(email: string) {
+  createUser(email, '000000');
+  setEmailVerified(email);
+  setCredential(email, {
+    id: 'primary-key-id',
+    publicKey: 'cHVibGljLWtleQ',
+    counter: 0,
   });
+  setWallet(email, {
+    walletContractId: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
+    stellarAddress: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
+    primaryPasskeyKeyId: 'primary-key-id',
+  });
+  setRecoveryPublicKey(email, 'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP');
+}
 
-  it('rejects invalid email', async () => {
-    const req = new NextRequest('http://localhost/api/auth/recovery/initiate', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'not-an-email' }),
-    });
+describe('POST /api/auth/recovery/initiate', () => {
+  it('returns 400 for an invalid email', async () => {
+    const req = createRequest({ email: 'not-an-email' });
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
 
-  it('returns 404 for unregistered email', async () => {
-    const req = new NextRequest('http://localhost/api/auth/recovery/initiate', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'unknown@example.com' }),
-    });
+  it('returns 404 for an unrecoverable account', async () => {
+    createUser('alice@example.com', '000000');
+    setEmailVerified('alice@example.com');
+    const req = createRequest({ email: 'alice@example.com' });
     const res = await POST(req);
     expect(res.status).toBe(404);
   });
 
-  it('returns 404 for a user without a credential or wallet', async () => {
-    createUser('partial@example.com', '000000');
-    setEmailVerified('partial@example.com');
-    const req = new NextRequest('http://localhost/api/auth/recovery/initiate', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'partial@example.com' }),
-    });
+  it('generates a recovery code for a recoverable account', async () => {
+    makeRecoverableUser('alice@example.com');
+    const req = createRequest({ email: 'alice@example.com' });
     const res = await POST(req);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as { email: string; code: string };
+    expect(body.email).toBe('alice@example.com');
+    expect(body.code).toMatch(/^\d{6}$/);
+
+    const user = getUserByEmail('alice@example.com');
+    expect(user?.recoveryCode).toBe(body.code);
+    expect(user?.recoveryInitiatedAt).toBeDefined();
   });
 
   it('rate-limits rapid initiations', async () => {
-    createEligibleUser('rapid@example.com');
-    const req1 = new NextRequest('http://localhost/api/auth/recovery/initiate', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'rapid@example.com' }),
-    });
-    await POST(req1);
-    const req2 = new NextRequest('http://localhost/api/auth/recovery/initiate', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'rapid@example.com' }),
-    });
-    const res2 = await POST(req2);
-    expect(res2.status).toBe(429);
+    makeRecoverableUser('alice@example.com');
+    await POST(createRequest({ email: 'alice@example.com' }));
+    const res = await POST(createRequest({ email: 'alice@example.com' }));
+    expect(res.status).toBe(429);
+  });
+
+  it('enforces the hourly initiation cap', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    makeRecoverableUser('alice@example.com');
+
+    // 5 initiations within an hour should succeed.
+    for (let i = 0; i < 5; i += 1) {
+      if (i > 0) {
+        vi.advanceTimersByTime(2 * 60 * 1000); // advance past the 1-minute retry window
+      }
+      const res = await POST(createRequest({ email: 'alice@example.com' }));
+      expect(res.status).toBe(200);
+    }
+
+    // A 6th initiation within the same hour is blocked.
+    vi.advanceTimersByTime(2 * 60 * 1000);
+    const res = await POST(createRequest({ email: 'alice@example.com' }));
+    expect(res.status).toBe(429);
+
+    vi.useRealTimers();
   });
 });

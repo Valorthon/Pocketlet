@@ -1,8 +1,11 @@
-import { Horizon } from '@stellar/stellar-sdk';
+import { Horizon, Address, xdr } from '@stellar/stellar-sdk';
+import { isProductionNetwork } from './network';
 
-export const HORIZON_EXPLORER_URL = 'https://stellar.expert/explorer/testnet/tx';
+export const HORIZON_EXPLORER_URL = isProductionNetwork()
+  ? 'https://stellar.expert/explorer/public/tx'
+  : 'https://stellar.expert/explorer/testnet/tx';
 
-export type TransactionType = 'receive' | 'send' | 'swap' | 'unknown';
+export type TransactionType = 'receive' | 'send' | 'unknown';
 
 export interface WalletTransaction {
   id: string;
@@ -16,10 +19,6 @@ export interface WalletTransaction {
   amount: string;
   recipient?: string;
   sender?: string;
-  sellAsset?: string;
-  sellAmount?: string;
-  buyAsset?: string;
-  buyAmount?: string;
   memo?: string;
 }
 
@@ -30,16 +29,6 @@ export interface TransactionDetails extends WalletTransaction {
 
 const XLM_ASSET = 'XLM';
 const USDC_ASSET = 'USDC';
-
-function describeAsset(contractId: string | undefined, usdcContractId: string): string {
-  if (!contractId) {
-    return XLM_ASSET;
-  }
-  if (contractId === usdcContractId) {
-    return USDC_ASSET;
-  }
-  return `contract:${contractId.slice(0, 8)}...`;
-}
 
 function formatAmountFromStroops(amount: string | undefined): string {
   if (!amount) {
@@ -55,9 +44,42 @@ function formatAmountFromStroops(amount: string | undefined): string {
   return `${integer}.${fractionStr}`;
 }
 
+function formatBalanceChangeAmount(amount: string | undefined): string {
+  if (!amount) {
+    return '0';
+  }
+  if (!amount.includes('.')) {
+    return amount;
+  }
+  return amount.replace(/\.?0+$/, '');
+}
+
+function parseScValSymbol(base64: string): string | null {
+  try {
+    const scVal = xdr.ScVal.fromXDR(Buffer.from(base64, 'base64'));
+    if (scVal.switch().name !== 'scvSymbol') {
+      return null;
+    }
+    const value = scVal.sym();
+    return typeof value === 'string' ? value : value.toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+function parseScValAddress(base64: string): string | null {
+  try {
+    const scVal = xdr.ScVal.fromXDR(Buffer.from(base64, 'base64'));
+    return Address.fromScVal(scVal).toString();
+  } catch {
+    return null;
+  }
+}
+
 function parsePaymentOperation(
   op: Horizon.ServerApi.PaymentOperationRecord,
-  walletAddress: string
+  walletAddress: string,
+  ledger: number
 ): WalletTransaction | null {
   const isReceive = op.to === walletAddress;
   const isSend = op.from === walletAddress;
@@ -74,7 +96,7 @@ function parsePaymentOperation(
     type: isReceive ? 'receive' : 'send',
     status: op.transaction_successful ? 'success' : 'failed',
     createdAt: op.created_at,
-    ledger: 0,
+    ledger,
     fee: '0',
     asset: assetCode,
     amount,
@@ -85,7 +107,8 @@ function parsePaymentOperation(
 
 function parsePathPaymentOperation(
   op: Horizon.ServerApi.PathPaymentOperationRecord,
-  walletAddress: string
+  walletAddress: string,
+  ledger: number
 ): WalletTransaction | null {
   const isReceive = op.to === walletAddress;
   const isSend = op.from === walletAddress;
@@ -99,19 +122,15 @@ function parsePathPaymentOperation(
   return {
     id: op.transaction_hash,
     hash: op.transaction_hash,
-    type: isSend && sourceAsset !== destAsset ? 'swap' : isReceive ? 'receive' : 'send',
+    type: isReceive ? 'receive' : 'send',
     status: op.transaction_successful ? 'success' : 'failed',
     createdAt: op.created_at,
-    ledger: 0,
+    ledger,
     fee: '0',
-    asset: destAsset,
-    amount: formatAmountFromStroops(op.amount),
+    asset: isReceive ? destAsset : sourceAsset,
+    amount: formatAmountFromStroops(isReceive ? op.amount : op.source_amount),
     recipient: isReceive ? undefined : op.to,
     sender: isReceive ? op.from : undefined,
-    sellAsset: isSend ? sourceAsset : undefined,
-    sellAmount: isSend ? formatAmountFromStroops(op.source_amount) : undefined,
-    buyAsset: isSend ? destAsset : undefined,
-    buyAmount: isSend ? formatAmountFromStroops(op.amount) : undefined,
   };
 }
 
@@ -130,90 +149,78 @@ function describeAssetFromBalanceChange(
 function parseInvokeHostFunctionOperation(
   op: Horizon.ServerApi.InvokeHostFunctionOperationRecord,
   walletAddress: string,
-  usdcContractId: string
+  ledger: number
 ): WalletTransaction | null {
-  if (op.source_account !== walletAddress) {
+  // Horizon reports the host function type at the operation level; the actual
+  // contract function name and arguments are encoded as XDR ScVals in the
+  // parameters array.
+  if (op.function !== 'HostFunctionTypeHostFunctionTypeInvokeContract') {
     return null;
   }
 
-  // Heuristic: look at the invoked function name and the invoked contract to
-  // classify the operation. This is intentionally simple for the V1 testnet.
-  const functionName = op.function;
-  const contract = op.address;
-
-  if (functionName === 'swap') {
-    const outgoing = op.asset_balance_changes.find(
-      (change) => change.from === walletAddress && change.to !== walletAddress
-    );
-    const incoming = op.asset_balance_changes.find(
-      (change) => change.from !== walletAddress && change.to === walletAddress
-    );
-
-    return {
-      id: op.transaction_hash,
-      hash: op.transaction_hash,
-      type: 'swap',
-      status: op.transaction_successful ? 'success' : 'failed',
-      createdAt: op.created_at,
-      ledger: 0,
-      fee: '0',
-      asset: outgoing ? describeAssetFromBalanceChange(outgoing) : USDC_ASSET,
-      amount: outgoing ? formatAmountFromStroops(outgoing.amount) : '0',
-      sellAsset: outgoing ? describeAssetFromBalanceChange(outgoing) : 'unknown',
-      sellAmount: outgoing ? formatAmountFromStroops(outgoing.amount) : '0',
-      buyAsset: incoming ? describeAssetFromBalanceChange(incoming) : 'unknown',
-      buyAmount: incoming ? formatAmountFromStroops(incoming.amount) : '0',
-    };
+  const functionName = parseScValSymbol(op.parameters[1]?.value ?? '');
+  if (functionName !== 'transfer') {
+    return null;
   }
 
-  if (functionName === 'transfer') {
-    // Horizon reports SAC balance changes as classic asset entries. Find the
-    // outgoing change to determine the real asset and amount.
-    const outgoing = op.asset_balance_changes.find(
-      (change) => change.from === walletAddress && change.to !== walletAddress
-    );
-
-    return {
-      id: op.transaction_hash,
-      hash: op.transaction_hash,
-      type: 'send',
-      status: op.transaction_successful ? 'success' : 'failed',
-      createdAt: op.created_at,
-      ledger: 0,
-      fee: '0',
-      asset: outgoing
-        ? describeAssetFromBalanceChange(outgoing)
-        : describeAsset(contract, usdcContractId),
-      amount: outgoing ? formatAmountFromStroops(outgoing.amount) : '0',
-      recipient: outgoing?.to,
-    };
+  const fromAddress = parseScValAddress(op.parameters[2]?.value ?? '');
+  const toAddress = parseScValAddress(op.parameters[3]?.value ?? '');
+  if (!fromAddress || !toAddress) {
+    return null;
   }
 
-  return null;
+  const isReceive = toAddress === walletAddress;
+  const isSend = fromAddress === walletAddress;
+  if (!isReceive && !isSend) {
+    return null;
+  }
+
+  // Horizon reports SAC balance changes as classic asset entries. Find the
+  // matching change to determine the real asset and amount.
+  const change = op.asset_balance_changes.find(
+    (c) => c.from === fromAddress && c.to === toAddress
+  );
+
+  return {
+    id: op.transaction_hash,
+    hash: op.transaction_hash,
+    type: isReceive ? 'receive' : 'send',
+    status: op.transaction_successful ? 'success' : 'failed',
+    createdAt: op.created_at,
+    ledger,
+    fee: '0',
+    asset: change ? describeAssetFromBalanceChange(change) : XLM_ASSET,
+    amount: change ? formatBalanceChangeAmount(change.amount) : '0',
+    recipient: isReceive ? undefined : toAddress,
+    sender: isReceive ? fromAddress : undefined,
+  };
 }
 
 export function classifyOperation(
   op: Horizon.ServerApi.OperationRecord,
   walletAddress: string,
-  usdcContractId: string
+  usdcContractId: string,
+  ledger: number
 ): WalletTransaction | null {
   switch (op.type) {
     case 'payment':
       return parsePaymentOperation(
         op as Horizon.ServerApi.PaymentOperationRecord,
-        walletAddress
+        walletAddress,
+        ledger
       );
     case 'path_payment_strict_receive':
     case 'path_payment_strict_send':
       return parsePathPaymentOperation(
         op as Horizon.ServerApi.PathPaymentOperationRecord,
-        walletAddress
+        walletAddress,
+        ledger
       );
     case 'invoke_host_function':
       return parseInvokeHostFunctionOperation(
         op as Horizon.ServerApi.InvokeHostFunctionOperationRecord,
         walletAddress,
-        usdcContractId
+        ledger
       );
     default:
       return null;
@@ -232,7 +239,7 @@ export function buildTransactionDetails(
 
   let primary: WalletTransaction | null = null;
   for (const op of ops) {
-    const parsed = classifyOperation(op, walletAddress, usdcContractId);
+    const parsed = classifyOperation(op, walletAddress, usdcContractId, tx.ledger_attr);
     if (parsed) {
       primary = parsed;
       break;
@@ -253,10 +260,6 @@ export function buildTransactionDetails(
     amount: primary?.amount ?? '0',
     recipient: primary?.recipient,
     sender: primary?.sender,
-    sellAsset: primary?.sellAsset,
-    sellAmount: primary?.sellAmount,
-    buyAsset: primary?.buyAsset,
-    buyAmount: primary?.buyAmount,
     memo,
     operationCount: ops.length,
     sourceAccount: tx.source_account,
@@ -273,8 +276,6 @@ export function formatTransactionType(type: TransactionType): string {
       return 'Received';
     case 'send':
       return 'Sent';
-    case 'swap':
-      return 'Swapped';
     default:
       return 'Transaction';
   }
@@ -286,8 +287,6 @@ export function formatTransactionDescription(tx: WalletTransaction): string {
       return `Received ${tx.amount} ${tx.asset}`;
     case 'send':
       return `Sent ${tx.amount} ${tx.asset}`;
-    case 'swap':
-      return `Swapped ${tx.sellAmount ?? tx.amount} ${tx.sellAsset ?? tx.asset} for ${tx.buyAmount ?? '?'} ${tx.buyAsset ?? '?'}`;
     default:
       return 'Unknown transaction';
   }

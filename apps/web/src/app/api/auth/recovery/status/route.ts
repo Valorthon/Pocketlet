@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getUserByEmail, isRecoveryReady } from '@/lib/auth/store';
+import { getUserByEmail, isRecoveryLocked } from '@/lib/auth/store';
 import {
   getReadyAfter,
   getRecoveryWaitingPeriodMs,
+  isWaitingPeriodElapsed,
 } from '@/lib/auth/recovery';
 import {
   RECOVERY_COOKIE_NAME,
@@ -42,7 +43,14 @@ export async function GET(
       );
     }
 
-    const ready = isRecoveryReady(payload.email);
+    if (isRecoveryLocked(payload.email)) {
+      return NextResponse.json(
+        { error: 'Recovery is locked. Try again later.' },
+        { status: 429 }
+      );
+    }
+
+    const ready = isWaitingPeriodElapsed(user.recoveryVerifiedAt);
     const readyAfter = getReadyAfter(user.recoveryVerifiedAt).toISOString();
     const waitingPeriodMs = getRecoveryWaitingPeriodMs();
 
@@ -51,6 +59,8 @@ export async function GET(
       status: ready ? 'ready' : 'pending',
       readyAfter,
       waitingPeriodMs,
+      contractId: ready ? user.walletContractId : undefined,
+      primaryPasskeyKeyId: ready ? user.primaryPasskeyKeyId : undefined,
     });
   } catch (err) {
     console.error('Recovery status error:', err);

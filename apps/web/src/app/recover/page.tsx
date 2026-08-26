@@ -1,14 +1,28 @@
 'use client';
 
-import { startRegistration } from '@simplewebauthn/browser';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import {
+  createPasskeyKit,
+  connectPasskeyKitByContractId,
+  SignerStore,
+  SignerKey,
+  Ed25519Signer,
+} from '@/lib/wallet/passkey-kit';
+import {
+  deriveRecoveryKeypair,
+  isValidRecoveryPhrase,
+} from '@/lib/wallet/recovery';
+
+import type { Keypair } from '@stellar/stellar-sdk';
 
 type RecoveryStep =
   | 'email'
   | 'verify'
   | 'waiting'
+  | 'phrase'
   | 'register'
+  | 'old-passkey-warning'
   | 'success'
   | 'unrecoverable';
 
@@ -16,16 +30,23 @@ interface RecoveryStatus {
   status: 'pending' | 'ready';
   readyAfter: string;
   waitingPeriodMs: number;
+  contractId?: string;
+  primaryPasskeyKeyId?: string;
 }
 
 export default function RecoverPage() {
   const [step, setStep] = useState<RecoveryStep>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  const [phrase, setPhrase] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [readyAfter, setReadyAfter] = useState<string | null>(null);
   const [countdown, setCountdown] = useState('');
+  const [status, setStatus] = useState<RecoveryStatus | null>(null);
+
+  const [recoveryKeypair, setRecoveryKeypair] = useState<Keypair | null>(null);
 
   useEffect(() => {
     if (!readyAfter || step !== 'waiting') {
@@ -57,11 +78,15 @@ export default function RecoverPage() {
       try {
         const res = await fetch('/api/auth/recovery/status');
         if (res.ok) {
-          const status = (await res.json()) as RecoveryStatus;
-          setReadyAfter(status.readyAfter);
-          if (status.status === 'ready') {
-            setStep('register');
+          const nextStatus = (await res.json()) as RecoveryStatus;
+          setStatus(nextStatus);
+          setReadyAfter(nextStatus.readyAfter);
+          if (nextStatus.status === 'ready') {
+            setStep('phrase');
           }
+        } else if (res.status === 401) {
+          setError('Recovery session expired. Please start over.');
+          setStep('email');
         }
       } catch {
         // Ignore polling errors; user can continue manually.
@@ -130,33 +155,126 @@ export default function RecoverPage() {
     }
   };
 
+  const deriveKey = () => {
+    setError(null);
+    const trimmed = phrase.trim();
+    if (!isValidRecoveryPhrase(trimmed)) {
+      setError('Invalid recovery phrase. Please enter all 12 words in order.');
+      return;
+    }
+    try {
+      const keypair = deriveRecoveryKeypair(trimmed);
+      setRecoveryKeypair(keypair);
+      setStep('register');
+    } catch {
+      setError('Could not derive recovery key from phrase. Please check it.');
+    }
+  };
+
   const registerPasskey = async () => {
     setError(null);
+    setWarning(null);
     setLoading(true);
+
     try {
-      const optionsRes = await fetch('/api/auth/recovery/register-options', {
-        method: 'POST',
-      });
-      const options = (await optionsRes.json()) as { error?: string };
-      if (!optionsRes.ok) {
-        setError(options.error ?? 'Failed to start passkey registration');
+      if (!window.PublicKeyCredential) {
+        setError('Passkeys are not supported on this device or browser.');
+        return;
+      }
+      if (!recoveryKeypair || !status?.contractId) {
+        setError('Recovery state is incomplete. Please start over.');
         return;
       }
 
-      const attestation = await startRegistration({ optionsJSON: options as never });
-      const verifyRes = await fetch('/api/auth/recovery/register-verify', {
+      const kit = createPasskeyKit();
+      connectPasskeyKitByContractId(kit, status.contractId);
+
+      const newPasskey = await kit.createKey('Pocketlet Recovery', email || 'Pocketlet user');
+
+      const addSignerTx = await kit.addSecp256r1(
+        newPasskey.keyId,
+        newPasskey.publicKey,
+        undefined,
+        SignerStore.Persistent
+      );
+      await kit.sign(addSignerTx, new Ed25519Signer(recoveryKeypair));
+      const signedXdr = addSignerTx.toXDR();
+
+      const submitRes = await fetch('/api/wallet/recovery/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ response: attestation }),
+        body: JSON.stringify({
+          signedXdr,
+          response: newPasskey.rawResponse,
+          keyIdBase64: newPasskey.keyId,
+        }),
       });
-      const body = (await verifyRes.json()) as { error?: string; verified?: boolean };
-      if (!verifyRes.ok) {
-        setError(body.error ?? 'Failed to register new passkey');
+
+      const submitData = (await submitRes.json()) as {
+        error?: string;
+        verified?: boolean;
+        hash?: string;
+      };
+      if (!submitRes.ok) {
+        setError(submitData.error ?? 'Failed to register new passkey');
         return;
       }
+
+      // Remove the lost primary passkey if we know its key id.
+      if (status.primaryPasskeyKeyId && status.primaryPasskeyKeyId !== newPasskey.keyId) {
+        await removeOldPrimaryPasskey(status.primaryPasskeyKeyId);
+        return;
+      }
+
       setStep('success');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to register new passkey');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeOldPrimaryPasskey = async (keyId: string) => {
+    if (!recoveryKeypair || !status?.contractId) {
+      setError('Recovery state is incomplete. Please start over.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const kit = createPasskeyKit();
+      connectPasskeyKitByContractId(kit, status.contractId);
+
+      const removeSignerTx = await kit.remove(SignerKey.Secp256r1(keyId));
+      await kit.sign(removeSignerTx, new Ed25519Signer(recoveryKeypair));
+      const removeSignedXdr = removeSignerTx.toXDR();
+
+      const removeRes = await fetch('/api/wallet/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signedXdr: removeSignedXdr }),
+      });
+
+      const removeData = (await removeRes.json()) as { error?: string; hash?: string };
+      if (!removeRes.ok) {
+        setWarning(
+          removeData.error ??
+            'New passkey registered, but the old passkey could not be removed.'
+        );
+        setStep('old-passkey-warning');
+        return;
+      }
+
+      setStep('success');
+    } catch (removeErr) {
+      setWarning(
+        removeErr instanceof Error
+          ? removeErr.message
+          : 'New passkey registered, but the old passkey could not be removed.'
+      );
+      setStep('old-passkey-warning');
     } finally {
       setLoading(false);
     }
@@ -169,7 +287,7 @@ export default function RecoverPage() {
           <h1 className="mb-2 text-2xl font-bold text-red-600">Account not recoverable</h1>
           <p className="mb-6 text-sm text-gray-600">
             We could not find a recoverable account for that email. If you have lost both your
-            passkey and email access, your account cannot be recovered.
+            passkey and recovery phrase, your account cannot be recovered.
           </p>
           <Link
             href="/login"
@@ -193,6 +311,9 @@ export default function RecoverPage() {
           <p className="mb-6 text-sm text-gray-600">
             Your new passkey is registered. You can now log in normally.
           </p>
+          {warning && (
+            <div className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{warning}</div>
+          )}
           <Link
             href="/home"
             className="inline-block rounded-lg bg-pocketlet-600 px-4 py-2 font-semibold text-white hover:bg-pocketlet-700"
@@ -215,11 +336,14 @@ export default function RecoverPage() {
 
         <h1 className="mb-2 text-2xl font-bold text-gray-900">Recover your account</h1>
         <p className="mb-6 text-sm text-gray-500">
-          Recover access with your registered email and a new passkey.
+          Recover access with your registered email and recovery phrase.
         </p>
 
         {error && (
           <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        )}
+        {warning && (
+          <div className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{warning}</div>
         )}
 
         {step === 'email' && (
@@ -290,6 +414,29 @@ export default function RecoverPage() {
           </div>
         )}
 
+        {step === 'phrase' && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Enter your 12-word recovery phrase. It is only used in this browser to sign the
+              recovery transaction.
+            </p>
+            <textarea
+              value={phrase}
+              onChange={(e) => setPhrase(e.target.value)}
+              rows={4}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 font-mono text-sm focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              placeholder="word1 word2 word3 ... word12"
+            />
+            <button
+              onClick={deriveKey}
+              disabled={loading || !phrase.trim()}
+              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+            >
+              Continue
+            </button>
+          </div>
+        )}
+
         {step === 'register' && (
           <div className="space-y-4 text-center">
             <p className="text-sm text-gray-600">
@@ -301,6 +448,33 @@ export default function RecoverPage() {
               className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
               {loading ? 'Registering...' : 'Register new passkey'}
+            </button>
+          </div>
+        )}
+
+        {step === 'old-passkey-warning' && status?.primaryPasskeyKeyId && (
+          <div className="space-y-4 text-center">
+            <div className="rounded-lg bg-amber-50 p-4 text-left text-sm text-amber-800">
+              <p className="font-medium">Old passkey could not be removed</p>
+              <p className="mt-1">
+                Your new passkey is registered, but we could not remove the old one from your
+                wallet. The old passkey may still work until it is removed.
+              </p>
+              {warning && <p className="mt-2">{warning}</p>}
+            </div>
+            <button
+              onClick={() => removeOldPrimaryPasskey(status.primaryPasskeyKeyId!)}
+              disabled={loading}
+              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+            >
+              {loading ? 'Trying again...' : 'Try removing old passkey again'}
+            </button>
+            <button
+              onClick={() => setStep('success')}
+              disabled={loading}
+              className="w-full rounded-lg bg-gray-100 py-2.5 font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+            >
+              Continue anyway
             </button>
           </div>
         )}

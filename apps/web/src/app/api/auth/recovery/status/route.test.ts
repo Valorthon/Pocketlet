@@ -9,10 +9,11 @@ import {
   setEmailVerified,
   setCredential,
   setWallet,
+  setRecoveryPublicKey,
   setRecoveryInitiated,
   verifyRecoveryCode,
 } from '@/lib/auth/store';
-import { createRecoveryToken } from '@/lib/auth/recovery-token';
+import { createRecoveryToken, RECOVERY_COOKIE_NAME } from '@/lib/auth/recovery-token';
 
 let dataDir: string;
 let cookieJar: Record<string, string> = {};
@@ -27,74 +28,79 @@ vi.mock('next/headers', () => ({
 }));
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-recovery-'));
+  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-recovery-status-'));
   process.env.POCKETLET_DATA_DIR = dataDir;
-  process.env.RECOVERY_WAITING_PERIOD_MS = '60000';
   cookieJar = {};
 });
 
 afterEach(() => {
   rmSync(dataDir, { recursive: true, force: true });
   delete process.env.POCKETLET_DATA_DIR;
-  delete process.env.RECOVERY_WAITING_PERIOD_MS;
   vi.clearAllMocks();
 });
 
-function createEligibleUser(email: string) {
+function createRequest() {
+  return new NextRequest('http://localhost/api/auth/recovery/status');
+}
+
+function makeRecoverableUser(email: string) {
   createUser(email, '000000');
   setEmailVerified(email);
   setCredential(email, {
-    id: 'cred-id',
-    publicKey: 'base64-pubkey',
+    id: 'primary-key-id',
+    publicKey: 'cHVibGljLWtleQ',
     counter: 0,
   });
   setWallet(email, {
-    contractId: 'CABC',
-    ownerSecretKey: 'SABC',
-    stellarAddress: 'CABC',
+    walletContractId: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
+    stellarAddress: 'CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM',
+    primaryPasskeyKeyId: 'primary-key-id',
   });
+  setRecoveryPublicKey(email, 'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP');
+}
+
+async function setRecoverySession(email: string) {
+  const token = await createRecoveryToken(email);
+  cookieJar[RECOVERY_COOKIE_NAME] = token;
 }
 
 describe('GET /api/auth/recovery/status', () => {
-  it('returns pending before the waiting period elapses', async () => {
-    createEligibleUser('user@example.com');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    setRecoveryInitiated('user@example.com', '123456', expiresAt);
-    verifyRecoveryCode('user@example.com', '123456');
-
-    const token = await createRecoveryToken('user@example.com');
-    cookieJar.pocketlet_recovery = token;
-
-    const req = new NextRequest('http://localhost/api/auth/recovery/status');
-    const res = await GET(req);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string };
-    expect(body.status).toBe('pending');
-  });
-
-  it('returns ready after the waiting period elapses', async () => {
-    createEligibleUser('user@example.com');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    setRecoveryInitiated('user@example.com', '123456', expiresAt);
-    verifyRecoveryCode('user@example.com', '123456');
-
-    const token = await createRecoveryToken('user@example.com');
-    cookieJar.pocketlet_recovery = token;
-
-    vi.setSystemTime(Date.now() + 2 * 60 * 1000);
-
-    const req = new NextRequest('http://localhost/api/auth/recovery/status');
-    const res = await GET(req);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string };
-    expect(body.status).toBe('ready');
-
-    vi.useRealTimers();
-  });
-
   it('returns 401 without a recovery cookie', async () => {
-    const req = new NextRequest('http://localhost/api/auth/recovery/status');
-    const res = await GET(req);
+    const res = await GET(createRequest());
     expect(res.status).toBe(401);
+  });
+
+  it('returns pending when the waiting period has not elapsed', async () => {
+    makeRecoverableUser('alice@example.com');
+    setRecoveryInitiated('alice@example.com', '123456', new Date(Date.now() + 60000).toISOString());
+    verifyRecoveryCode('alice@example.com', '123456');
+    await setRecoverySession('alice@example.com');
+
+    const res = await GET(createRequest());
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as { status: string; contractId?: string };
+    expect(body.status).toBe('pending');
+    expect(body.contractId).toBeUndefined();
+  });
+
+  it('returns ready with wallet details when the waiting period has elapsed', async () => {
+    process.env.RECOVERY_WAITING_PERIOD_MS = '0';
+    makeRecoverableUser('alice@example.com');
+    setRecoveryInitiated('alice@example.com', '123456', new Date(Date.now() + 60000).toISOString());
+    verifyRecoveryCode('alice@example.com', '123456');
+    await setRecoverySession('alice@example.com');
+
+    const res = await GET(createRequest());
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      status: string;
+      contractId?: string;
+      primaryPasskeyKeyId?: string;
+    };
+    expect(body.status).toBe('ready');
+    expect(body.contractId).toBe('CD4YJ2YQFJFMYF5E5LXGJZW2CWALN6VBPQSVLY2BJUEP4XNIPQHVJVDM');
+    expect(body.primaryPasskeyKeyId).toBe('primary-key-id');
   });
 });

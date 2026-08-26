@@ -8,8 +8,6 @@
     "dev:web": "pnpm --filter web dev",
     "build:web": "pnpm --filter web build",
     "start:web": "pnpm --filter web start",
-    "test:contracts": "pnpm --filter contracts test",
-    "build:contracts": "pnpm --filter contracts build",
     "lint": "pnpm --filter web lint",
     "typecheck": "pnpm --filter web typecheck"
   },

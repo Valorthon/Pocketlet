@@ -4,7 +4,8 @@ import { Horizon } from '@stellar/stellar-sdk';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { getUserByEmail } from '@/lib/auth/store';
-import { HORIZON_URL } from '@/lib/wallet/deploy';
+import { HORIZON_URL } from '@/lib/wallet/network';
+import { getFeePayerKeypair } from '@/lib/wallet/fee-payer';
 import { getUsdcContractId } from '@/lib/wallet/assets';
 import { buildTransactionDetails, TransactionDetails } from '@/lib/wallet/transactions';
 
@@ -21,25 +22,37 @@ export async function GET() {
   }
 
   const user = getUserByEmail(session.email);
-  if (!user || !user.contractId) {
+  if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
 
   const server = new Horizon.Server(HORIZON_URL);
   try {
+    // Passkey smart wallets are contract addresses (C...), which Horizon's
+    // forAccount filter rejects. All user transactions are submitted by the
+    // platform fee payer, so we query the fee payer's history and keep only
+    // transactions that involve the user's wallet contract.
+    const feePayer = getFeePayerKeypair();
     const txPage = await server
       .transactions()
-      .forAccount(user.contractId)
+      .forAccount(feePayer.publicKey())
       .order('desc')
-      .limit(20)
+      .limit(50)
       .call();
 
+    const usdcContractId = getUsdcContractId();
     const details: TransactionDetails[] = [];
     for (const tx of txPage.records) {
       const ops = await server.operations().forTransaction(tx.hash).call();
-      details.push(
-        buildTransactionDetails(tx, ops.records, user.contractId, getUsdcContractId())
+      const parsed = buildTransactionDetails(
+        tx,
+        ops.records,
+        user.walletContractId,
+        usdcContractId
       );
+      if (parsed.type !== 'unknown') {
+        details.push(parsed);
+      }
     }
 
     return NextResponse.json({ transactions: details });

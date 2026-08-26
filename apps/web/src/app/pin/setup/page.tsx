@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function PinSetupPage() {
+  const router = useRouter();
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -13,14 +15,14 @@ export default function PinSetupPage() {
     fetch('/api/auth/pin')
       .then((res) => {
         if (res.status === 401) {
-          window.location.href = '/login';
+          router.push('/login');
           return null;
         }
         return res.json();
       })
       .then((data: { hasPin?: boolean } | null) => {
         if (data?.hasPin) {
-          window.location.href = '/home';
+          router.push('/home');
         } else {
           setHasPin(false);
         }
@@ -51,7 +53,7 @@ export default function PinSetupPage() {
         setError(data.error ?? 'Failed to set PIN');
         return;
       }
-      window.location.href = '/home';
+      router.push('/home');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to set PIN');
     } finally {
@@ -72,7 +74,7 @@ export default function PinSetupPage() {
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
         <h1 className="mb-2 text-2xl font-bold text-pocketlet-600">Create your PIN</h1>
         <p className="mb-6 text-sm text-gray-500">
-          Choose a 6-digit PIN to confirm payments and swaps.
+          Choose a 6-digit PIN to confirm payments.
         </p>
 
         {error && (

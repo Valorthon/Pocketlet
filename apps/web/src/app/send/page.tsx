@@ -1,8 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { BASE_FEE } from '@stellar/stellar-sdk';
+import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
+import type { PasskeyKit } from 'passkey-kit';
 import PinModal from '@/components/PinModal';
+import { createPasskeyKit, prepareTokenTransferTx } from '@/lib/wallet/passkey-kit';
+import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
+import { amountToBaseUnits, baseUnitsToDisplay } from '@/lib/wallet/amount';
+import { validateRecipientFormat } from '@/lib/wallet/recipient-format';
+import {
+  hasUsableSessionKey,
+  ensureSessionKey,
+  getSessionSigner,
+} from '@/lib/wallet/session-key';
 
 interface TransferForm {
   asset: 'USDC' | 'XLM';
@@ -20,6 +32,25 @@ interface ResolvedRecipient {
   display: string;
 }
 
+interface WalletInfo {
+  walletContractId: string;
+  primaryPasskeyKeyId: string;
+}
+
+interface Balances {
+  xlm: string;
+  usdc: string;
+}
+
+function getTokenContractId(asset: 'USDC' | 'XLM'): string {
+  return asset === 'USDC' ? getUsdcContractId() : getXlmContractId();
+}
+
+function formatFee(stroops: number): string {
+  const xlm = stroops / 10_000_000;
+  return xlm.toLocaleString(undefined, { maximumFractionDigits: 7 });
+}
+
 export default function SendPage() {
   const [form, setForm] = useState<TransferForm>({
     asset: 'USDC',
@@ -32,10 +63,79 @@ export default function SendPage() {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [resolved, setResolved] = useState<ResolvedRecipient | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [fee, setFee] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [walletInfo, setWalletInfo] = useState<WalletInfo | null>(null);
+  const [walletInfoLoading, setWalletInfoLoading] = useState(false);
+  const [balances, setBalances] = useState<Balances | null>(null);
+  const [balancesLoading, setBalancesLoading] = useState(false);
+
+  const preparedKitRef = useRef<PasskeyKit | null>(null);
+  const preparedTxRef = useRef<AssembledTransaction<null> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWalletInfoLoading(true);
+    async function fetchWalletInfo() {
+      try {
+        const res = await fetch('/api/wallet/session-key/info');
+        if (!res.ok) {
+          throw new Error('Failed to load wallet info');
+        }
+        const data = (await res.json()) as WalletInfo;
+        if (!cancelled) {
+          setWalletInfo(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load wallet info');
+        }
+      } finally {
+        if (!cancelled) {
+          setWalletInfoLoading(false);
+        }
+      }
+    }
+    void fetchWalletInfo();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBalancesLoading(true);
+
+    async function fetchBalances() {
+      try {
+        const res = await fetch('/api/wallet/balance');
+        if (!res.ok) {
+          if (!cancelled) setBalances(null);
+          return;
+        }
+        const body = (await res.json()) as Balances;
+        if (!cancelled) setBalances({ xlm: body.xlm, usdc: body.usdc });
+      } catch {
+        if (!cancelled) setBalances(null);
+      } finally {
+        if (!cancelled) setBalancesLoading(false);
+      }
+    }
+
+    void fetchBalances();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const validateForm = (): string | null => {
     if (!form.recipient.trim()) {
       return 'Recipient is required';
+    }
+    const recipientError = validateRecipientFormat(form.recipient);
+    if (recipientError) {
+      return recipientError;
     }
     if (!form.amount || Number.isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
       return 'Enter a valid amount greater than zero';
@@ -53,6 +153,17 @@ export default function SendPage() {
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    if (!balances) {
+      setError('Balance not loaded. Please try again.');
+      return;
+    }
+
+    const availableBalance = form.asset === 'USDC' ? balances.usdc : balances.xlm;
+    if (amountToBaseUnits(form.amount) > BigInt(availableBalance)) {
+      setError(`Insufficient ${form.asset} balance`);
       return;
     }
 
@@ -80,6 +191,71 @@ export default function SendPage() {
     }
   };
 
+  useEffect(() => {
+    if (step !== 'review' || !resolved || !walletInfo) {
+      setFee(null);
+      preparedKitRef.current = null;
+      preparedTxRef.current = null;
+      return;
+    }
+
+    const recipientAddress = resolved.address;
+
+    const info = walletInfo;
+    if (!info) return;
+
+    let cancelled = false;
+    setPreparing(true);
+    setError(null);
+
+    async function prepare() {
+      try {
+        const kit = createPasskeyKit();
+        await kit.connectWallet({ keyId: info.primaryPasskeyKeyId });
+
+        if (!kit.contractId) {
+          throw new Error('Wallet not connected');
+        }
+
+        const baseAmount = amountToBaseUnits(form.amount);
+        const tx = await prepareTokenTransferTx(
+          kit,
+          getTokenContractId(form.asset),
+          recipientAddress,
+          baseAmount
+        );
+
+        const simulation = tx.simulation;
+        if (!simulation || !('minResourceFee' in simulation)) {
+          throw new Error('Simulation data unavailable');
+        }
+
+        const minResourceFee = Number(simulation.minResourceFee);
+        const totalFeeStroops = minResourceFee + Number(BASE_FEE);
+
+        if (!cancelled) {
+          preparedKitRef.current = kit;
+          preparedTxRef.current = tx;
+          setFee(formatFee(totalFeeStroops));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to prepare transfer');
+        }
+      } finally {
+        if (!cancelled) {
+          setPreparing(false);
+        }
+      }
+    }
+
+    void prepare();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, resolved, walletInfo, form.asset, form.amount]);
+
   const confirmTransfer = () => {
     setPinModalOpen(true);
   };
@@ -90,10 +266,31 @@ export default function SendPage() {
     setError(null);
 
     try {
+      const kit = preparedKitRef.current;
+      const tx = preparedTxRef.current;
+
+      if (!kit || !tx) {
+        throw new Error('Transfer not prepared');
+      }
+
+      if (!walletInfo) {
+        throw new Error('Wallet info not loaded');
+      }
+
+      const usable = await hasUsableSessionKey();
+      if (!usable) {
+        await ensureSessionKey(kit, pin);
+      }
+
+      const signer = await getSessionSigner(pin);
+      await kit.sign(tx, signer);
+      const signedXdr = tx.toXDR();
+
       const res = await fetch('/api/wallet/transfer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          signedXdr,
           asset: form.asset,
           amount: form.amount,
           recipient: form.recipient.trim(),
@@ -214,6 +411,14 @@ export default function SendPage() {
                   placeholder="0.00"
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Available:{' '}
+                  {balances && !balancesLoading
+                    ? `${baseUnitsToDisplay(
+                        form.asset === 'USDC' ? balances.usdc : balances.xlm
+                      )} ${form.asset}`
+                    : 'Loading…'}
+                </p>
               </div>
 
               <div>
@@ -234,10 +439,14 @@ export default function SendPage() {
 
               <button
                 type="submit"
-                disabled={resolving}
+                disabled={resolving || walletInfoLoading || balancesLoading}
                 className="w-full rounded-lg bg-pocketlet-600 py-3 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
               >
-                {resolving ? 'Resolving...' : 'Review'}
+                {resolving
+                  ? 'Resolving...'
+                  : walletInfoLoading || balancesLoading
+                    ? 'Loading...'
+                    : 'Review'}
               </button>
             </form>
           )}
@@ -262,7 +471,9 @@ export default function SendPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Network fee</span>
-                  <span className="font-medium text-gray-900">~0.001 XLM</span>
+                  <span className="font-medium text-gray-900">
+                    {fee !== null ? `~${fee} XLM` : preparing ? 'Estimating...' : '—'}
+                  </span>
                 </div>
               </div>
 
@@ -275,7 +486,8 @@ export default function SendPage() {
                 </button>
                 <button
                   onClick={confirmTransfer}
-                  className="rounded-lg bg-pocketlet-600 py-3 font-semibold text-white hover:bg-pocketlet-700"
+                  disabled={preparing || fee === null}
+                  className="rounded-lg bg-pocketlet-600 py-3 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
                 >
                   Confirm
                 </button>

@@ -47,9 +47,9 @@ async function createUserWithWallet(email: string, username?: string, phone?: st
     counter: 0,
   });
   setWallet(email, {
-    contractId: 'CRECIPIENT',
-    ownerSecretKey: 'SRECIPIENT',
+    walletContractId: 'CRECIPIENT',
     stellarAddress: 'GCHCVLYHMRISIGAYR6HA6LNNMD5OTLLUFKIEZMXEZ4ZPM27SAK5TI46P',
+    primaryPasskeyKeyId: 'cred-id',
   });
   if (username || phone) {
     setProfile(email, { username, phone });
@@ -122,5 +122,14 @@ describe('POST /api/wallet/resolve', () => {
     const req = createResolveRequest({}, token);
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for a malformed recipient', async () => {
+    const token = await createUserWithWallet('alice@example.com');
+    const req = createResolveRequest({ recipient: 'hello world' }, token);
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('Enter a valid username, phone number, or Stellar address.');
   });
 });
