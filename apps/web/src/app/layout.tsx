@@ -1,5 +1,18 @@
 import type { Metadata, Viewport } from 'next';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+});
+
+const jetBrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-jetbrains-mono',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Pocketlet',
@@ -18,8 +31,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="bg-gray-50 text-gray-900 antialiased">{children}</body>
+    <html lang="en" className={`${inter.variable} ${jetBrainsMono.variable}`}>
+      <body className="bg-slate-50 font-sans text-slate-900 antialiased">{children}</body>
     </html>
   );
 }

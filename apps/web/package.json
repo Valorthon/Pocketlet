@@ -25,6 +25,7 @@
     "@types/qrcode.react": "^1.0.5",
     "bcryptjs": "^3.0.3",
     "bip39": "^3.1.0",
+    "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.3",
     "lucide-react": "^0.469.0",
@@ -34,7 +35,8 @@
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "sac-sdk": "^0.4.4"
+    "sac-sdk": "^0.4.4",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@pocketlet/config": "workspace:*",
