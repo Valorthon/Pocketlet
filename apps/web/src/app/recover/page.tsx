@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { CheckCircle2 } from 'lucide-react';
 import {
   createPasskeyKit,
   connectPasskeyKitByContractId,
@@ -280,18 +281,23 @@ export default function RecoverPage() {
     }
   };
 
+  const inputClass =
+    'w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500';
+  const primaryButtonClass =
+    'w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50';
+
   if (step === 'unrecoverable') {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg text-center">
-          <h1 className="mb-2 text-2xl font-bold text-red-600">Account not recoverable</h1>
-          <p className="mb-6 text-sm text-gray-600">
+      <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+        <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 text-center shadow-sm">
+          <h1 className="mb-2 text-2xl font-bold text-rose-600">Account not recoverable</h1>
+          <p className="mb-6 text-sm text-slate-600">
             We could not find a recoverable account for that email. If you have lost both your
             passkey and recovery phrase, your account cannot be recovered.
           </p>
           <Link
             href="/login"
-            className="inline-block rounded-lg bg-pocketlet-600 px-4 py-2 font-semibold text-white hover:bg-pocketlet-700"
+            className="inline-block rounded-xl bg-pocketlet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-pocketlet-700"
           >
             Back to login
           </Link>
@@ -302,13 +308,13 @@ export default function RecoverPage() {
 
   if (step === 'success') {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl text-green-600">
-            ✓
+      <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+        <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <CheckCircle2 className="h-8 w-8" />
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-gray-900">Recovery complete</h1>
-          <p className="mb-6 text-sm text-gray-600">
+          <h1 className="mb-2 text-2xl font-bold text-slate-900">Recovery complete</h1>
+          <p className="mb-6 text-sm text-slate-600">
             Your new passkey is registered. You can now log in normally.
           </p>
           {warning && (
@@ -316,7 +322,7 @@ export default function RecoverPage() {
           )}
           <Link
             href="/home"
-            className="inline-block rounded-lg bg-pocketlet-600 px-4 py-2 font-semibold text-white hover:bg-pocketlet-700"
+            className="inline-block rounded-xl bg-pocketlet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-pocketlet-700"
           >
             Go home
           </Link>
@@ -326,29 +332,27 @@ export default function RecoverPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
         <div className="mb-6 flex items-center justify-between">
           <Link href="/login" className="text-2xl font-bold text-pocketlet-600">
             ← Pocketlet
           </Link>
         </div>
 
-        <h1 className="mb-2 text-2xl font-bold text-gray-900">Recover your account</h1>
-        <p className="mb-6 text-sm text-gray-500">
+        <h1 className="mb-2 text-2xl font-bold text-slate-900">Recover your account</h1>
+        <p className="mb-6 text-sm text-slate-500">
           Recover access with your registered email and recovery phrase.
         </p>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        )}
+        {error && <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
         {warning && (
           <div className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{warning}</div>
         )}
 
         {step === 'email' && (
           <form onSubmit={initiate} className="space-y-4">
-            <label className="block text-sm font-medium text-gray-700" htmlFor="email">
+            <label className="block text-sm font-medium text-slate-700" htmlFor="email">
               Registered email
             </label>
             <input
@@ -357,14 +361,10 @@ export default function RecoverPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              className={inputClass}
               placeholder="you@example.com"
             />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-            >
+            <button type="submit" disabled={loading} className={primaryButtonClass}>
               {loading ? 'Sending code...' : 'Send recovery code'}
             </button>
           </form>
@@ -372,12 +372,12 @@ export default function RecoverPage() {
 
         {step === 'verify' && (
           <form onSubmit={verify} className="space-y-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               A recovery code has been sent to{' '}
-              <span className="font-medium text-gray-900">{email}</span>. Enter it below to
+              <span className="font-medium text-slate-900">{email}</span>. Enter it below to
               continue.
             </p>
-            <label className="block text-sm font-medium text-gray-700" htmlFor="code">
+            <label className="block text-sm font-medium text-slate-700" htmlFor="code">
               Recovery code
             </label>
             <input
@@ -388,14 +388,10 @@ export default function RecoverPage() {
               required
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              className={inputClass}
               placeholder="123456"
             />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-            >
+            <button type="submit" disabled={loading} className={primaryButtonClass}>
               {loading ? 'Verifying...' : 'Verify code'}
             </button>
           </form>
@@ -407,7 +403,7 @@ export default function RecoverPage() {
               <p className="text-sm font-medium text-amber-800">Waiting period</p>
               <p className="mt-1 text-2xl font-bold text-amber-900">{countdown}</p>
             </div>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               For your security, you must wait before registering a new passkey. Keep this page
               open; it will update automatically.
             </p>
@@ -416,7 +412,7 @@ export default function RecoverPage() {
 
         {step === 'phrase' && (
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               Enter your 12-word recovery phrase. It is only used in this browser to sign the
               recovery transaction.
             </p>
@@ -424,14 +420,10 @@ export default function RecoverPage() {
               value={phrase}
               onChange={(e) => setPhrase(e.target.value)}
               rows={4}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 font-mono text-sm focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-sm text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500"
               placeholder="word1 word2 word3 ... word12"
             />
-            <button
-              onClick={deriveKey}
-              disabled={loading || !phrase.trim()}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-            >
+            <button onClick={deriveKey} disabled={loading || !phrase.trim()} className={primaryButtonClass}>
               Continue
             </button>
           </div>
@@ -439,14 +431,10 @@ export default function RecoverPage() {
 
         {step === 'register' && (
           <div className="space-y-4 text-center">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               Your waiting period is over. Register a new passkey to complete recovery.
             </p>
-            <button
-              onClick={registerPasskey}
-              disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-            >
+            <button onClick={registerPasskey} disabled={loading} className={primaryButtonClass}>
               {loading ? 'Registering...' : 'Register new passkey'}
             </button>
           </div>
@@ -465,14 +453,14 @@ export default function RecoverPage() {
             <button
               onClick={() => removeOldPrimaryPasskey(status.primaryPasskeyKeyId!)}
               disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              className={primaryButtonClass}
             >
               {loading ? 'Trying again...' : 'Try removing old passkey again'}
             </button>
             <button
               onClick={() => setStep('success')}
               disabled={loading}
-              className="w-full rounded-lg bg-gray-100 py-2.5 font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+              className="w-full rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-50"
             >
               Continue anyway
             </button>

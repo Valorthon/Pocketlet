@@ -5,7 +5,11 @@ import Link from 'next/link';
 import { BASE_FEE } from '@stellar/stellar-sdk';
 import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
 import type { PasskeyKit } from 'passkey-kit';
+import { CheckCircle2 } from 'lucide-react';
 import PinModal from '@/components/PinModal';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { cn } from '@/lib/utils';
 import { createPasskeyKit, prepareTokenTransferTx } from '@/lib/wallet/passkey-kit';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import { amountToBaseUnits, baseUnitsToDisplay } from '@/lib/wallet/amount';
@@ -321,35 +325,35 @@ export default function SendPage() {
 
   if (step === 'success' && result) {
     return (
-      <main className="min-h-screen bg-gray-50 p-6">
+      <main className="min-h-screen bg-slate-50 p-6">
         <div className="mx-auto max-w-md">
           <div className="mb-6 flex items-center justify-between">
             <Link href="/home" className="text-2xl font-bold text-pocketlet-600">
               ← Pocketlet
             </Link>
           </div>
-          <div className="rounded-2xl bg-white p-6 shadow-lg text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl text-green-600">
-              ✓
+          <div className="rounded-3xl bg-white p-6 text-center shadow-lg">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+              <CheckCircle2 className="h-8 w-8" />
             </div>
-            <h1 className="mb-2 text-xl font-semibold text-gray-900">Transfer sent</h1>
-            <p className="mb-4 text-sm text-gray-600">
+            <h1 className="mb-2 text-xl font-bold text-slate-900">Transfer sent</h1>
+            <p className="mb-4 text-sm text-slate-600">
               {formatAmount()} {form.asset} is on its way.
             </p>
-            <div className="mb-4 rounded-lg bg-gray-100 p-3">
-              <p className="text-xs text-gray-500">Transaction hash</p>
-              <p className="break-all text-xs font-mono text-gray-700">{result.hash}</p>
+            <div className="mb-4 rounded-lg bg-slate-100 p-3">
+              <p className="text-xs text-slate-500">Transaction hash</p>
+              <p className="break-all font-mono text-xs text-slate-700">{result.hash}</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Link
                 href={`/transactions/${result.hash}`}
-                className="rounded-lg bg-pocketlet-100 py-2.5 text-center font-semibold text-pocketlet-700 hover:bg-pocketlet-200"
+                className="rounded-xl bg-pocketlet-100 py-2.5 text-center text-sm font-semibold text-pocketlet-700 hover:bg-pocketlet-200"
               >
                 View details
               </Link>
               <Link
                 href="/home"
-                className="rounded-lg bg-pocketlet-600 py-2.5 text-center font-semibold text-white hover:bg-pocketlet-700"
+                className="rounded-xl bg-pocketlet-600 py-2.5 text-center text-sm font-semibold text-white hover:bg-pocketlet-700"
               >
                 Done
               </Link>
@@ -361,7 +365,7 @@ export default function SendPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6">
+    <main className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-md">
         <div className="mb-6 flex items-center justify-between">
           <Link href="/home" className="text-2xl font-bold text-pocketlet-600">
@@ -369,35 +373,39 @@ export default function SendPage() {
           </Link>
         </div>
 
-        <div className="rounded-2xl bg-white p-6 shadow-lg">
-          <h1 className="mb-4 text-xl font-semibold text-gray-900">Send</h1>
+        {error && (
+          <div className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</div>
+        )}
 
-          {error && (
-            <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-          )}
-
-          {step === 'form' && (
-            <form onSubmit={submitForm} className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Asset
-                </label>
-                <select
-                  value={form.asset}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, asset: e.target.value as 'USDC' | 'XLM' }))
-                  }
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
-                >
-                  <option value="USDC">USDC</option>
-                  <option value="XLM">XLM</option>
-                </select>
+        {step === 'form' && (
+          <form onSubmit={submitForm} className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-slate-700">Asset</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(['USDC', 'XLM'] as const).map((asset) => (
+                  <button
+                    key={asset}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, asset }))}
+                    className={cn(
+                      'rounded-xl border px-4 py-3 text-sm font-bold transition-colors',
+                      form.asset === asset
+                        ? 'border-pocketlet-500 bg-pocketlet-50 text-pocketlet-700'
+                        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                    )}
+                  >
+                    {asset}
+                  </button>
+                ))}
               </div>
+            </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Amount
-                </label>
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-slate-700">Amount</label>
+              <div className="relative">
+                <span className="absolute left-3 top-3 text-lg font-bold text-slate-400">
+                  {form.asset === 'USDC' ? '$' : '◎'}
+                </span>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -409,104 +417,98 @@ export default function SendPage() {
                     }))
                   }
                   placeholder="0.00"
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-8 pr-16 text-xl font-bold text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500"
                 />
-                <p className="mt-1 text-xs text-gray-500">
+                <span className="absolute right-3 top-4 text-xs font-bold text-slate-400">
+                  {form.asset}
+                </span>
+              </div>
+              <p className="mt-1 flex justify-between text-[10px] text-slate-400">
+                <span>
                   Available:{' '}
                   {balances && !balancesLoading
                     ? `${baseUnitsToDisplay(
                         form.asset === 'USDC' ? balances.usdc : balances.xlm
                       )} ${form.asset}`
                     : 'Loading…'}
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Recipient
-                </label>
-                <input
-                  type="text"
-                  value={form.recipient}
-                  onChange={(e) => setForm((f) => ({ ...f, recipient: e.target.value.trim() }))}
-                  placeholder="@username, +639..., or G.../C..."
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 font-mono text-sm focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Enter a Pocketlet username, phone number, or Stellar address.
-                </p>
-              </div>
-
-              <button
-                type="submit"
-                disabled={resolving || walletInfoLoading || balancesLoading}
-                className="w-full rounded-lg bg-pocketlet-600 py-3 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-              >
-                {resolving
-                  ? 'Resolving...'
-                  : walletInfoLoading || balancesLoading
-                    ? 'Loading...'
-                    : 'Review'}
-              </button>
-            </form>
-          )}
-
-          {step === 'review' && resolved && (
-            <div className="space-y-4">
-              <div className="rounded-lg bg-gray-50 p-4">
-                <div className="mb-3 flex justify-between">
-                  <span className="text-sm text-gray-500">Amount</span>
-                  <span className="font-medium text-gray-900">
-                    {formatAmount()} {form.asset}
-                  </span>
-                </div>
-                <div className="mb-3 flex justify-between">
-                  <span className="text-sm text-gray-500">To</span>
-                  <span className="max-w-[60%] break-all text-right text-sm text-gray-900">
-                    {resolved.type !== 'address' && (
-                      <span className="block font-medium">{resolved.display}</span>
-                    )}
-                    <span className="block font-mono text-xs text-gray-600">{resolved.address}</span>
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Network fee</span>
-                  <span className="font-medium text-gray-900">
-                    {fee !== null ? `~${fee} XLM` : preparing ? 'Estimating...' : '—'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setStep('form')}
-                  className="rounded-lg bg-gray-100 py-3 font-semibold text-gray-700 hover:bg-gray-200"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={confirmTransfer}
-                  disabled={preparing || fee === null}
-                  className="rounded-lg bg-pocketlet-600 py-3 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-                >
-                  Confirm
-                </button>
-              </div>
+                </span>
+                <span className="font-bold text-emerald-600">Zero network fee</span>
+              </p>
             </div>
-          )}
 
-          {step === 'confirming' && (
-            <div className="py-8 text-center">
-              <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-pocketlet-200 border-t-pocketlet-600"></div>
-              <p className="text-gray-600">Submitting to Stellar testnet...</p>
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-slate-700">Recipient</label>
+              <input
+                type="text"
+                value={form.recipient}
+                onChange={(e) => setForm((f) => ({ ...f, recipient: e.target.value.trim() }))}
+                placeholder="@username, +639..., or G.../C..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-sm text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Enter a Pocketlet username, phone number, or Stellar address.
+              </p>
             </div>
-          )}
-        </div>
+
+            <Button
+              type="submit"
+              fullWidth
+              isLoading={resolving || walletInfoLoading || balancesLoading}
+            >
+              Review
+            </Button>
+          </form>
+        )}
+
+        {step === 'review' && resolved && (
+          <div className="space-y-4">
+            <Card padded="md" className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">Amount</span>
+                <span className="font-bold text-slate-900">
+                  {formatAmount()} {form.asset}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">To</span>
+                <span className="max-w-[60%] break-all text-right text-sm text-slate-900">
+                  {resolved.type !== 'address' && (
+                    <span className="block font-bold">{resolved.display}</span>
+                  )}
+                  <span className="block font-mono text-xs text-slate-600">{resolved.address}</span>
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-slate-100 pt-3">
+                <span className="text-sm text-slate-500">Network fee</span>
+                <span className="font-bold text-slate-900">
+                  {fee !== null ? `~${fee} XLM` : preparing ? 'Estimating...' : '—'}
+                </span>
+              </div>
+            </Card>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="secondary" onClick={() => setStep('form')}>
+                Back
+              </Button>
+              <Button onClick={confirmTransfer} disabled={preparing || fee === null}>
+                Confirm
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 'confirming' && (
+          <div className="rounded-2xl bg-white p-8 text-center shadow-lg">
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-pocketlet-200 border-t-pocketlet-600" />
+            <p className="text-slate-600">Submitting to Stellar testnet...</p>
+          </div>
+        )}
       </div>
 
       <PinModal
         isOpen={pinModalOpen}
         title="Confirm transfer"
+        subtitle="Enter your 6-digit PIN to authorize."
         onConfirm={executeTransfer}
         onCancel={() => {
           setPinModalOpen(false);

@@ -80,28 +80,25 @@ export default function PinResetPage() {
     }
   };
 
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="mb-2 text-2xl font-bold text-pocketlet-600">Reset your PIN</h1>
-        <p className="mb-6 text-sm text-gray-500">
-          Verify your email, then choose a new 6-digit PIN.
-        </p>
+  const inputClass =
+    'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center font-mono text-lg tracking-widest text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500';
+  const primaryButtonClass =
+    'w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50';
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        )}
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+        <h1 className="mb-2 text-2xl font-bold text-slate-900">Reset your PIN</h1>
+        <p className="mb-6 text-sm text-slate-500">Verify your email, then choose a new 6-digit PIN.</p>
+
+        {error && <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
 
         {step === 'request' && (
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               A verification code will be sent to your registered email.
             </p>
-            <button
-              onClick={requestCode}
-              disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-            >
+            <button onClick={requestCode} disabled={loading} className={primaryButtonClass}>
               {loading ? 'Sending...' : 'Send reset code'}
             </button>
           </div>
@@ -110,7 +107,7 @@ export default function PinResetPage() {
         {step === 'reset' && (
           <div className="space-y-4">
             {showCode && (
-              <div className="rounded-lg bg-gray-100 p-3 text-center font-mono text-lg tracking-widest">
+              <div className="rounded-lg bg-slate-100 p-3 text-center font-mono text-lg tracking-widest text-slate-900">
                 {code}
               </div>
             )}
@@ -123,7 +120,7 @@ export default function PinResetPage() {
               maxLength={6}
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-center font-mono text-lg tracking-widest focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              className={inputClass}
               placeholder="000000"
             />
             <input
@@ -132,7 +129,7 @@ export default function PinResetPage() {
               maxLength={6}
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-center font-mono text-lg tracking-widest focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              className={inputClass}
               placeholder="New PIN"
             />
             <input
@@ -141,13 +138,13 @@ export default function PinResetPage() {
               maxLength={6}
               value={confirmPin}
               onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-center font-mono text-lg tracking-widest focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              className={inputClass}
               placeholder="Confirm new PIN"
             />
             <button
               onClick={resetPin}
               disabled={loading || code.length !== 6 || pin.length !== 6 || confirmPin.length !== 6}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              className={primaryButtonClass}
             >
               {loading ? 'Resetting...' : 'Reset PIN'}
             </button>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Wallet } from 'lucide-react';
 import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
 import {
   generateRecoveryPhrase,
@@ -179,16 +180,21 @@ export default function SignupPage() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="mb-2 text-2xl font-bold text-pocketlet-600">Create your Pocketlet</h1>
-        <p className="mb-6 text-sm text-gray-500">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+        <div className="mb-6 flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-pocketlet-500 text-white">
+            <Wallet className="h-5 w-5" />
+          </div>
+          <span className="text-lg font-bold tracking-tight text-slate-900">Pocketlet</span>
+        </div>
+
+        <h1 className="mb-2 text-2xl font-bold text-slate-900">Create your Pocketlet</h1>
+        <p className="mb-6 text-sm text-slate-500">
           Sign up with your email and register a passkey. No password needed.
         </p>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        )}
+        {error && <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
 
         {step === 'email' && (
           <form
@@ -198,22 +204,24 @@ export default function SignupPage() {
             }}
             className="space-y-4"
           >
-            <label className="block text-sm font-medium text-gray-700" htmlFor="email">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
-              placeholder="you@example.com"
-            />
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-slate-700" htmlFor="email">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500"
+                placeholder="you@example.com"
+              />
+            </div>
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
               {loading ? 'Sending...' : 'Send verification code'}
             </button>
@@ -222,13 +230,13 @@ export default function SignupPage() {
 
         {step === 'code' && (
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               Enter the verification code sent to <strong>{email}</strong>.
             </p>
             <p className="text-xs text-amber-700">
               Testnet mode: the code is also shown below for easy testing.
             </p>
-            <div className="rounded-lg bg-gray-100 p-3 text-center font-mono text-lg tracking-widest">
+            <div className="rounded-lg bg-slate-100 p-3 text-center font-mono text-lg tracking-widest text-slate-900">
               {code}
             </div>
             <input
@@ -237,13 +245,13 @@ export default function SignupPage() {
               maxLength={6}
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-center font-mono text-lg tracking-widest focus:border-pocketlet-500 focus:outline-none focus:ring-2 focus:ring-pocketlet-100"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center font-mono text-lg tracking-widest text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500"
               placeholder="000000"
             />
             <button
               onClick={verifyCode}
               disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
               {loading ? 'Verifying...' : 'Verify email'}
             </button>
@@ -252,14 +260,14 @@ export default function SignupPage() {
 
         {step === 'passkey' && (
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               Your email is verified. Register a passkey to create and secure your wallet.
             </p>
             {!deployResult ? (
               <button
                 onClick={registerPasskeyAndDeploy}
                 disabled={loading}
-                className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+                className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
               >
                 {loading ? 'Registering...' : 'Register passkey and create wallet'}
               </button>
@@ -277,7 +285,7 @@ export default function SignupPage() {
                   }
                 }}
                 disabled={loading || !recoveryPhrase}
-                className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+                className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
               >
                 {loading ? 'Retrying...' : 'Retry adding recovery signer'}
               </button>

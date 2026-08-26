@@ -115,21 +115,19 @@ export default function BackupPasskeyPage() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="mb-2 text-2xl font-bold text-pocketlet-600">Add a backup passkey</h1>
-        <p className="mb-6 text-sm text-gray-500">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+        <h1 className="mb-2 text-2xl font-bold text-slate-900">Add a backup passkey</h1>
+        <p className="mb-6 text-sm text-slate-500">
           Register a second passkey on another device (or a different profile on this device) so
           you can still access your wallet if your primary passkey is lost.
         </p>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-        )}
+        {error && <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
 
         {!skipped ? (
           <>
-            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+            <div className="mb-6 rounded-lg border border-pocketlet-200 bg-pocketlet-50 p-3 text-sm text-pocketlet-800">
               <strong>Strongly recommended.</strong> Without a backup, you will need your recovery
               phrase to regain access if you lose your primary passkey.
             </div>
@@ -137,7 +135,7 @@ export default function BackupPasskeyPage() {
             <button
               onClick={registerBackupPasskey}
               disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
               {loading ? 'Registering...' : 'Register backup passkey'}
             </button>
@@ -145,14 +143,14 @@ export default function BackupPasskeyPage() {
             <button
               onClick={() => setSkipped(true)}
               disabled={loading}
-              className="mt-3 w-full rounded-lg bg-white py-2.5 font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
+              className="mt-3 w-full rounded-xl bg-white py-3 text-sm font-bold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 disabled:opacity-50"
             >
               Skip for now
             </button>
           </>
         ) : (
           <>
-            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
               Skipping a backup means you are relying entirely on your recovery phrase. If you lose
               both your primary passkey and your recovery phrase, your wallet cannot be recovered.
             </div>
@@ -160,7 +158,7 @@ export default function BackupPasskeyPage() {
             <button
               onClick={() => setSkipped(false)}
               disabled={loading}
-              className="w-full rounded-lg bg-pocketlet-600 py-2.5 font-semibold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+              className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
               Go back and add a backup
             </button>
@@ -168,7 +166,7 @@ export default function BackupPasskeyPage() {
             <button
               onClick={skipBackup}
               disabled={loading}
-              className="mt-3 w-full rounded-lg bg-white py-2.5 font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-50"
+              className="mt-3 w-full rounded-xl bg-white py-3 text-sm font-bold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-50"
             >
               {loading ? 'Continuing...' : 'I understand, skip backup'}
             </button>
