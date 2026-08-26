@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { db } from '@/lib/db';
 
@@ -7,7 +6,7 @@ export async function register(): Promise<void> {
     return;
   }
 
-  const migrationsFolder = path.join(process.cwd(), 'drizzle');
+  const migrationsFolder = `${process.cwd()}/drizzle`;
 
   try {
     await migrate(db, { migrationsFolder });
