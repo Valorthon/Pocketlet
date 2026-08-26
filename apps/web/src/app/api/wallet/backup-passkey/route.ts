@@ -31,7 +31,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  setBackupPasskey(user.email, {
+  await setBackupPasskey(user.email, {
     credential: {
       id: credential.id,
       publicKey: Buffer.from(credential.publicKey).toString('base64url'),

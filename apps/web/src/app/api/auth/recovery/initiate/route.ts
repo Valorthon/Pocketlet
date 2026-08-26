@@ -4,6 +4,7 @@ import {
   isRecoveryLocked,
   setRecoveryInitiated,
 } from '@/lib/auth/store';
+import { incrementMetric } from '@/lib/metrics';
 import {
   countRecentInitiations,
   createRecoveryCodeExpiry,
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const user = getUserByEmail(normalizedEmail);
+    const user = await getUserByEmail(normalizedEmail);
 
     if (!isEligibleForRecovery(user)) {
       return NextResponse.json(
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    if (isRecoveryLocked(normalizedEmail)) {
+    if (await isRecoveryLocked(normalizedEmail)) {
       return NextResponse.json(
         { error: 'Recovery is locked. Try again later.' },
         { status: 429 }
@@ -55,7 +56,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const code = generateRecoveryCode();
     const expiresAt = createRecoveryCodeExpiry();
-    setRecoveryInitiated(normalizedEmail, code, expiresAt);
+    await setRecoveryInitiated(normalizedEmail, code, expiresAt);
+    await incrementMetric('wallet.recovery.initiated');
 
     return NextResponse.json({
       email: normalizedEmail,

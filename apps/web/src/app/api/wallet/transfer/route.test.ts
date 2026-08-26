@@ -1,9 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { Account, Contract, TransactionBuilder } from '@stellar/stellar-sdk';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { POST } from './route';
 import {
   createUser,
@@ -20,7 +17,6 @@ import { getTokenBalance } from '@/lib/wallet/token';
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
 import { addressScVal, amountToBaseUnits, i128ScVal } from '@/lib/wallet/amount';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 vi.mock('next/headers', () => ({
@@ -83,49 +79,41 @@ function buildTransferXdr(
 }
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-transfer-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
 });
 
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
-});
-
 async function createSender(email: string) {
-  createUser(email, '000000');
-  setEmailVerified(email);
-  setCredential(email, {
+  await createUser(email, '000000');
+  await setEmailVerified(email);
+  await setCredential(email, {
     id: 'cred-id',
     publicKey: 'base64-pubkey',
     counter: 0,
   });
-  setWallet(email, {
+  await setWallet(email, {
     walletContractId: SENDER_CONTRACT,
     stellarAddress: SENDER_CONTRACT,
     primaryPasskeyKeyId: 'cred-id',
   });
-  setPin(email, '123456');
+  await setPin(email, '123456');
   return createSessionToken({ email });
 }
 
 async function createRecipient(email: string, username?: string, phone?: string) {
-  createUser(email, '000000');
-  setEmailVerified(email);
-  setCredential(email, {
+  await createUser(email, '000000');
+  await setEmailVerified(email);
+  await setCredential(email, {
     id: 'cred-id-2',
     publicKey: 'base64-pubkey-2',
     counter: 0,
   });
-  setWallet(email, {
+  await setWallet(email, {
     walletContractId: 'CRECIPIENT',
     stellarAddress: RECIPIENT_ADDRESS,
     primaryPasskeyKeyId: 'cred-id-2',
   });
   if (username || phone) {
-    setProfile(email, { username, phone });
+    await setProfile(email, { username, phone });
   }
 }
 

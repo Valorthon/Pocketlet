@@ -21,7 +21,7 @@ export async function POST(): Promise<NextResponse> {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
@@ -33,6 +33,6 @@ export async function POST(): Promise<NextResponse> {
     );
   }
 
-  markRecoveryPhraseConfirmed(user.email);
+  await markRecoveryPhraseConfirmed(user.email);
   return NextResponse.json({ confirmed: true });
 }

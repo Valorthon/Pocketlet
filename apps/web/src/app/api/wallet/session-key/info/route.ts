@@ -17,7 +17,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user || !user.walletContractId || !user.primaryPasskeyKeyId) {
     return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
   }

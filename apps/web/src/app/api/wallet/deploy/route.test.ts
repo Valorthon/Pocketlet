@@ -1,8 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { POST } from './route';
 import {
   createUser,
@@ -12,7 +9,6 @@ import {
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 vi.mock('next/headers', () => ({
@@ -43,15 +39,7 @@ vi.mock('@/lib/wallet/submit', () => ({
 }));
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-deploy-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
-});
-
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
 });
 
 function createDeployRequest(body: unknown, token?: string) {
@@ -77,8 +65,8 @@ describe('POST /api/wallet/deploy', () => {
   });
 
   it('deploys a wallet and stores the contract id', async () => {
-    createUser('alice@example.com', '000000');
-    setEmailVerified('alice@example.com');
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
     const token = await createSessionToken({ email: 'alice@example.com' });
 
     const req = createDeployRequest(
@@ -98,7 +86,7 @@ describe('POST /api/wallet/deploy', () => {
     expect(body.contractId).toBe('CABC');
     expect(body.hash).toBe('deploy-tx-hash');
 
-    const user = getUserByEmail('alice@example.com');
+    const user = await getUserByEmail('alice@example.com');
     expect(user?.walletContractId).toBe('CABC');
     expect(user?.primaryPasskeyKeyId).toBe('test-key-id');
     expect(user?.recoveryPublicKey).toBeUndefined();
@@ -106,11 +94,11 @@ describe('POST /api/wallet/deploy', () => {
   });
 
   it('returns existing wallet if already deployed', async () => {
-    createUser('alice@example.com', '000000');
-    setEmailVerified('alice@example.com');
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
 
     const { setWallet } = await import('@/lib/auth/store');
-    setWallet('alice@example.com', {
+    await setWallet('alice@example.com', {
       walletContractId: 'CEXISTING',
       stellarAddress: 'CEXISTING',
       primaryPasskeyKeyId: 'existing-key-id',
@@ -135,8 +123,8 @@ describe('POST /api/wallet/deploy', () => {
   });
 
   it('rejects mismatched credential id', async () => {
-    createUser('alice@example.com', '000000');
-    setEmailVerified('alice@example.com');
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
     const token = await createSessionToken({ email: 'alice@example.com' });
 
     const req = createDeployRequest(
@@ -156,8 +144,8 @@ describe('POST /api/wallet/deploy', () => {
   });
 
   it('rejects missing required fields', async () => {
-    createUser('alice@example.com', '000000');
-    setEmailVerified('alice@example.com');
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
     const token = await createSessionToken({ email: 'alice@example.com' });
 
     const req = createDeployRequest(

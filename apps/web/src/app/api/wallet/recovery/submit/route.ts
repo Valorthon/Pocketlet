@@ -16,6 +16,7 @@ import {
   recoveryCookieOptions,
   verifyRecoveryToken,
 } from '@/lib/auth/recovery-token';
+import { incrementMetric } from '@/lib/metrics';
 import {
   getAuthEntryAddresses,
   getInvokeContractArgs,
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const user = getUserByEmail(payload.email);
+  const user = await getUserByEmail(payload.email);
   if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  if (isRecoveryLocked(payload.email)) {
+  if (await isRecoveryLocked(payload.email)) {
     return NextResponse.json(
       { error: 'Recovery is locked. Try again later.' },
       { status: 429 }
@@ -222,20 +223,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  setCredential(user.email, {
+  await setCredential(user.email, {
     id: credential.id,
     publicKey: Buffer.from(credential.publicKey).toString('base64url'),
     counter: credential.counter,
     transports: credential.transports ?? undefined,
   });
 
-  setWallet(user.email, {
+  await setWallet(user.email, {
     walletContractId: user.walletContractId,
     stellarAddress: user.stellarAddress ?? user.walletContractId,
     primaryPasskeyKeyId: credential.id,
   });
 
-  clearRecoveryState(user.email);
+  await clearRecoveryState(user.email);
+  await incrementMetric('wallet.recovery.completed');
 
   const sessionToken = await createSessionToken({ email: user.email });
 

@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { getUserByEmail } from '@/lib/auth/store';
+import { incrementMetric } from '@/lib/metrics';
 import {
   getAuthEntryAddresses,
   hasSourceAccountAuth,
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const user = getUserByEmail(session.email);
+  const user = await getUserByEmail(session.email);
   if (!user || !user.walletContractId) {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
@@ -96,10 +97,12 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await submitSignedTransaction(signedXdr);
+    await incrementMetric('wallet.submit.success');
     return NextResponse.json({ hash: result.hash });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Submission failed';
     console.error('Generic submit failed:', err);
+    await incrementMetric('wallet.submit.failure');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

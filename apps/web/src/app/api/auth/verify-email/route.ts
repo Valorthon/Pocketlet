@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Email and code are required' }, { status: 400 });
   }
 
-  const user = getUserByEmail(email);
+  const user = await getUserByEmail(email);
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid verification code' }, { status: 401 });
   }
 
-  setEmailVerified(email);
+  await setEmailVerified(email);
 
   const token = await createSessionToken({ email });
   const res = NextResponse.json({ email, verified: true });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import {
   Account,
@@ -8,9 +8,6 @@ import {
   xdr,
   Address,
 } from '@stellar/stellar-sdk';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { POST } from './route';
 import {
   createUser,
@@ -23,7 +20,6 @@ import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
 
-let dataDir: string;
 let cookieJar: Record<string, string> = {};
 
 vi.mock('next/headers', () => ({
@@ -110,15 +106,7 @@ function buildAddSignerXdr(
 }
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'pocketlet-session-key-submit-'));
-  process.env.POCKETLET_DATA_DIR = dataDir;
   cookieJar = {};
-});
-
-afterEach(() => {
-  rmSync(dataDir, { recursive: true, force: true });
-  delete process.env.POCKETLET_DATA_DIR;
-  vi.clearAllMocks();
 });
 
 describe('POST /api/wallet/session-key/submit', () => {
@@ -132,10 +120,10 @@ describe('POST /api/wallet/session-key/submit', () => {
   });
 
   it('accepts a valid temporary session key with limits', async () => {
-    createUser('alice@example.com', '000000');
-    setEmailVerified('alice@example.com');
-    setCredential('alice@example.com', { id: 'cred', publicKey: 'base64', counter: 0 });
-    setWallet('alice@example.com', {
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
+    await setCredential('alice@example.com', { id: 'cred', publicKey: 'base64', counter: 0 });
+    await setWallet('alice@example.com', {
       walletContractId: WALLET_CONTRACT,
       stellarAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNO',
       primaryPasskeyKeyId: 'key-id',
@@ -162,10 +150,10 @@ describe('POST /api/wallet/session-key/submit', () => {
   });
 
   it('rejects a persistent store signer', async () => {
-    createUser('bob@example.com', '000000');
-    setEmailVerified('bob@example.com');
-    setCredential('bob@example.com', { id: 'cred', publicKey: 'base64', counter: 0 });
-    setWallet('bob@example.com', {
+    await createUser('bob@example.com', '000000');
+    await setEmailVerified('bob@example.com');
+    await setCredential('bob@example.com', { id: 'cred', publicKey: 'base64', counter: 0 });
+    await setWallet('bob@example.com', {
       walletContractId: WALLET_CONTRACT,
       stellarAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNO',
       primaryPasskeyKeyId: 'key-id',
@@ -189,10 +177,10 @@ describe('POST /api/wallet/session-key/submit', () => {
   });
 
   it('rejects unlimited limits', async () => {
-    createUser('carol@example.com', '000000');
-    setEmailVerified('carol@example.com');
-    setCredential('carol@example.com', { id: 'cred', publicKey: 'base64', counter: 0 });
-    setWallet('carol@example.com', {
+    await createUser('carol@example.com', '000000');
+    await setEmailVerified('carol@example.com');
+    await setCredential('carol@example.com', { id: 'cred', publicKey: 'base64', counter: 0 });
+    await setWallet('carol@example.com', {
       walletContractId: WALLET_CONTRACT,
       stellarAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNO',
       primaryPasskeyKeyId: 'key-id',
@@ -216,10 +204,10 @@ describe('POST /api/wallet/session-key/submit', () => {
   });
 
   it('rejects expiration beyond 24 hours', async () => {
-    createUser('dave@example.com', '000000');
-    setEmailVerified('dave@example.com');
-    setCredential('dave@example.com', { id: 'cred', publicKey: 'base64', counter: 0 });
-    setWallet('dave@example.com', {
+    await createUser('dave@example.com', '000000');
+    await setEmailVerified('dave@example.com');
+    await setCredential('dave@example.com', { id: 'cred', publicKey: 'base64', counter: 0 });
+    await setWallet('dave@example.com', {
       walletContractId: WALLET_CONTRACT,
       stellarAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNO',
       primaryPasskeyKeyId: 'key-id',
