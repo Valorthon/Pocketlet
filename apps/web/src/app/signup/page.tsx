@@ -3,23 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Wallet, Loader2 } from 'lucide-react';
-import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
-import {
-  generateRecoveryPhrase,
-  getRecoveryPublicKey,
-  splitRecoveryPhrase,
-} from '@/lib/wallet/recovery';
+import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
 import {
   checkPasskeySupport,
   formatPasskeyKitError,
   logPasskeyKitError,
 } from '@/lib/auth/passkey-errors';
-
-const ONBOARDING_PHRASE_KEY = 'pocketlet:onboarding:recoveryPhrase';
-const ONBOARDING_KEY_ID_KEY = 'pocketlet:onboarding:keyIdBase64';
-const ONBOARDING_CONTRACT_ID_KEY = 'pocketlet:onboarding:contractId';
-
-type PasskeyPhase = 'idle' | 'creating' | 'recovery_ready' | 'securing' | 'recovery_error';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -28,12 +17,7 @@ export default function SignupPage() {
   const [step, setStep] = useState<'email' | 'code' | 'passkey'>('email');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [passkeyPhase, setPasskeyPhase] = useState<PasskeyPhase>('idle');
-  const [deployResult, setDeployResult] = useState<{
-    contractId: string;
-    keyIdBase64: string;
-  } | null>(null);
-  const [recoveryPhrase, setRecoveryPhrase] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const requestCode = async () => {
     setLoading(true);
@@ -76,58 +60,16 @@ export default function SignupPage() {
     }
   };
 
-  const runRecoverySignerRegistration = async (
-    kit: ReturnType<typeof createPasskeyKit>,
-    phrase: string,
-    keyIdBase64: string,
-    contractId: string
-  ) => {
-    const recoveryPublicKey = getRecoveryPublicKey(phrase);
-
-    await kit.connectWallet({ keyId: keyIdBase64 });
-
-    const addSignerTx = await kit.addEd25519(
-      recoveryPublicKey,
-      undefined,
-      SignerStore.Persistent
-    );
-    await kit.sign(addSignerTx);
-    const signedXdr = addSignerTx.toXDR();
-
-    const submitRes = await fetch('/api/wallet/recovery-signer', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ signedXdr, recoveryPublicKey }),
-    });
-
-    const submitData = (await submitRes.json()) as { error?: string; hash?: string };
-    if (!submitRes.ok) {
-      throw new Error(submitData.error ?? 'Failed to register recovery signer');
-    }
-
-    window.sessionStorage.setItem(ONBOARDING_PHRASE_KEY, phrase);
-    window.sessionStorage.setItem(ONBOARDING_KEY_ID_KEY, keyIdBase64);
-    window.sessionStorage.setItem(ONBOARDING_CONTRACT_ID_KEY, contractId);
-
-    const stored = window.sessionStorage.getItem(ONBOARDING_PHRASE_KEY);
-    const storedWords = stored ? splitRecoveryPhrase(stored) : [];
-    if (storedWords.length !== 12) {
-      throw new Error('Failed to save recovery phrase. Please try again.');
-    }
-
-    router.push('/recovery-phrase');
-  };
-
   const registerPasskeyAndDeploy = async () => {
     setLoading(true);
     setError(null);
-    setPasskeyPhase('creating');
+    setCreating(true);
 
     try {
       const supportError = checkPasskeySupport();
       if (supportError) {
         setError(supportError);
-        setPasskeyPhase('idle');
+        setCreating(false);
         return;
       }
 
@@ -157,72 +99,15 @@ export default function SignupPage() {
       };
       if (!deployRes.ok) {
         setError(deployData.error ?? 'Wallet deployment failed');
-        setPasskeyPhase('idle');
+        setCreating(false);
         return;
       }
 
-      setDeployResult({
-        contractId: result.contractId,
-        keyIdBase64: result.keyIdBase64,
-      });
-      setPasskeyPhase('recovery_ready');
+      router.push('/pin/setup');
     } catch (err) {
       logPasskeyKitError(err);
       setError(formatPasskeyKitError(err));
-      setPasskeyPhase('idle');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSetupRecovery = async () => {
-    if (!deployResult) return;
-
-    setLoading(true);
-    setError(null);
-    setPasskeyPhase('securing');
-
-    const phrase = recoveryPhrase ?? generateRecoveryPhrase();
-    if (!recoveryPhrase) {
-      setRecoveryPhrase(phrase);
-    }
-
-    try {
-      const kit = createPasskeyKit();
-      await runRecoverySignerRegistration(
-        kit,
-        phrase,
-        deployResult.keyIdBase64,
-        deployResult.contractId
-      );
-    } catch (err) {
-      logPasskeyKitError(err);
-      setError(formatPasskeyKitError(err));
-      setPasskeyPhase('recovery_error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRetryRecoverySigner = async () => {
-    if (!deployResult) return;
-
-    setLoading(true);
-    setError(null);
-    setPasskeyPhase('securing');
-
-    try {
-      const kit = createPasskeyKit();
-      await runRecoverySignerRegistration(
-        kit,
-        recoveryPhrase!,
-        deployResult.keyIdBase64,
-        deployResult.contractId
-      );
-    } catch (err) {
-      logPasskeyKitError(err);
-      setError(formatPasskeyKitError(err));
-      setPasskeyPhase('recovery_error');
+      setCreating(false);
     } finally {
       setLoading(false);
     }
@@ -309,10 +194,10 @@ export default function SignupPage() {
 
         {step === 'passkey' && (
           <div className="space-y-4">
-            {passkeyPhase === 'idle' && (
+            {!creating ? (
               <>
                 <p className="text-sm text-slate-600">
-                  Your email is verified. Register a passkey to create and secure your wallet.
+                  Your email is verified. Register a passkey to create your wallet.
                 </p>
                 <button
                   onClick={registerPasskeyAndDeploy}
@@ -322,9 +207,7 @@ export default function SignupPage() {
                   {loading ? 'Creating…' : 'Create passkey and wallet'}
                 </button>
               </>
-            )}
-
-            {passkeyPhase === 'creating' && (
+            ) : (
               <div className="flex flex-col items-center gap-3 py-4">
                 <Loader2 className="h-6 w-6 animate-spin text-pocketlet-600" />
                 <div className="text-center">
@@ -334,50 +217,6 @@ export default function SignupPage() {
                   </p>
                 </div>
               </div>
-            )}
-
-            {passkeyPhase === 'recovery_ready' && (
-              <>
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-                  Your wallet is ready. Next, set up account recovery so you can restore access if
-                  you lose your passkey.
-                </div>
-                <button
-                  onClick={handleSetupRecovery}
-                  disabled={loading}
-                  className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-                >
-                  {loading ? 'Securing…' : 'Generate seed phrase for account recovery'}
-                </button>
-              </>
-            )}
-
-            {passkeyPhase === 'securing' && (
-              <div className="flex flex-col items-center gap-3 py-4">
-                <Loader2 className="h-6 w-6 animate-spin text-pocketlet-600" />
-                <div className="text-center">
-                  <p className="text-sm font-bold text-slate-900">Securing your wallet</p>
-                  <p className="text-xs text-slate-500">
-                    Please authenticate to save your recovery key.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {passkeyPhase === 'recovery_error' && (
-              <>
-                <p className="text-sm text-slate-600">
-                  Something went wrong while securing your wallet. You can retry now or finish
-                  setup later from your profile.
-                </p>
-                <button
-                  onClick={handleRetryRecoverySigner}
-                  disabled={loading}
-                  className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-                >
-                  {loading ? 'Retrying…' : 'Retry securing wallet'}
-                </button>
-              </>
             )}
           </div>
         )}

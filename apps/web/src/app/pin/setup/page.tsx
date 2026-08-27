@@ -2,8 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
-import { ensureDeviceKey } from '@/lib/wallet/device-key';
+import { Keypair } from '@stellar/stellar-sdk';
+import {
+  generateDeviceKeypair,
+  encryptDeviceKey,
+  saveDeviceKey,
+} from '@/lib/wallet/device-key';
 
 export default function PinSetupPage() {
   const router = useRouter();
@@ -49,6 +53,7 @@ export default function PinSetupPage() {
 
     setLoading(true);
     try {
+      // 1. Save PIN on server
       const res = await fetch('/api/auth/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -60,21 +65,47 @@ export default function PinSetupPage() {
         return;
       }
 
-      const infoRes = await fetch('/api/wallet/session-key/info');
-      if (!infoRes.ok) {
-        setError('Failed to load wallet info');
+      // 2. Generate and encrypt device key locally
+      const { publicKey, secret } = await generateDeviceKeypair();
+      const encrypted = await encryptDeviceKey(secret, pin, email);
+      await saveDeviceKey(encrypted);
+
+      // 3. Register device on server via challenge-response
+      const challengeRes = await fetch('/api/auth/challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const challengeData = (await challengeRes.json()) as {
+        error?: string;
+        challenge?: string;
+      };
+      if (!challengeRes.ok) {
+        setError(challengeData.error ?? 'Failed to get challenge');
         return;
       }
-      const info = (await infoRes.json()) as {
-        walletContractId: string;
-        primaryPasskeyKeyId: string;
-      };
 
-      const kit = createPasskeyKit();
-      await kit.connectWallet({ keyId: info.primaryPasskeyKeyId });
-      await ensureDeviceKey(kit, pin, email);
+      const kp = Keypair.fromSecret(secret);
+      const signature = kp
+        .sign(Buffer.from(challengeData.challenge!, 'base64'))
+        .toString('base64');
 
-      router.push('/home');
+      const registerRes = await fetch('/api/auth/register-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          publicKey,
+          challenge: challengeData.challenge,
+          signature,
+        }),
+      });
+      const registerData = (await registerRes.json()) as { error?: string };
+      if (!registerRes.ok) {
+        setError(registerData.error ?? 'Failed to register device');
+        return;
+      }
+
+      router.push('/recovery/setup');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to set PIN');
     } finally {
@@ -143,7 +174,7 @@ export default function PinSetupPage() {
             disabled={loading || pin.length !== 6 || confirmPin.length !== 6}
             className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
           >
-            {loading ? 'Saving...' : 'Set PIN'}
+            {loading ? 'Saving…' : 'Set PIN'}
           </button>
         </div>
       </div>
