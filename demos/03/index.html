@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pocketlet - V1 Product Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <div class="top-bar">
+    <div class="step-label" id="stepLabel">Onboarding</div>
+    <button id="replayBtn">Replay</button>
+  </div>
+
+  <div class="phone-wrapper">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="screen" id="screen">
+
+        <!-- Step 0: Email -->
+        <div class="scene active" data-step="0">
+          <div class="scene-title">Create your wallet</div>
+          <div class="input-fake">
+            <span class="placeholder">Email address</span>
+            <span class="cursor">|</span>
+          </div>
+          <div class="btn-primary">Continue</div>
+          <div class="hint">We’ll deploy a smart contract wallet for you—no paperwork needed.</div>
+        </div>
+
+        <!-- Step 1: Passkey -->
+        <div class="scene" data-step="1">
+          <div class="passkey-sheet">
+            <div class="passkey-icon">👆</div>
+            <div class="passkey-title">Verify your identity</div>
+            <div class="passkey-sub">Use Face ID, Touch ID, or device PIN to create your passkey.</div>
+            <div class="btn-primary">Authenticate</div>
+            <div class="btn-ghost">Cancel</div>
+          </div>
+        </div>
+
+        <!-- Step 2: Home -->
+        <div class="scene" data-step="2">
+          <div class="app-header">
+            <span class="logo">Pocketlet</span>
+          </div>
+          <div class="balance-card">
+            <div class="label">Total Balance</div>
+            <div class="amount">$1,250.00</div>
+            <div class="asset">USDC</div>
+          </div>
+          <div class="actions">
+            <div class="action"><div class="action-icon">↑</div><span>Send</span></div>
+            <div class="action"><div class="action-icon">↓</div><span>Receive</span></div>
+          </div>
+        </div>
+
+        <!-- Step 3: Send -->
+        <div class="scene" data-step="3">
+          <div class="nav-title">Send USDC</div>
+          <div class="send-to">
+            <div class="to-label">To</div>
+            <div class="to-value">@alice</div>
+          </div>
+          <div class="send-amount">
+            <div class="currency">$</div>
+            <div class="value">50.00</div>
+          </div>
+          <div class="send-detail">
+            <div class="row"><span>Network fee</span><span>$0.001</span></div>
+            <div class="row total"><span>Total</span><span>$50.001</span></div>
+          </div>
+          <div class="btn-primary">Confirm with PIN</div>
+        </div>
+
+        <!-- Step 4: PIN -->
+        <div class="scene" data-step="4">
+          <div class="pin-title">Enter your PIN</div>
+          <div class="pin-dots">
+            <span class="dot filled"></span>
+            <span class="dot filled"></span>
+            <span class="dot filled"></span>
+            <span class="dot filled"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </div>
+          <div class="numpad">
+            <div class="numpad-row"><span>1</span><span>2</span><span>3</span></div>
+            <div class="numpad-row"><span>4</span><span>5</span><span>6</span></div>
+            <div class="numpad-row"><span>7</span><span>8</span><span>9</span></div>
+            <div class="numpad-row"><span></span><span>0</span><span>⌫</span></div>
+          </div>
+        </div>
+
+        <!-- Step 5: Success -->
+        <div class="scene" data-step="5">
+          <div class="success-check">✓</div>
+          <div class="success-title">Sent!</div>
+          <div class="success-sub">$50.00 USDC to @alice<br>Settled in 5 seconds</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pocketlet - Trust & Recovery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <div class="flip-scene" id="flipScene">
+    <div class="flip-card">
+      <!-- Front: Transaction Details -->
+      <div class="flip-face flip-front">
+        <div class="receipt">
+          <div class="receipt-status">Sent</div>
+          <div class="receipt-amount">-$50.00</div>
+          <div class="receipt-asset">USDC</div>
+          <div class="receipt-meta">
+            <div class="meta-row"><span>To</span><span>@alice</span></div>
+            <div class="meta-row"><span>Network</span><span>Stellar Testnet</span></div>
+            <div class="meta-row"><span>Fee</span><span>$0.001</span></div>
+            <div class="meta-row"><span>Time</span><span>2 seconds</span></div>
+          </div>
+          <div class="tx-hash">
+            <span>Tx Hash</span>
+            <code>a1b2c3...x9y0z1</code>
+          </div>
+        </div>
+        <div class="flip-hint">Click or wait to see how it works →</div>
+      </div>
+
+      <!-- Back: Technical Diagram -->
+      <div class="flip-face flip-back">
+        <div class="diagram">
+          <div class="diag-title">Under the Hood</div>
+          <div class="diag-flow">
+            <div class="diag-node">
+              <div class="diag-icon">👆</div>
+              <div class="diag-label">Passkey<br><small>Your device signs</small></div>
+            </div>
+            <div class="diag-arrow">→</div>
+            <div class="diag-node">
+              <div class="diag-icon">📜</div>
+              <div class="diag-label">Soroban Smart<br>Contract Wallet</div>
+            </div>
+            <div class="diag-arrow">→</div>
+            <div class="diag-node">
+              <div class="diag-icon">🌐</div>
+              <div class="diag-label">Stellar<br>Blockchain</div>
+            </div>
+          </div>
+          <div class="diag-divider"></div>
+          <div class="diag-recovery">
+            <div class="recovery-title">Recovery</div>
+            <div class="recovery-steps">
+              <div class="r-step">
+                <div class="r-num">1</div>
+                <div class="r-text">Client-side BIP39 phrase<br><small>Generated on your device, never sent to server</small></div>
+              </div>
+              <div class="r-step">
+                <div class="r-num">2</div>
+                <div class="r-text">Email + phrase verification<br><small>Smooth recovery if you lose your passkey</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flip-hint">← Click or wait to flip back</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

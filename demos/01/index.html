@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pocketlet - The Hook & Problem</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+  <div class="cards">
+    <div class="card active" data-index="0">
+      <div class="card-icon">🏦</div>
+      <h2>5% in fees</h2>
+      <p>Traditional banks and remittance services skim hefty commissions just to move your own money across a border.</p>
+    </div>
+    <div class="card" data-index="1">
+      <div class="card-icon">⏳</div>
+      <h2>Days of waiting</h2>
+      <p>Wire transfers crawl through layers of intermediaries while your funds sit invisible and out of reach.</p>
+    </div>
+    <div class="card" data-index="2">
+      <div class="card-icon">🔐</div>
+      <h2>24-word seed phrases</h2>
+      <p>Crypto wallets still expect everyday people to act as their own bank, security engineer, and IT department.</p>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="pauseBtn">Pause</button>
+    <div class="dots">
+      <span class="dot active"></span>
+      <span class="dot"></span>
+      <span class="dot"></span>
+    </div>
+  </div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>
