@@ -12,7 +12,7 @@ import {
   getInvokeContractArgs,
   getInvokeContractDetails,
   parseSorobanTransaction,
-  submitSignedTransaction,
+  submitSignedTransactionFast,
 } from '@/lib/wallet/submit';
 
 export interface SetupBatchRequest {
@@ -259,7 +259,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // 1. Submit recovery tx and wait for confirmation
   let recoveryResult: { hash: string };
   try {
-    recoveryResult = await submitSignedTransaction(recoveryXdr);
+    recoveryResult = await submitSignedTransactionFast(recoveryXdr);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Recovery transaction submission failed';
     return NextResponse.json({ error: message }, { status: 500 });
@@ -268,7 +268,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // 2. Submit device tx (recovery signer is now registered)
   let deviceResult: { hash: string };
   try {
-    deviceResult = await submitSignedTransaction(deviceXdr);
+    deviceResult = await submitSignedTransactionFast(deviceXdr);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Device transaction submission failed';
     return NextResponse.json(

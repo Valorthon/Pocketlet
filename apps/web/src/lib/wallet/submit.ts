@@ -107,6 +107,34 @@ export async function pollTransaction(
 }
 
 /**
+ * Fast-poll variant: 10 attempts × 500 ms = 5 s max. Use when the tx is
+ * expected to land quickly (e.g. testnet during onboarding) and the caller
+ * wants a faster response. Still blocks until SUCCESS or FAILED.
+ */
+export async function pollTransactionFast(
+  server: rpc.Server,
+  hash: string
+): Promise<rpc.Api.GetSuccessfulTransactionResponse> {
+  for (let i = 0; i < 10; i++) {
+    const tx = await server.getTransaction(hash);
+    if (tx.status === 'SUCCESS') {
+      return tx as rpc.Api.GetSuccessfulTransactionResponse;
+    }
+    if (tx.status === 'FAILED') {
+      const detail = formatFailedResult(tx);
+      console.error('Transaction failed (fast poll):', {
+        detail,
+        txHash: tx.txHash,
+        ledger: tx.ledger,
+      });
+      throw new Error(`Transaction failed: ${detail}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error('Transaction polling timed out');
+}
+
+/**
  * Validate that the given transaction envelope is a Soroban transaction that
  * can be submitted by the fee payer. Returns the parsed Transaction.
  */
@@ -354,6 +382,93 @@ export async function submitSignedTransaction(signedXdr: string): Promise<{ hash
   }
 
   await pollTransaction(server, result.hash);
+
+  return { hash: result.hash };
+}
+
+/**
+ * Fast variant of {@link submitSignedTransaction} that polls with a 5 s
+ * timeout instead of 20 s. Suitable for onboarding flows where the user is
+ * waiting on a banner. Still waits for ledger confirmation — no optimistic
+ * treatment of PENDING.
+ */
+export async function submitSignedTransactionFast(
+  signedXdr: string
+): Promise<{ hash: string }> {
+  const server = new rpc.Server(RPC_URL);
+  const feePayer = getFeePayerKeypair();
+  await fundAccount(feePayer.publicKey());
+
+  const innerTx = parseSorobanTransaction(signedXdr);
+
+  if (innerTx.operations.length !== 1) {
+    throw new Error('Sponsored transaction must contain exactly one operation');
+  }
+
+  const op = innerTx.operations[0];
+  if (!isInvokeHostFunctionOp(op)) {
+    throw new Error('Sponsored transaction must be an invoke_host_function operation');
+  }
+
+  const feePayerAccount = await server.getAccount(feePayer.publicKey());
+  const feePayerSequence = feePayerAccount.sequenceNumber();
+
+  const tempTx = new TransactionBuilder(feePayerAccount, {
+    fee: BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      Operation.invokeHostFunction({
+        func: op.func,
+        auth: op.auth,
+      })
+    )
+    .setTimeout(30)
+    .build();
+
+  const simulation = await server.simulateTransaction(tempTx);
+  if (rpc.Api.isSimulationError(simulation)) {
+    throw new Error(`Simulation failed: ${simulation.error}`);
+  }
+  if (!rpc.Api.isSimulationSuccess(simulation)) {
+    throw new Error('Simulation did not succeed');
+  }
+
+  const sorobanData = simulation.transactionData.build();
+  const fee = String(Number(simulation.minResourceFee) + Number(BASE_FEE));
+
+  const sponsoredTx = new TransactionBuilder(
+    new Account(feePayer.publicKey(), feePayerSequence),
+    {
+      fee,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    }
+  )
+    .setSorobanData(sorobanData)
+    .addOperation(
+      Operation.invokeHostFunction({
+        func: op.func,
+        auth: op.auth,
+      })
+    )
+    .setTimeout(30)
+    .build();
+
+  sponsoredTx.sign(feePayer);
+
+  const result = await server.sendTransaction(sponsoredTx);
+
+  if (result.status === 'ERROR') {
+    const detail = result.errorResult
+      ? formatTransactionResult(result.errorResult)
+      : 'no error result XDR';
+    throw new Error(`sendTransaction failed: ${detail}`);
+  }
+  if (result.status !== 'PENDING' && result.status !== 'DUPLICATE') {
+    throw new Error(`sendTransaction returned unexpected status: ${result.status}`);
+  }
+
+  await pollTransactionFast(server, result.hash);
 
   return { hash: result.hash };
 }
