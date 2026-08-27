@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
 import {
   checkPasskeySupport,
@@ -9,44 +10,45 @@ import {
   logPasskeyKitError,
 } from '@/lib/auth/passkey-errors';
 
-const ONBOARDING_KEY_ID_KEY = 'pocketlet:onboarding:keyIdBase64';
-const ONBOARDING_CONTRACT_ID_KEY = 'pocketlet:onboarding:contractId';
+interface WalletInfo {
+  walletContractId: string;
+  primaryPasskeyKeyId: string;
+}
 
 export default function BackupPasskeyPage() {
   const router = useRouter();
-  const [email, setEmail] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [skipped, setSkipped] = useState(false);
+  const [walletInfo, setWalletInfo] = useState<WalletInfo | null>(null);
+  const [fetchingInfo, setFetchingInfo] = useState(true);
 
   useEffect(() => {
-    fetch('/api/auth/pin')
-      .then((res) => {
-        if (res.status === 401) {
-          router.push('/login');
-          return null;
+    const loadWalletInfo = async () => {
+      try {
+        const res = await fetch('/api/wallet/session-key/info');
+        if (!res.ok) {
+          if (res.status === 401) {
+            router.push('/login');
+            return;
+          }
+          setError('Failed to load wallet information');
+          return;
         }
-        return res.json();
-      })
-      .then((data: { email?: string } | null) => {
-        if (data?.email) {
-          setEmail(data.email);
-        }
-      })
-      .catch(() => setEmail(''));
-  }, []);
+        const data = (await res.json()) as WalletInfo;
+        setWalletInfo(data);
+      } catch {
+        setError('Failed to load wallet information');
+      } finally {
+        setFetchingInfo(false);
+      }
+    };
 
-  const clearOnboardingState = () => {
-    window.sessionStorage.removeItem(ONBOARDING_KEY_ID_KEY);
-    window.sessionStorage.removeItem(ONBOARDING_CONTRACT_ID_KEY);
-  };
-
-  const redirectToPinSetup = () => {
-    clearOnboardingState();
-    router.push('/pin/setup');
-  };
+    loadWalletInfo();
+  }, [router]);
 
   const registerBackupPasskey = async () => {
+    if (!walletInfo) return;
+
     setLoading(true);
     setError(null);
 
@@ -57,16 +59,10 @@ export default function BackupPasskeyPage() {
         return;
       }
 
-      const keyIdBase64 = window.sessionStorage.getItem(ONBOARDING_KEY_ID_KEY);
-      if (!keyIdBase64) {
-        setError('Onboarding session expired. Please start over.');
-        return;
-      }
-
       const kit = createPasskeyKit();
-      await kit.connectWallet({ keyId: keyIdBase64 });
+      await kit.connectWallet({ keyId: walletInfo.primaryPasskeyKeyId });
 
-      const backup = await kit.createKey('Pocketlet Backup', email || 'Pocketlet user', {
+      const backup = await kit.createKey('Pocketlet Backup', 'Pocketlet user', {
         authenticatorSelection: {
           residentKey: 'preferred',
           userVerification: 'required',
@@ -108,7 +104,7 @@ export default function BackupPasskeyPage() {
         return;
       }
 
-      redirectToPinSetup();
+      router.push('/home');
     } catch (err) {
       logPasskeyKitError(err);
       setError(formatPasskeyKitError(err));
@@ -117,18 +113,30 @@ export default function BackupPasskeyPage() {
     }
   };
 
-  const skipBackup = async () => {
-    setLoading(true);
-    try {
-      redirectToPinSetup();
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (fetchingInfo) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+        <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+          <div className="flex flex-col items-center gap-3 py-4">
+            <Loader2 className="h-6 w-6 animate-spin text-pocketlet-600" />
+            <p className="text-sm text-slate-600">Loading wallet information…</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
       <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+        <button
+          onClick={() => router.push('/profile')}
+          className="mb-4 flex items-center gap-1 text-sm font-semibold text-pocketlet-600 hover:underline"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to profile
+        </button>
+
         <h1 className="mb-2 text-2xl font-bold text-slate-900">Add a backup passkey</h1>
         <p className="mb-6 text-sm text-slate-500">
           Register a second passkey on another device (or a different profile on this device) so
@@ -137,53 +145,18 @@ export default function BackupPasskeyPage() {
 
         {error && <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
 
-        {!skipped ? (
-          <>
-            <div className="mb-6 rounded-lg border border-pocketlet-200 bg-pocketlet-50 p-3 text-sm text-pocketlet-800">
-              <strong>Strongly recommended.</strong> Without a backup, you will need your recovery
-              phrase to regain access if you lose your primary passkey.
-            </div>
+        <div className="mb-6 rounded-lg border border-pocketlet-200 bg-pocketlet-50 p-3 text-sm text-pocketlet-800">
+          <strong>Strongly recommended.</strong> Without a backup, you will need your recovery
+          phrase to regain access if you lose your primary passkey.
+        </div>
 
-            <button
-              onClick={registerBackupPasskey}
-              disabled={loading}
-              className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-            >
-              {loading ? 'Registering...' : 'Register backup passkey'}
-            </button>
-
-            <button
-              onClick={() => setSkipped(true)}
-              disabled={loading}
-              className="mt-3 w-full rounded-xl bg-white py-3 text-sm font-bold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 disabled:opacity-50"
-            >
-              Skip for now
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-              Skipping a backup means you are relying entirely on your recovery phrase. If you lose
-              both your primary passkey and your recovery phrase, your wallet cannot be recovered.
-            </div>
-
-            <button
-              onClick={() => setSkipped(false)}
-              disabled={loading}
-              className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-            >
-              Go back and add a backup
-            </button>
-
-            <button
-              onClick={skipBackup}
-              disabled={loading}
-              className="mt-3 w-full rounded-xl bg-white py-3 text-sm font-bold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-50"
-            >
-              {loading ? 'Continuing...' : 'I understand, skip backup'}
-            </button>
-          </>
-        )}
+        <button
+          onClick={registerBackupPasskey}
+          disabled={loading || !walletInfo}
+          className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+        >
+          {loading ? 'Registering…' : 'Register backup passkey'}
+        </button>
       </div>
     </main>
   );

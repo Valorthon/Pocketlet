@@ -14,6 +14,8 @@ export type MetricKey =
   | 'wallet.recovery.completed'
   | 'auth.signup.completed'
   | 'auth.login.completed'
+  | 'auth.login.device'
+  | 'auth.login.seedphrase'
   | 'auth.passkey.registration.failure';
 
 function getPeriod(): string {

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
+import { ensureDeviceKey } from '@/lib/wallet/device-key';
 
 export default function PinSetupPage() {
   const router = useRouter();
@@ -10,6 +12,7 @@ export default function PinSetupPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasPin, setHasPin] = useState<boolean | null>(null);
+  const [email, setEmail] = useState<string>('');
 
   useEffect(() => {
     fetch('/api/auth/pin')
@@ -20,15 +23,18 @@ export default function PinSetupPage() {
         }
         return res.json();
       })
-      .then((data: { hasPin?: boolean } | null) => {
+      .then((data: { hasPin?: boolean; email?: string } | null) => {
         if (data?.hasPin) {
           router.push('/home');
         } else {
           setHasPin(false);
+          if (data?.email) {
+            setEmail(data.email);
+          }
         }
       })
       .catch(() => setHasPin(false));
-  }, []);
+  }, [router]);
 
   const submit = async () => {
     setError(null);
@@ -53,6 +59,21 @@ export default function PinSetupPage() {
         setError(data.error ?? 'Failed to set PIN');
         return;
       }
+
+      const infoRes = await fetch('/api/wallet/session-key/info');
+      if (!infoRes.ok) {
+        setError('Failed to load wallet info');
+        return;
+      }
+      const info = (await infoRes.json()) as {
+        walletContractId: string;
+        primaryPasskeyKeyId: string;
+      };
+
+      const kit = createPasskeyKit();
+      await kit.connectWallet({ keyId: info.primaryPasskeyKeyId });
+      await ensureDeviceKey(kit, pin, email);
+
       router.push('/home');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to set PIN');
@@ -76,9 +97,13 @@ export default function PinSetupPage() {
     <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
       <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
         <h1 className="mb-2 text-2xl font-bold text-slate-900">Create your PIN</h1>
-        <p className="mb-6 text-sm text-slate-500">Choose a 6-digit PIN to confirm payments.</p>
+        <p className="mb-6 text-sm text-slate-500">
+          Choose a 6-digit PIN to unlock this device and confirm payments.
+        </p>
 
-        {error && <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
+        {error && (
+          <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>
+        )}
 
         <div className="space-y-4">
           <div>

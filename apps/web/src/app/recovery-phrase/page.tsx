@@ -109,7 +109,7 @@ export default function RecoveryPhrasePage() {
       }
 
       window.sessionStorage.removeItem(ONBOARDING_PHRASE_KEY);
-      router.push('/backup-passkey');
+      router.push('/pin/setup');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Confirmation failed');
     } finally {

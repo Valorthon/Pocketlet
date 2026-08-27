@@ -485,6 +485,90 @@ export async function hasPin(email: string): Promise<boolean> {
   return Boolean(user?.pinHash);
 }
 
+export interface DeviceRecord {
+  id: string;
+  email: string;
+  devicePublicKey: string;
+  deviceName?: string;
+  createdAt: string;
+  expiresAt: string;
+  lastUsedAt: string;
+}
+
+function mapDevice(row: typeof schema.userDevices.$inferSelect): DeviceRecord {
+  return {
+    id: row.id,
+    email: row.email,
+    devicePublicKey: row.devicePublicKey,
+    deviceName: row.deviceName ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    lastUsedAt: row.lastUsedAt.toISOString(),
+  };
+}
+
+export async function getDeviceByPublicKey(
+  publicKey: string
+): Promise<DeviceRecord | undefined> {
+  const row = await db.query.userDevices.findFirst({
+    where: eq(schema.userDevices.devicePublicKey, publicKey),
+  });
+  return row ? mapDevice(row) : undefined;
+}
+
+export async function getDevicesForUser(email: string): Promise<DeviceRecord[]> {
+  const rows = await db.query.userDevices.findMany({
+    where: eq(schema.userDevices.email, normalizeEmail(email)),
+    orderBy: (devices, { desc }) => [desc(devices.lastUsedAt)],
+  });
+  return rows.map(mapDevice);
+}
+
+export async function createDevice(
+  email: string,
+  devicePublicKey: string,
+  deviceName?: string
+): Promise<DeviceRecord> {
+  const normalized = normalizeEmail(email);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+  const [row] = await db
+    .insert(schema.userDevices)
+    .values({
+      email: normalized,
+      devicePublicKey,
+      deviceName: deviceName ?? null,
+      createdAt: now,
+      expiresAt,
+      lastUsedAt: now,
+    })
+    .returning();
+
+  if (!row) {
+    throw new Error('Failed to create device record');
+  }
+
+  return mapDevice(row);
+}
+
+export async function updateDeviceLastUsed(id: string): Promise<void> {
+  await db
+    .update(schema.userDevices)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(schema.userDevices.id, id));
+}
+
+export async function removeDevice(id: string): Promise<void> {
+  await db.delete(schema.userDevices).where(eq(schema.userDevices.id, id));
+}
+
+export async function removeDevicesForUser(email: string): Promise<void> {
+  await db
+    .delete(schema.userDevices)
+    .where(eq(schema.userDevices.email, normalizeEmail(email)));
+}
+
 export async function setPinResetCode(
   email: string,
   code: string

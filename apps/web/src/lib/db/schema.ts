@@ -7,6 +7,7 @@ import {
   jsonb,
   bigint,
   primaryKey,
+  uuid,
 } from 'drizzle-orm/pg-core';
 
 export type Credential = {
@@ -58,6 +59,19 @@ export const users = pgTable('users', {
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+export const userDevices = pgTable('user_devices', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: text('email').notNull(),
+  devicePublicKey: text('device_public_key').notNull().unique(),
+  deviceName: text('device_name'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type UserDevice = typeof userDevices.$inferSelect;
+export type NewUserDevice = typeof userDevices.$inferInsert;
 
 export const metrics = pgTable(
   'metrics',

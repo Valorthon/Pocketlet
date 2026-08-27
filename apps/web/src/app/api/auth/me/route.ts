@@ -27,6 +27,7 @@ export async function GET() {
       email: user.email,
       username: user.username,
       phone: user.phone,
+      hasBackupPasskey: user.hasBackupPasskey ?? false,
     },
   });
 }

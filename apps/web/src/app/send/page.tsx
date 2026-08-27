@@ -15,12 +15,9 @@ import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import { amountToBaseUnits, baseUnitsToDisplay } from '@/lib/wallet/amount';
 import { validateRecipientFormat } from '@/lib/wallet/recipient-format';
 import {
-  hasUsableSessionKey,
-  ensureSessionKey,
-  getSessionSigner,
-  verifySessionKeyOnChain,
-  clearSessionKey,
-} from '@/lib/wallet/session-key';
+  hasUsableDeviceKey,
+  getDeviceSigner,
+} from '@/lib/wallet/device-key';
 
 interface TransferForm {
   asset: 'USDC' | 'XLM';
@@ -283,23 +280,12 @@ export default function SendPage() {
         throw new Error('Wallet info not loaded');
       }
 
-      const usable = await hasUsableSessionKey();
-      if (!usable) {
-        await ensureSessionKey(kit, pin);
+      if (!(await hasUsableDeviceKey())) {
+        throw new Error('Device key expired. Please log in again.');
       }
 
-      // Defensive check: confirm the session key is actually registered on-chain.
-      const onChainValid = await verifySessionKeyOnChain(kit);
-      if (!onChainValid) {
-        console.warn(
-          'Session key missing on-chain; clearing local copy and re-authorizing.'
-        );
-        await clearSessionKey();
-        await ensureSessionKey(kit, pin);
-      }
-
-      const signer = await getSessionSigner(pin);
-      console.log('Signing transfer with session key:', signer.address);
+      const signer = await getDeviceSigner(pin);
+      console.log('Signing transfer with device key:', signer.address);
       await kit.sign(tx, signer);
       const signedXdr = tx.toXDR();
       console.log('Transfer signed; submitting to server...');
@@ -312,7 +298,6 @@ export default function SendPage() {
           asset: form.asset,
           amount: form.amount,
           recipient: form.recipient.trim(),
-          pin,
         }),
       });
 

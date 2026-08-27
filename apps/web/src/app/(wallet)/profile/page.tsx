@@ -3,15 +3,16 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Fingerprint, KeyRound, ShieldCheck } from 'lucide-react';
+import { Fingerprint, KeyRound, ShieldCheck, Shield } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { clearSessionKey } from '@/lib/wallet/session-key';
+import { clearDeviceKey } from '@/lib/wallet/device-key';
 
 interface ProfileData {
   email: string;
   username?: string;
   phone?: string;
+  hasBackupPasskey?: boolean;
 }
 
 export default function ProfilePage() {
@@ -107,7 +108,7 @@ export default function ProfilePage() {
   };
 
   const logout = async () => {
-    await clearSessionKey();
+    await clearDeviceKey();
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
   };
@@ -173,6 +174,26 @@ export default function ProfilePage() {
           <Button variant="outline" size="sm" disabled>
             View
           </Button>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-blue-50 p-2 text-blue-600">
+              <Shield className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-900">Backup Passkey</p>
+              <p className="text-[10px] text-slate-400">
+                {profile?.hasBackupPasskey ? 'Secondary device passkey set' : 'Add a second passkey for safety'}
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/backup-passkey"
+            className="rounded-lg bg-pocketlet-100 px-3 py-1.5 text-xs font-bold text-pocketlet-700 hover:bg-pocketlet-200"
+          >
+            {profile?.hasBackupPasskey ? 'Add another' : 'Set up'}
+          </Link>
         </div>
       </Card>
 
