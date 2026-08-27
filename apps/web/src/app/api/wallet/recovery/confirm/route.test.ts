@@ -60,7 +60,7 @@ describe('POST /api/wallet/recovery/confirm', () => {
     expect(user?.recoveryPhraseConfirmed).toBe(true);
   });
 
-  it('returns 400 if recovery signer is not registered', async () => {
+  it('marks confirmed even if recovery signer is not yet registered on-chain', async () => {
     await createUser('bob@example.com', '000000');
     await setEmailVerified('bob@example.com');
     await setWallet('bob@example.com', {
@@ -72,6 +72,12 @@ describe('POST /api/wallet/recovery/confirm', () => {
     cookieJar[SESSION_COOKIE_NAME] = token;
 
     const res = await POST();
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as { confirmed: boolean };
+    expect(body.confirmed).toBe(true);
+
+    const user = await getUserByEmail('bob@example.com');
+    expect(user?.recoveryPhraseConfirmed).toBe(true);
   });
 });

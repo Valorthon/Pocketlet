@@ -101,6 +101,7 @@ export default function RecoverySetupPage() {
           deviceXdr,
           recoveryPublicKey,
         }),
+        keepalive: true,
       }).catch((err) => {
         console.error('Setup batch failed in background:', err);
       });
