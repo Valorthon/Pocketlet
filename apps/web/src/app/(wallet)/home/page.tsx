@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowDownLeft, Send } from 'lucide-react';
+import { ArrowDownLeft, Send, Loader2, X, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { CurrencyDisplay } from '@/components/ui/CurrencyDisplay';
 import { TransactionListItem } from '@/components/ui/TransactionListItem';
 import { WalletTransaction } from '@/lib/wallet/transactions';
@@ -13,6 +13,131 @@ interface BalanceData {
   usdc: string;
   contractId: string;
   stellarAddress: string;
+}
+
+interface UserStatus {
+  recoveryPublicKey: string | null;
+  recoveryPhraseConfirmed: boolean;
+}
+
+const BANNER_DISMISS_KEY = 'pocketlet:setupBannerDismissedAt';
+const BANNER_DISMISS_TTL_MS = 24 * 60 * 60 * 1000;
+
+function SetupBanner() {
+  const [status, setStatus] = useState<UserStatus | null>(null);
+  const [phase, setPhase] = useState<'loading' | 'pending' | 'timeout' | 'confirm' | 'complete'>('loading');
+  const [visible, setVisible] = useState(true);
+
+  const checkDismissed = useCallback(() => {
+    const raw = localStorage.getItem(BANNER_DISMISS_KEY);
+    if (!raw) return false;
+    const at = Number(raw);
+    return !Number.isNaN(at) && Date.now() - at < BANNER_DISMISS_TTL_MS;
+  }, []);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/me');
+      if (!res.ok) return;
+      const body = (await res.json()) as { user: UserStatus };
+      setStatus(body.user);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (checkDismissed()) {
+      setVisible(false);
+      return;
+    }
+    void fetchStatus();
+  }, [checkDismissed, fetchStatus]);
+
+  useEffect(() => {
+    if (!status) return;
+
+    if (status.recoveryPublicKey && status.recoveryPhraseConfirmed) {
+      setPhase('complete');
+      return;
+    }
+    if (status.recoveryPublicKey && !status.recoveryPhraseConfirmed) {
+      setPhase('confirm');
+      return;
+    }
+
+    // recoveryPublicKey is null — polling needed
+    setPhase('pending');
+    const start = Date.now();
+    const interval = setInterval(async () => {
+      await fetchStatus();
+      if (Date.now() - start > 30_000) {
+        clearInterval(interval);
+        setPhase('timeout');
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [status, fetchStatus]);
+
+  useEffect(() => {
+    if (phase === 'complete') {
+      const t = setTimeout(() => setVisible(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [phase]);
+
+  if (!visible || phase === 'complete') return null;
+
+  const dismiss = () => {
+    localStorage.setItem(BANNER_DISMISS_KEY, String(Date.now()));
+    setVisible(false);
+  };
+
+  return (
+    <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+      <div className="flex items-start gap-3">
+        {phase === 'pending' ? (
+          <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-amber-600" />
+        ) : phase === 'timeout' ? (
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        ) : (
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+        )}
+        <div className="flex-1">
+          <p className="text-xs font-semibold text-amber-800">
+            {phase === 'pending' && 'Finishing wallet setup…'}
+            {phase === 'timeout' && 'Wallet setup incomplete'}
+            {phase === 'confirm' && 'Save your recovery phrase'}
+          </p>
+          <p className="mt-0.5 text-[10px] text-amber-700">
+            {phase === 'pending' && 'Your recovery key is being registered on-chain.'}
+            {phase === 'timeout' && 'Something went wrong during setup. You can retry from your profile.'}
+            {phase === 'confirm' && 'Confirm your recovery phrase to finish securing your wallet.'}
+          </p>
+          {phase === 'timeout' && (
+            <Link
+              href="/recovery/setup"
+              className="mt-1 inline-block text-[10px] font-bold text-amber-800 underline"
+            >
+              Secure my wallet
+            </Link>
+          )}
+          {phase === 'confirm' && (
+            <Link
+              href="/recovery-phrase"
+              className="mt-1 inline-block text-[10px] font-bold text-blue-700 underline"
+            >
+              View recovery phrase
+            </Link>
+          )}
+        </div>
+        <button onClick={dismiss} className="rounded p-1 text-amber-600 hover:bg-amber-100">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function HomePage() {
@@ -92,6 +217,8 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col gap-6 pb-6">
+      <SetupBanner />
+
       <CurrencyDisplay
         usdcAmount={usdcNumber}
         xlmAmount={xlmNumber}

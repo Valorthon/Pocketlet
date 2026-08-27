@@ -3,7 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Fingerprint, KeyRound, ShieldCheck, Shield } from 'lucide-react';
+import {
+  KeyRound,
+  ShieldCheck,
+  Shield,
+  ShieldAlert,
+  FileText,
+} from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { clearDeviceKey } from '@/lib/wallet/device-key';
@@ -13,6 +19,8 @@ interface ProfileData {
   username?: string;
   phone?: string;
   hasBackupPasskey?: boolean;
+  recoveryPublicKey: string | null;
+  recoveryPhraseConfirmed: boolean;
 }
 
 export default function ProfilePage() {
@@ -64,7 +72,7 @@ export default function ProfilePage() {
 
     loadProfile();
     loadPin();
-  }, []);
+  }, [router]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,6 +129,9 @@ export default function ProfilePage() {
     );
   }
 
+  const recoverySignerDone = Boolean(profile?.recoveryPublicKey);
+  const recoveryPhraseDone = Boolean(profile?.recoveryPhraseConfirmed);
+
   return (
     <div className="flex flex-col gap-4 pb-6">
       <h3 className="text-base font-bold text-slate-900">Account & Security</h3>
@@ -163,17 +174,66 @@ export default function ProfilePage() {
 
         <div className="flex items-center justify-between border-t border-slate-100 pt-3">
           <div className="flex items-center gap-2.5">
-            <div className="rounded-xl bg-pocketlet-50 p-2 text-pocketlet-600">
-              <Fingerprint className="h-4 w-4" />
+            <div
+              className={`rounded-xl p-2 ${
+                recoverySignerDone ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+              }`}
+            >
+              {recoverySignerDone ? (
+                <ShieldCheck className="h-4 w-4" />
+              ) : (
+                <ShieldAlert className="h-4 w-4" />
+              )}
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-900">Backup Recovery Phrase</p>
-              <p className="text-[10px] text-slate-400">Export coming in a future version</p>
+              <p className="text-xs font-bold text-slate-900">Recovery Signer</p>
+              <p className="text-[10px] text-slate-400">
+                {recoverySignerDone ? 'On-chain ✓' : 'Not yet registered'}
+              </p>
             </div>
           </div>
-          <Button variant="outline" size="sm" disabled>
-            View
-          </Button>
+          {recoverySignerDone ? (
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+              Active
+            </span>
+          ) : (
+            <Link
+              href="/recovery/setup"
+              className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-200"
+            >
+              Set up
+            </Link>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`rounded-xl p-2 ${
+                recoveryPhraseDone ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
+              }`}
+            >
+              <FileText className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-900">Recovery Phrase</p>
+              <p className="text-[10px] text-slate-400">
+                {recoveryPhraseDone ? 'Saved and confirmed ✓' : 'Not yet confirmed'}
+              </p>
+            </div>
+          </div>
+          {recoveryPhraseDone ? (
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+              Confirmed
+            </span>
+          ) : (
+            <Link
+              href="/recovery-phrase"
+              className="rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-200"
+            >
+              Confirm
+            </Link>
+          )}
         </div>
 
         <div className="flex items-center justify-between border-t border-slate-100 pt-3">
