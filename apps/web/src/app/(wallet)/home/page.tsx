@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowDownLeft, Send, Loader2, X, ShieldAlert, ShieldCheck } from 'lucide-react';
@@ -27,6 +27,8 @@ function SetupBanner() {
   const [status, setStatus] = useState<UserStatus | null>(null);
   const [phase, setPhase] = useState<'loading' | 'pending' | 'timeout' | 'confirm' | 'complete'>('loading');
   const [visible, setVisible] = useState(true);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startRef = useRef<number>(0);
 
   const checkDismissed = useCallback(() => {
     const raw = localStorage.getItem(BANNER_DISMISS_KEY);
@@ -66,19 +68,37 @@ function SetupBanner() {
       return;
     }
 
-    // recoveryPublicKey is null — polling needed
     setPhase('pending');
-    const start = Date.now();
-    const interval = setInterval(async () => {
+  }, [status]);
+
+  useEffect(() => {
+    if (phase !== 'pending') {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+
+    startRef.current = Date.now();
+    intervalRef.current = setInterval(async () => {
       await fetchStatus();
-      if (Date.now() - start > 30_000) {
-        clearInterval(interval);
+      if (Date.now() - startRef.current > 30_000) {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
         setPhase('timeout');
       }
     }, 5000);
 
-    return () => clearInterval(interval);
-  }, [status, fetchStatus]);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [phase, fetchStatus]);
 
   useEffect(() => {
     if (phase === 'complete') {

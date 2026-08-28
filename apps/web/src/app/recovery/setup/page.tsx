@@ -20,11 +20,10 @@ const ONBOARDING_PHRASE_KEY = 'pocketlet:onboarding:recoveryPhrase';
 
 export default function RecoverySetupPage() {
   const router = useRouter();
-  const [phase, setPhase] = useState<'idle' | 'scanning' | 'finishing' | 'error'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'scanning' | 'submitting' | 'finishing' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Auto-start when page loads if support is OK
     const supportError = checkPasskeySupport();
     if (supportError) {
       setError(supportError);
@@ -56,11 +55,11 @@ export default function RecoverySetupPage() {
         primaryPasskeyKeyId: string;
       };
 
-      // 4. Connect passkey kit (no scan yet)
+      // 4. Connect passkey kit (prompt #1)
       const kit = createPasskeyKit();
       await kit.connectWallet({ keyId: info.primaryPasskeyKeyId });
 
-      // 5. Build and sign recovery add_signer tx with PASSKEY (scan #2)
+      // 5. Build and sign recovery add_signer tx with PASSKEY (prompt #2)
       const recoveryTx = await kit.addEd25519(
         recoveryPublicKey,
         undefined,
@@ -69,7 +68,19 @@ export default function RecoverySetupPage() {
       await kit.sign(recoveryTx);
       const recoveryXdr = recoveryTx.toXDR();
 
-      // 6. Build and sign device-key add_signer tx with RECOVERY SIGNER (no scan)
+      // 6. Submit recovery tx to server and wait for confirmation
+      setPhase('submitting');
+      const recoveryRes = await fetch('/api/wallet/recovery-signer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signedXdr: recoveryXdr, recoveryPublicKey }),
+      });
+      const recoveryData = (await recoveryRes.json()) as { error?: string; hash?: string };
+      if (!recoveryRes.ok) {
+        throw new Error(recoveryData.error ?? 'Failed to register recovery signer');
+      }
+
+      // 7. Build and sign device-key add_signer tx with RECOVERY SIGNER (no scan)
       const deviceKey = await loadDeviceKey();
       if (!deviceKey) {
         throw new Error('Device key not found. Please restart onboarding.');
@@ -90,23 +101,19 @@ export default function RecoverySetupPage() {
       await kit.sign(deviceTx, recoverySigner);
       const deviceXdr = deviceTx.toXDR();
 
-      // 7. Fire both to server and redirect immediately (non-blocking)
-      setPhase('finishing');
-
-      fetch('/api/wallet/setup-batch', {
+      // 8. Submit device tx to server and wait for confirmation
+      const deviceRes = await fetch('/api/wallet/device-key/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recoveryXdr,
-          deviceXdr,
-          recoveryPublicKey,
-        }),
-        keepalive: true,
-      }).catch((err) => {
-        console.error('Setup batch failed in background:', err);
+        body: JSON.stringify({ signedXdr: deviceXdr, publicKey: deviceKey.publicKey }),
       });
+      const deviceData = (await deviceRes.json()) as { error?: string; hash?: string };
+      if (!deviceRes.ok) {
+        throw new Error(deviceData.error ?? 'Failed to register device key');
+      }
 
-      // 8. Proceed immediately — don't wait for server
+      // 9. Done
+      setPhase('finishing');
       router.push('/recovery-phrase');
     } catch (err) {
       logPasskeyKitError(err);
@@ -156,6 +163,16 @@ export default function RecoverySetupPage() {
               <p className="text-xs text-slate-500">
                 Please authenticate with your passkey to add the recovery key.
               </p>
+            </div>
+          </div>
+        )}
+
+        {phase === 'submitting' && (
+          <div className="flex flex-col items-center gap-3 py-4">
+            <Loader2 className="h-6 w-6 animate-spin text-pocketlet-600" />
+            <div className="text-center">
+              <p className="text-sm font-bold text-slate-900">Setting up recovery and device keys</p>
+              <p className="text-xs text-slate-500">This may take a few seconds…</p>
             </div>
           </div>
         )}

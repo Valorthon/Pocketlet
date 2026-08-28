@@ -533,7 +533,7 @@ export async function createDevice(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
-  const [row] = await db
+  const result = await db
     .insert(schema.userDevices)
     .values({
       email: normalized,
@@ -543,13 +543,20 @@ export async function createDevice(
       expiresAt,
       lastUsedAt: now,
     })
+    .onConflictDoNothing({ target: schema.userDevices.devicePublicKey })
     .returning();
 
-  if (!row) {
-    throw new Error('Failed to create device record');
+  const row = result[0];
+  if (row) {
+    return mapDevice(row);
   }
 
-  return mapDevice(row);
+  // Row already existed; fetch and return it
+  const existing = await getDeviceByPublicKey(devicePublicKey);
+  if (!existing) {
+    throw new Error('Failed to create or fetch device record');
+  }
+  return existing;
 }
 
 export async function updateDeviceLastUsed(id: string): Promise<void> {
