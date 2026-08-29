@@ -9,7 +9,9 @@
     "build:web": "pnpm --filter web build",
     "start:web": "pnpm --filter web start",
     "lint": "pnpm --filter web lint",
-    "typecheck": "pnpm --filter web typecheck"
+    "typecheck": "pnpm --filter web typecheck",
+    "deploy:web": "railway up || echo 'Install Railway CLI: npm install -g @railway/cli'",
+    "deploy:contract": "bash contracts/deploy.sh"
   },
   "devDependencies": {
     "@pocketlet/config": "workspace:*",

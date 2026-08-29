@@ -1,0 +1,139 @@
+name: CD
+
+on:
+  push:
+    branches: [main, staging]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      contracts: ${{ steps.filter.outputs.contracts }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Filter paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            contracts:
+              - 'contracts/**'
+              - '.github/workflows/cd.yml'
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'railway.json'
+              - 'Dockerfile'
+              - '.github/workflows/cd.yml'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+
+  deploy-contract:
+    name: Deploy Contract (Testnet)
+    needs: changes
+    if: github.ref == 'refs/heads/staging' && needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Install Stellar CLI
+        uses: stellar/stellar-cli@v27.1.0
+
+      - name: Build contract
+        run: stellar contract build
+
+      - name: Verify WASM artifact
+        run: test -f target/wasm32v1-none/release/pocketlet_escrow.wasm
+
+      - name: Setup deployer key
+        env:
+          STELLAR_DEPLOYER_SECRET: ${{ secrets.STELLAR_DEPLOYER_SECRET }}
+        run: |
+          if [ -n "$STELLAR_DEPLOYER_SECRET" ]; then
+            stellar keys add deployer --secret-key "$STELLAR_DEPLOYER_SECRET"
+            echo "Using provided STELLAR_DEPLOYER_SECRET"
+          else
+            stellar keys generate deployer
+            stellar keys fund deployer --network testnet
+            echo "Generated and funded new deployer key"
+          fi
+
+      - name: Deploy to testnet
+        id: deploy
+        run: |
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm target/wasm32v1-none/release/pocketlet_escrow.wasm \
+            --source-account deployer \
+            --network testnet)
+          echo "contract_id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
+          echo "### Contract deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Address:** \`$CONTRACT_ID\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Network:** Testnet" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocketlet-escrow-wasm
+          path: contracts/target/wasm32v1-none/release/pocketlet_escrow.wasm
+
+  deploy-web:
+    name: Deploy Web (Railway)
+    needs: changes
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify deployment config
+        run: |
+          test -f railway.json || (echo "::error::railway.json missing" && exit 1)
+          test -f Dockerfile || (echo "::error::Dockerfile missing" && exit 1)
+          echo "Deployment config verified"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Railway CLI
+        if: env.RAILWAY_TOKEN != ''
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+          RAILWAY_SERVICE_NAME: ${{ vars.RAILWAY_SERVICE_NAME }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "RAILWAY_TOKEN not set. Railway auto-deploy is already configured via railway.json + Dockerfile."
+            echo "Set RAILWAY_TOKEN if you want GitHub Actions to trigger deployment manually."
+            exit 0
+          fi
+          if [ -n "$RAILWAY_SERVICE_NAME" ]; then
+            railway up --service "$RAILWAY_SERVICE_NAME"
+          else
+            railway up
+          fi

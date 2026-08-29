@@ -37,6 +37,7 @@ jobs:
 
       - name: Verify WASM artifact
         run: test -f target/wasm32v1-none/release/pocketlet_escrow.wasm
+        # Testnet deployment is handled by .github/workflows/cd.yml on the staging branch
 
   web:
     name: Web App
@@ -74,3 +75,6 @@ jobs:
 
       - name: Build
         run: pnpm run build
+        # Production deployment to Railway is handled by .github/workflows/cd.yml on the main branch
+        # See railway.json and Dockerfile for deployment configuration
+

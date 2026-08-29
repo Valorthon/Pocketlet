@@ -149,6 +149,19 @@ See [`TESTNET.md`](./TESTNET.md) for a step-by-step guide to test the full V1 fl
 - **Swaps** — temporarily disabled in V1 while the DEX integration is rebuilt for the passkey-kit wallet.
 - **Transactions** — fetched from Horizon and classified into receive, send, and (historical) swap.
 
+## Deployment
+
+The repository includes CI/CD workflows for automated deployment:
+
+- **Frontend** — deployed to [Railway](https://railway.app/) using `railway.json` and `Dockerfile`. Railway is already configured to auto-deploy on push.
+  - The `.github/workflows/cd.yml` `deploy-web` job triggers on pushes to `main` when web-related files change.
+  - `RAILWAY_TOKEN` is **optional**. Set it as a repository secret only if you want GitHub Actions to trigger deployment manually via the Railway CLI.
+  - Optional repository variables: `RAILWAY_PROJECT_ID` and `RAILWAY_SERVICE_NAME`.
+- **Smart Contract** — the `pocketlet-escrow` Soroban contract is automatically built and deployed to Stellar Testnet by the `deploy-contract` job in `.github/workflows/cd.yml` on pushes to `staging` when contract files change.
+  - Use the local script `pnpm run deploy:contract` (or `bash contracts/deploy.sh`) to deploy manually.
+  - Set `STELLAR_DEPLOYER_SECRET` as a repository secret for deterministic testnet addresses; otherwise a fresh key is generated and funded via Friendbot.
+  - The deployed contract address is printed in the workflow summary and can be set as `NEXT_PUBLIC_ESCROW_CONTRACT_ID`.
+
 ## Scripts
 
 ```bash
@@ -158,6 +171,8 @@ pnpm run start:web          # Start the production build
 pnpm --filter web test      # Run frontend unit tests
 pnpm run lint               # Run ESLint on the web app
 pnpm run typecheck          # Run TypeScript type checking on the web app
+pnpm run deploy:web         # Deploy the web app to Railway (requires @railway/cli)
+pnpm run deploy:contract    # Build and deploy the escrow contract to testnet
 ```
 
 ## Security Notes
