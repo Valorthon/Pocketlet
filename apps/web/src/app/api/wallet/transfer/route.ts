@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { getUserByEmail, verifyPinForUser } from '@/lib/auth/store';
+import { getUserByEmail } from '@/lib/auth/store';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import {
   getInvokeContractDetails,
@@ -22,7 +22,6 @@ export interface TransferRequest {
   asset: 'USDC' | 'XLM';
   amount: string;
   recipient: string;
-  pin: string;
 }
 
 function getTokenContractId(asset: 'USDC' | 'XLM'): string {
@@ -151,7 +150,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { signedXdr, asset, amount, recipient, pin } = body;
+  const { signedXdr, asset, amount, recipient } = body;
 
   if (!signedXdr || typeof signedXdr !== 'string') {
     return NextResponse.json({ error: 'signedXdr is required' }, { status: 400 });
@@ -176,14 +175,6 @@ export async function POST(request: NextRequest) {
       { error: 'Recipient not found. Check the username, phone, or Stellar address.' },
       { status: 404 }
     );
-  }
-
-  if (!pin || typeof pin !== 'string') {
-    return NextResponse.json({ error: 'PIN is required' }, { status: 400 });
-  }
-
-  if (!(await verifyPinForUser(user.email, pin))) {
-    return NextResponse.json({ error: 'Invalid PIN' }, { status: 401 });
   }
 
   try {

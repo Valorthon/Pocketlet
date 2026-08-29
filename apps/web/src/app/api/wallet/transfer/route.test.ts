@@ -7,7 +7,6 @@ import {
   setEmailVerified,
   setCredential,
   setWallet,
-  setPin,
   setProfile,
 } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
@@ -95,7 +94,6 @@ async function createSender(email: string) {
     stellarAddress: SENDER_CONTRACT,
     primaryPasskeyKeyId: 'cred-id',
   });
-  await setPin(email, '123456');
   return createSessionToken({ email });
 }
 
@@ -134,7 +132,6 @@ describe('POST /api/wallet/transfer', () => {
       asset: 'USDC',
       amount: '1',
       recipient: RECIPIENT_ADDRESS,
-      pin: '123456',
     });
     const res = await POST(req);
     expect(res.status).toBe(401);
@@ -153,7 +150,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'USDC',
         amount: '1',
         recipient: RECIPIENT_ADDRESS,
-        pin: '123456',
+
       },
       token
     );
@@ -178,7 +175,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'XLM',
         amount: '2',
         recipient: '@bob_user',
-        pin: '123456',
+
       },
       token
     );
@@ -203,7 +200,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'USDC',
         amount: '0.5',
         recipient: '+63 912 345 6789',
-        pin: '123456',
+
       },
       token
     );
@@ -226,7 +223,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'USDC',
         amount: '1',
         recipient: '@unknown_user',
-        pin: '123456',
+
       },
       token
     );
@@ -234,29 +231,6 @@ describe('POST /api/wallet/transfer', () => {
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain('Recipient not found');
-  });
-
-  it('returns 401 for an invalid PIN', async () => {
-    const token = await createSender('alice@example.com');
-    const req = createTransferRequest(
-      {
-        signedXdr: buildTransferXdr(
-          getUsdcContractId(),
-          SENDER_CONTRACT,
-          RECIPIENT_ADDRESS,
-          '1'
-        ),
-        asset: 'USDC',
-        amount: '1',
-        recipient: RECIPIENT_ADDRESS,
-        pin: '000000',
-      },
-      token
-    );
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe('Invalid PIN');
   });
 
   it('returns 400 when the signed XDR calls the wrong token contract', async () => {
@@ -268,7 +242,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'XLM',
         amount: '1',
         recipient: RECIPIENT_ADDRESS,
-        pin: '123456',
+
       },
       token
     );
@@ -291,7 +265,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'USDC',
         amount: '1',
         recipient: RECIPIENT_ADDRESS,
-        pin: '123456',
+
       },
       token
     );
@@ -314,7 +288,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'USDC',
         amount: '1',
         recipient: RECIPIENT_ADDRESS,
-        pin: '123456',
+
       },
       token
     );
@@ -331,7 +305,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'USDC',
         amount: '1',
         recipient: RECIPIENT_ADDRESS,
-        pin: '123456',
+
       },
       token
     );
@@ -354,7 +328,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'BTC',
         amount: '1',
         recipient: RECIPIENT_ADDRESS,
-        pin: '123456',
+
       },
       token
     );
@@ -377,7 +351,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'USDC',
         amount: 'not-a-number',
         recipient: RECIPIENT_ADDRESS,
-        pin: '123456',
+
       },
       token
     );
@@ -400,7 +374,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'USDC',
         amount: '1.12345678',
         recipient: RECIPIENT_ADDRESS,
-        pin: '123456',
+
       },
       token
     );
@@ -422,7 +396,7 @@ describe('POST /api/wallet/transfer', () => {
         ),
         asset: 'USDC',
         amount: '1',
-        pin: '123456',
+
       },
       token
     );
@@ -446,7 +420,7 @@ describe('POST /api/wallet/transfer', () => {
         asset: 'USDC',
         amount: '5',
         recipient: RECIPIENT_ADDRESS,
-        pin: '123456',
+
       },
       token
     );

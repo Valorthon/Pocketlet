@@ -2,6 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Keypair } from '@stellar/stellar-sdk';
+import {
+  generateDeviceKeypair,
+  encryptDeviceKey,
+  saveDeviceKey,
+} from '@/lib/wallet/device-key';
 
 export default function PinSetupPage() {
   const router = useRouter();
@@ -10,6 +16,7 @@ export default function PinSetupPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasPin, setHasPin] = useState<boolean | null>(null);
+  const [email, setEmail] = useState<string>('');
 
   useEffect(() => {
     fetch('/api/auth/pin')
@@ -20,15 +27,18 @@ export default function PinSetupPage() {
         }
         return res.json();
       })
-      .then((data: { hasPin?: boolean } | null) => {
+      .then((data: { hasPin?: boolean; email?: string } | null) => {
         if (data?.hasPin) {
           router.push('/home');
         } else {
           setHasPin(false);
+          if (data?.email) {
+            setEmail(data.email);
+          }
         }
       })
       .catch(() => setHasPin(false));
-  }, []);
+  }, [router]);
 
   const submit = async () => {
     setError(null);
@@ -43,6 +53,7 @@ export default function PinSetupPage() {
 
     setLoading(true);
     try {
+      // 1. Save PIN on server
       const res = await fetch('/api/auth/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -53,7 +64,48 @@ export default function PinSetupPage() {
         setError(data.error ?? 'Failed to set PIN');
         return;
       }
-      router.push('/home');
+
+      // 2. Generate and encrypt device key locally
+      const { publicKey, secret } = await generateDeviceKeypair();
+      const encrypted = await encryptDeviceKey(secret, pin, email);
+      await saveDeviceKey(encrypted);
+
+      // 3. Register device on server via challenge-response
+      const challengeRes = await fetch('/api/auth/challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const challengeData = (await challengeRes.json()) as {
+        error?: string;
+        challenge?: string;
+      };
+      if (!challengeRes.ok) {
+        setError(challengeData.error ?? 'Failed to get challenge');
+        return;
+      }
+
+      const kp = Keypair.fromSecret(secret);
+      const signature = kp
+        .sign(Buffer.from(challengeData.challenge!, 'base64'))
+        .toString('base64');
+
+      const registerRes = await fetch('/api/auth/register-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          publicKey,
+          challenge: challengeData.challenge,
+          signature,
+        }),
+      });
+      const registerData = (await registerRes.json()) as { error?: string };
+      if (!registerRes.ok) {
+        setError(registerData.error ?? 'Failed to register device');
+        return;
+      }
+
+      router.push('/recovery/setup');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to set PIN');
     } finally {
@@ -76,9 +128,13 @@ export default function PinSetupPage() {
     <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
       <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
         <h1 className="mb-2 text-2xl font-bold text-slate-900">Create your PIN</h1>
-        <p className="mb-6 text-sm text-slate-500">Choose a 6-digit PIN to confirm payments.</p>
+        <p className="mb-6 text-sm text-slate-500">
+          Choose a 6-digit PIN to unlock this device and confirm payments.
+        </p>
 
-        {error && <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
+        {error && (
+          <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>
+        )}
 
         <div className="space-y-4">
           <div>
@@ -118,7 +174,7 @@ export default function PinSetupPage() {
             disabled={loading || pin.length !== 6 || confirmPin.length !== 6}
             className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
           >
-            {loading ? 'Saving...' : 'Set PIN'}
+            {loading ? 'Saving…' : 'Set PIN'}
           </button>
         </div>
       </div>

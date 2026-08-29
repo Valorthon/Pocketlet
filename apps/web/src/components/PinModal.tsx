@@ -29,16 +29,6 @@ export default function PinModal({
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/pin/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin }),
-      });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setError(data.error ?? 'PIN verification failed');
-        return;
-      }
       onConfirm(pin);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'PIN verification failed');

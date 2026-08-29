@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { getUserByEmail } from '@/lib/auth/store';
+import { getUserByEmail, createDevice } from '@/lib/auth/store';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import {
   getInvokeContractDetails,
@@ -12,18 +12,18 @@ import {
 } from '@/lib/wallet/submit';
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
 
-const MAX_EXPIRATION_SECONDS = 24 * 60 * 60;
+const MAX_EXPIRATION_SECONDS = 90 * 24 * 60 * 60;
 const MS_THRESHOLD = 10_000_000_000; // above this treat as milliseconds
 
-export interface SessionKeySubmitRequest {
+export interface DeviceKeySubmitRequest {
   signedXdr: string;
   publicKey: string;
 }
 
-class SessionKeyValidationError extends Error {
+class DeviceKeyValidationError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'SessionKeyValidationError';
+    this.name = 'DeviceKeyValidationError';
   }
 }
 
@@ -58,17 +58,14 @@ function parseSignerArg(scVal: xdr.ScVal): {
   }
   const expirationInner = expirationVec[0];
   const expiration =
-    expirationInner.switch().name === 'scvVoid'
-      ? null
-      : Number(expirationInner.u64());
+    expirationInner.switch().name === 'scvVoid' ? null : Number(expirationInner.u64());
 
   const limitsVec = vec[3].vec();
   if (!limitsVec || limitsVec.length !== 1) {
     return null;
   }
   const limitsInner = limitsVec[0];
-  const limits =
-    limitsInner.switch().name === 'scvVoid' ? null : limitsInner;
+  const limits = limitsInner.switch().name === 'scvVoid' ? null : limitsInner;
 
   const storeVec = vec[4].vec();
   if (!storeVec || storeVec.length !== 1) {
@@ -102,7 +99,6 @@ function validateContractIdInLimits(limits: xdr.ScVal): boolean {
     if (!allowed.has(contractId)) {
       return false;
     }
-    // Value must be Void (unrestricted on this contract)
     const val = entry.val();
     if (val.switch().name !== 'scvVoid') {
       return false;
@@ -120,53 +116,52 @@ function validateAddSignerXdr(
   const envelope = TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
 
   if (envelope.operations.length !== 1) {
-    throw new SessionKeyValidationError('Transaction must contain exactly one operation');
+    throw new DeviceKeyValidationError('Transaction must contain exactly one operation');
   }
 
   const op = envelope.operations[0];
   if (!op) {
-    throw new SessionKeyValidationError('Transaction contains no operations');
+    throw new DeviceKeyValidationError('Transaction contains no operations');
   }
 
   const details = getInvokeContractDetails(op);
   if (!details) {
-    throw new SessionKeyValidationError('Transaction does not invoke a contract');
+    throw new DeviceKeyValidationError('Transaction does not invoke a contract');
   }
 
   if (details.contractId !== walletContractId) {
-    throw new SessionKeyValidationError('Transaction invokes the wrong contract');
+    throw new DeviceKeyValidationError('Transaction invokes the wrong contract');
   }
 
   if (details.functionName !== 'add_signer') {
-    throw new SessionKeyValidationError('Transaction must call add_signer');
+    throw new DeviceKeyValidationError('Transaction must call add_signer');
   }
 
   const args = getInvokeContractArgs(op);
   if (!args || args.length !== 1) {
-    throw new SessionKeyValidationError('add_signer arguments are malformed');
+    throw new DeviceKeyValidationError('add_signer arguments are malformed');
   }
 
   const parsed = parseSignerArg(args[0]);
   if (!parsed) {
-    throw new SessionKeyValidationError('Could not parse signer argument');
+    throw new DeviceKeyValidationError('Could not parse signer argument');
   }
 
   const expectedRawPk = Buffer.from(Keypair.fromPublicKey(expectedPublicKey).rawPublicKey());
   if (!parsed.rawPublicKey.equals(expectedRawPk)) {
-    throw new SessionKeyValidationError('Signer public key does not match expected value');
+    throw new DeviceKeyValidationError('Signer public key does not match expected value');
   }
 
   if (parsed.store !== 'Temporary') {
-    throw new SessionKeyValidationError('Session signer must use Temporary storage');
+    throw new DeviceKeyValidationError('Device signer must use Temporary storage');
   }
 
   if (parsed.expiration === null) {
-    throw new SessionKeyValidationError('Session signer must have an expiration');
+    throw new DeviceKeyValidationError('Device signer must have an expiration');
   }
 
   const expNum = Number(parsed.expiration);
-  const nowMs = Date.now();
-  const nowSeconds = Math.floor(nowMs / 1000);
+  const nowSeconds = Math.floor(Date.now() / 1000);
 
   let expirationSeconds: number;
   if (expNum > MS_THRESHOLD) {
@@ -176,15 +171,15 @@ function validateAddSignerXdr(
   }
 
   if (expirationSeconds > nowSeconds + MAX_EXPIRATION_SECONDS + 300) {
-    throw new SessionKeyValidationError('Expiration exceeds maximum allowed duration');
+    throw new DeviceKeyValidationError('Expiration exceeds maximum allowed duration');
   }
 
   if (parsed.limits === null) {
-    throw new SessionKeyValidationError('Session signer must have contract limits');
+    throw new DeviceKeyValidationError('Device signer must have contract limits');
   }
 
   if (!validateContractIdInLimits(parsed.limits)) {
-    throw new SessionKeyValidationError('Signer limits contain disallowed contracts');
+    throw new DeviceKeyValidationError('Signer limits contain disallowed contracts');
   }
 }
 
@@ -205,9 +200,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
   }
 
-  let body: SessionKeySubmitRequest;
+  let body: DeviceKeySubmitRequest;
   try {
-    body = (await request.json()) as SessionKeySubmitRequest;
+    body = (await request.json()) as DeviceKeySubmitRequest;
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
@@ -225,11 +220,15 @@ export async function POST(request: NextRequest) {
   try {
     validateAddSignerXdr(signedXdr, user.walletContractId, publicKey);
     const result = await submitSignedTransaction(signedXdr);
+
+    // Record the device on the server so it can be used for PIN-only login.
+    await createDevice(user.email, publicKey);
+
     return NextResponse.json({ hash: result.hash });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Session key authorization failed';
-    console.error('Session key submit failed:', err);
-    const status = err instanceof SessionKeyValidationError ? 400 : 500;
+    const message = err instanceof Error ? err.message : 'Device key authorization failed';
+    console.error('Device key submit failed:', err);
+    const status = err instanceof DeviceKeyValidationError ? 400 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

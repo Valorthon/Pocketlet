@@ -26,13 +26,6 @@ export async function POST(): Promise<NextResponse> {
     return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
   }
 
-  if (!user.recoveryPublicKey) {
-    return NextResponse.json(
-      { error: 'Recovery signer has not been registered' },
-      { status: 400 }
-    );
-  }
-
   await markRecoveryPhraseConfirmed(user.email);
   return NextResponse.json({ confirmed: true });
 }

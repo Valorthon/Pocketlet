@@ -2,22 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Wallet } from 'lucide-react';
-import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
-import {
-  generateRecoveryPhrase,
-  getRecoveryPublicKey,
-  splitRecoveryPhrase,
-} from '@/lib/wallet/recovery';
+import { Wallet, Loader2 } from 'lucide-react';
+import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
 import {
   checkPasskeySupport,
   formatPasskeyKitError,
   logPasskeyKitError,
 } from '@/lib/auth/passkey-errors';
-
-const ONBOARDING_PHRASE_KEY = 'pocketlet:onboarding:recoveryPhrase';
-const ONBOARDING_KEY_ID_KEY = 'pocketlet:onboarding:keyIdBase64';
-const ONBOARDING_CONTRACT_ID_KEY = 'pocketlet:onboarding:contractId';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -26,11 +17,7 @@ export default function SignupPage() {
   const [step, setStep] = useState<'email' | 'code' | 'passkey'>('email');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [deployResult, setDeployResult] = useState<{
-    contractId: string;
-    keyIdBase64: string;
-  } | null>(null);
-  const [recoveryPhrase, setRecoveryPhrase] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const requestCode = async () => {
     setLoading(true);
@@ -46,7 +33,6 @@ export default function SignupPage() {
         setError(data.error ?? 'Failed to send code');
         return;
       }
-      // Testnet only: the server returns the code for display.
       setCode(data.code ?? '');
       setStep('code');
     } finally {
@@ -77,11 +63,13 @@ export default function SignupPage() {
   const registerPasskeyAndDeploy = async () => {
     setLoading(true);
     setError(null);
+    setCreating(true);
 
     try {
       const supportError = checkPasskeySupport();
       if (supportError) {
         setError(supportError);
+        setCreating(false);
         return;
       }
 
@@ -92,10 +80,6 @@ export default function SignupPage() {
           userVerification: 'required',
         },
       });
-
-      // Generate the recovery phrase client-side. The phrase itself never
-      // leaves the browser; only its derived public key is sent to the server.
-      const phrase = generateRecoveryPhrase();
 
       const deployRes = await fetch('/api/wallet/deploy', {
         method: 'POST',
@@ -115,78 +99,15 @@ export default function SignupPage() {
       };
       if (!deployRes.ok) {
         setError(deployData.error ?? 'Wallet deployment failed');
+        setCreating(false);
         return;
       }
 
-      setDeployResult({
-        contractId: result.contractId,
-        keyIdBase64: result.keyIdBase64,
-      });
-      setRecoveryPhrase(phrase);
-
-      await registerRecoverySigner(kit, phrase, result.keyIdBase64, result.contractId);
+      router.push('/pin/setup');
     } catch (err) {
       logPasskeyKitError(err);
       setError(formatPasskeyKitError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const registerRecoverySigner = async (
-    kit: ReturnType<typeof createPasskeyKit>,
-    phrase: string,
-    keyIdBase64: string,
-    contractId: string
-  ) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const recoveryPublicKey = getRecoveryPublicKey(phrase);
-
-      // Connect the newly deployed wallet so we can administer signers.
-      await kit.connectWallet({ keyId: keyIdBase64 });
-
-      // Register the recovery Ed25519 signer immediately after deploy.
-      const addSignerTx = await kit.addEd25519(
-        recoveryPublicKey,
-        undefined,
-        SignerStore.Persistent
-      );
-      await kit.sign(addSignerTx);
-      const signedXdr = addSignerTx.toXDR();
-
-      const submitRes = await fetch('/api/wallet/recovery-signer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signedXdr, recoveryPublicKey }),
-      });
-
-      const submitData = (await submitRes.json()) as { error?: string; hash?: string };
-      if (!submitRes.ok) {
-        setError(submitData.error ?? 'Failed to register recovery signer');
-        return;
-      }
-
-      // Stash onboarding state in sessionStorage so the recovery-phrase page
-      // can display the phrase once without persisting it on the server.
-      window.sessionStorage.setItem(ONBOARDING_PHRASE_KEY, phrase);
-      window.sessionStorage.setItem(ONBOARDING_KEY_ID_KEY, keyIdBase64);
-      window.sessionStorage.setItem(ONBOARDING_CONTRACT_ID_KEY, contractId);
-
-      // Basic check that the stored phrase is retrievable before navigating.
-      const stored = window.sessionStorage.getItem(ONBOARDING_PHRASE_KEY);
-      const storedWords = stored ? splitRecoveryPhrase(stored) : [];
-      if (storedWords.length !== 12) {
-        setError('Failed to save recovery phrase. Please try again.');
-        return;
-      }
-
-      router.push('/recovery-phrase');
-    } catch (err) {
-      logPasskeyKitError(err);
-      setError(formatPasskeyKitError(err));
+      setCreating(false);
     } finally {
       setLoading(false);
     }
@@ -236,7 +157,7 @@ export default function SignupPage() {
               disabled={loading}
               className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
-              {loading ? 'Sending...' : 'Send verification code'}
+              {loading ? 'Sending…' : 'Send verification code'}
             </button>
           </form>
         )}
@@ -266,42 +187,36 @@ export default function SignupPage() {
               disabled={loading}
               className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
             >
-              {loading ? 'Verifying...' : 'Verify email'}
+              {loading ? 'Verifying…' : 'Verify email'}
             </button>
           </div>
         )}
 
         {step === 'passkey' && (
           <div className="space-y-4">
-            <p className="text-sm text-slate-600">
-              Your email is verified. Register a passkey to create and secure your wallet.
-            </p>
-            {!deployResult ? (
-              <button
-                onClick={registerPasskeyAndDeploy}
-                disabled={loading}
-                className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-              >
-                {loading ? 'Registering...' : 'Register passkey and create wallet'}
-              </button>
+            {!creating ? (
+              <>
+                <p className="text-sm text-slate-600">
+                  Your email is verified. Register a passkey to create your wallet.
+                </p>
+                <button
+                  onClick={registerPasskeyAndDeploy}
+                  disabled={loading}
+                  className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+                >
+                  {loading ? 'Creating…' : 'Create passkey and wallet'}
+                </button>
+              </>
             ) : (
-              <button
-                onClick={() => {
-                  const kit = createPasskeyKit();
-                  if (recoveryPhrase) {
-                    registerRecoverySigner(
-                      kit,
-                      recoveryPhrase,
-                      deployResult.keyIdBase64,
-                      deployResult.contractId
-                    );
-                  }
-                }}
-                disabled={loading || !recoveryPhrase}
-                className="w-full rounded-xl bg-pocketlet-600 py-3 text-sm font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
-              >
-                {loading ? 'Retrying...' : 'Retry adding recovery signer'}
-              </button>
+              <div className="flex flex-col items-center gap-3 py-4">
+                <Loader2 className="h-6 w-6 animate-spin text-pocketlet-600" />
+                <div className="text-center">
+                  <p className="text-sm font-bold text-slate-900">Creating your passkey</p>
+                  <p className="text-xs text-slate-500">
+                    You may be prompted to use your device biometric or security key.
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         )}
