@@ -18,7 +18,7 @@ import {
   hasUsableDeviceKey,
   getDeviceSigner,
 } from '@/lib/wallet/device-key';
-import { prepareEscrowDepositTx } from '@/lib/wallet/escrow';
+import { prepareEscrowDepositTx } from '@/lib/contracts/escrow';
 import { generateSecretAndHash, hashRecipientId } from '@/lib/wallet/claim-link-client';
 import { RPC_URL } from '@/lib/wallet/network';
 

@@ -1,6 +1,6 @@
 import { Address, xdr, nativeToScVal } from '@stellar/stellar-sdk';
 import { AssembledTransaction } from '@stellar/stellar-sdk/contract';
-import { NETWORK_PASSPHRASE, RPC_URL } from './network';
+import { NETWORK_PASSPHRASE, RPC_URL } from '@/lib/wallet/network';
 
 function getEscrowContractId(): string {
   const id = process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID;

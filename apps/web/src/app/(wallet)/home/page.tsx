@@ -11,7 +11,7 @@ import PinModal from '@/components/PinModal';
 import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
 import { getUsdcContractId } from '@/lib/wallet/assets';
 import { hasUsableDeviceKey, getDeviceSigner } from '@/lib/wallet/device-key';
-import { prepareEscrowClaimTx } from '@/lib/wallet/escrow';
+import { prepareEscrowClaimTx } from '@/lib/contracts/escrow';
 
 interface BalanceData {
   xlm: string;
