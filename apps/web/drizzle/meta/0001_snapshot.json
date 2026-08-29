@@ -1,0 +1,475 @@
+{
+  "id": "11ef5d03-d0b5-40c3-9567-acc626c891a7",
+  "prevId": "ed951479-b092-43c0-95e1-9370b238b1ca",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.claim_links": {
+      "name": "claim_links",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sender_email": {
+          "name": "sender_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient_phone": {
+          "name": "recipient_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipient_email": {
+          "name": "recipient_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_contract_id": {
+          "name": "token_contract_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_hash": {
+          "name": "claim_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret_ciphertext": {
+          "name": "secret_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expiry": {
+          "name": "expiry",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "tx_hash": {
+          "name": "tx_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "claim_links_claim_hash_unique": {
+          "name": "claim_links_claim_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "claim_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.metrics": {
+      "name": "metrics",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'total'"
+        },
+        "value": {
+          "name": "value",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "metrics_key_period_pk": {
+          "name": "metrics_key_period_pk",
+          "columns": [
+            "key",
+            "period"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.notifications": {
+      "name": "notifications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "claim_link_id": {
+          "name": "claim_link_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient": {
+          "name": "recipient",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user_devices": {
+      "name": "user_devices",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device_public_key": {
+          "name": "device_public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device_name": {
+          "name": "device_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_devices_device_public_key_unique": {
+          "name": "user_devices_device_public_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "device_public_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "verification_code": {
+          "name": "verification_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pending_challenge": {
+          "name": "pending_challenge",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credential": {
+          "name": "credential",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wallet_contract_id": {
+          "name": "wallet_contract_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stellar_address": {
+          "name": "stellar_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "primary_passkey_key_id": {
+          "name": "primary_passkey_key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recovery_public_key": {
+          "name": "recovery_public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recovery_phrase_confirmed": {
+          "name": "recovery_phrase_confirmed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "has_backup_passkey": {
+          "name": "has_backup_passkey",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "backup_credential": {
+          "name": "backup_credential",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pin_hash": {
+          "name": "pin_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pin_reset_code": {
+          "name": "pin_reset_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recovery_initiated_at": {
+          "name": "recovery_initiated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recovery_initiation_history": {
+          "name": "recovery_initiation_history",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recovery_code": {
+          "name": "recovery_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recovery_code_expires_at": {
+          "name": "recovery_code_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recovery_verified_at": {
+          "name": "recovery_verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recovery_attempts": {
+          "name": "recovery_attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recovery_locked_until": {
+          "name": "recovery_locked_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_username_unique": {
+          "name": "users_username_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "username"
+          ]
+        },
+        "users_phone_unique": {
+          "name": "users_phone_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "phone"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

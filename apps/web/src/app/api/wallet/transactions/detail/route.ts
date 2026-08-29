@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   try {
     const tx = await server.transactions().transaction(hash).call();
     const ops = await server.operations().forTransaction(hash).call();
-    const details = buildTransactionDetails(tx, ops.records, user.walletContractId, getUsdcContractId());
+    const details = buildTransactionDetails(tx, ops.records, user.walletContractId, getUsdcContractId(), process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID);
     return NextResponse.json(details);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load transaction details';

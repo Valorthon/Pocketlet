@@ -56,6 +56,14 @@ function validateProductionConfig() {
         'localhost is not allowed because passkeys are origin-bound.'
     );
   }
+
+  const claimSecretKey = process.env.CLAIM_SECRET_ENCRYPTION_KEY?.trim();
+  if (!claimSecretKey) {
+    throw new Error(
+      'CLAIM_SECRET_ENCRYPTION_KEY is required in production. ' +
+        'Generate a strong 32-byte hex secret and store it in a secrets manager.'
+    );
+  }
 }
 
 validateProductionConfig();

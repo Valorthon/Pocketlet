@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { verifySessionToken } from '@/lib/auth/session';
 import { resolveRecipient } from '@/lib/wallet/recipient';
-import { validateRecipientFormat } from '@/lib/wallet/recipient-format';
+import { validateRecipientFormat, isValidPhoneFormat, isValidEmailFormat } from '@/lib/wallet/recipient-format';
 
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies();
@@ -35,12 +35,23 @@ export async function POST(request: NextRequest) {
   }
 
   const resolved = await resolveRecipient(recipient);
-  if (!resolved) {
+  if (resolved) {
+    return NextResponse.json(resolved);
+  }
+
+  // Recipient not found in the database — if it's a phone or email, offer a claim link
+  const isPhone = isValidPhoneFormat(recipient);
+  const isEmail = isValidEmailFormat(recipient);
+
+  if (isPhone || isEmail) {
     return NextResponse.json(
-      { error: 'Recipient not found. Check the username, phone, or Stellar address.' },
+      { found: false, unregistered: true, identifier: recipient, type: isPhone ? 'phone' : 'email' },
       { status: 404 }
     );
   }
 
-  return NextResponse.json(resolved);
+  return NextResponse.json(
+    { error: 'Recipient not found. Check the username, phone, or Stellar address.' },
+    { status: 404 }
+  );
 }

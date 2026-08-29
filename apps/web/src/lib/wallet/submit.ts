@@ -9,6 +9,7 @@ import {
   type OperationRecord,
   rpc,
   xdr,
+  scValToNative,
 } from '@stellar/stellar-sdk';
 import { NETWORK_PASSPHRASE, RPC_URL } from './network';
 import { fundAccount, getFeePayerKeypair } from './fee-payer';
@@ -235,6 +236,13 @@ export function scValToAddress(scVal: xdr.ScVal): string {
  */
 export function scValToBytes(scVal: xdr.ScVal): Buffer {
   return Buffer.from(scVal.bytes());
+}
+
+/**
+ * Read a U64 ScVal as a bigint.
+ */
+export function scValToU64(scVal: xdr.ScVal): bigint {
+  return scValToNative(scVal) as bigint;
 }
 
 function getAddressCredentials(

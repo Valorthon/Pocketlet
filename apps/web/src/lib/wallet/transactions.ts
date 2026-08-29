@@ -5,7 +5,13 @@ export const HORIZON_EXPLORER_URL = isProductionNetwork()
   ? 'https://stellar.expert/explorer/public/tx'
   : 'https://stellar.expert/explorer/testnet/tx';
 
-export type TransactionType = 'receive' | 'send' | 'unknown';
+export type TransactionType =
+  | 'receive'
+  | 'send'
+  | 'claim_link_send'
+  | 'claim_link_receive'
+  | 'claim_link_refund'
+  | 'unknown';
 
 export interface WalletTransaction {
   id: string;
@@ -149,7 +155,8 @@ function describeAssetFromBalanceChange(
 function parseInvokeHostFunctionOperation(
   op: Horizon.ServerApi.InvokeHostFunctionOperationRecord,
   walletAddress: string,
-  ledger: number
+  ledger: number,
+  escrowContractId?: string
 ): WalletTransaction | null {
   // Horizon reports the host function type at the operation level; the actual
   // contract function name and arguments are encoded as XDR ScVals in the
@@ -159,48 +166,115 @@ function parseInvokeHostFunctionOperation(
   }
 
   const functionName = parseScValSymbol(op.parameters[1]?.value ?? '');
-  if (functionName !== 'transfer') {
-    return null;
+  const contractId = parseScValAddress(op.parameters[0]?.value ?? '');
+
+  // --- SAC transfer (existing logic) ---
+  if (functionName === 'transfer') {
+    const fromAddress = parseScValAddress(op.parameters[2]?.value ?? '');
+    const toAddress = parseScValAddress(op.parameters[3]?.value ?? '');
+    if (!fromAddress || !toAddress) {
+      return null;
+    }
+
+    const isReceive = toAddress === walletAddress;
+    const isSend = fromAddress === walletAddress;
+    if (!isReceive && !isSend) {
+      return null;
+    }
+
+    const change = op.asset_balance_changes.find(
+      (c) => c.from === fromAddress && c.to === toAddress
+    );
+
+    return {
+      id: op.transaction_hash,
+      hash: op.transaction_hash,
+      type: isReceive ? 'receive' : 'send',
+      status: op.transaction_successful ? 'success' : 'failed',
+      createdAt: op.created_at,
+      ledger,
+      fee: '0',
+      asset: change ? describeAssetFromBalanceChange(change) : XLM_ASSET,
+      amount: change ? formatBalanceChangeAmount(change.amount) : '0',
+      recipient: isReceive ? undefined : toAddress,
+      sender: isReceive ? fromAddress : undefined,
+    };
   }
 
-  const fromAddress = parseScValAddress(op.parameters[2]?.value ?? '');
-  const toAddress = parseScValAddress(op.parameters[3]?.value ?? '');
-  if (!fromAddress || !toAddress) {
-    return null;
+  // --- Escrow operations ---
+  if (escrowContractId && contractId === escrowContractId) {
+    if (functionName === 'deposit') {
+      const sender = parseScValAddress(op.parameters[2]?.value ?? '');
+      if (sender === walletAddress) {
+        const change = op.asset_balance_changes.find(
+          (c) => c.from === walletAddress && c.to === escrowContractId
+        );
+        return {
+          id: op.transaction_hash,
+          hash: op.transaction_hash,
+          type: 'claim_link_send',
+          status: op.transaction_successful ? 'success' : 'failed',
+          createdAt: op.created_at,
+          ledger,
+          fee: '0',
+          asset: change ? describeAssetFromBalanceChange(change) : USDC_ASSET,
+          amount: change ? formatBalanceChangeAmount(change.amount) : '0',
+          recipient: escrowContractId,
+        };
+      }
+    }
+
+    if (functionName === 'claim') {
+      const recipientWallet = parseScValAddress(op.parameters[2]?.value ?? '');
+      if (recipientWallet === walletAddress) {
+        const change = op.asset_balance_changes.find(
+          (c) => c.from === escrowContractId && c.to === walletAddress
+        );
+        return {
+          id: op.transaction_hash,
+          hash: op.transaction_hash,
+          type: 'claim_link_receive',
+          status: op.transaction_successful ? 'success' : 'failed',
+          createdAt: op.created_at,
+          ledger,
+          fee: '0',
+          asset: change ? describeAssetFromBalanceChange(change) : USDC_ASSET,
+          amount: change ? formatBalanceChangeAmount(change.amount) : '0',
+          sender: escrowContractId,
+        };
+      }
+    }
+
+    if (functionName === 'refund') {
+      const change = op.asset_balance_changes.find(
+        (c) => c.from === escrowContractId && c.to === walletAddress
+      );
+      if (change) {
+        return {
+          id: op.transaction_hash,
+          hash: op.transaction_hash,
+          type: 'claim_link_refund',
+          status: op.transaction_successful ? 'success' : 'failed',
+          createdAt: op.created_at,
+          ledger,
+          fee: '0',
+          asset: describeAssetFromBalanceChange(change),
+          amount: formatBalanceChangeAmount(change.amount),
+          sender: escrowContractId,
+        };
+      }
+    }
   }
 
-  const isReceive = toAddress === walletAddress;
-  const isSend = fromAddress === walletAddress;
-  if (!isReceive && !isSend) {
-    return null;
-  }
-
-  // Horizon reports SAC balance changes as classic asset entries. Find the
-  // matching change to determine the real asset and amount.
-  const change = op.asset_balance_changes.find(
-    (c) => c.from === fromAddress && c.to === toAddress
-  );
-
-  return {
-    id: op.transaction_hash,
-    hash: op.transaction_hash,
-    type: isReceive ? 'receive' : 'send',
-    status: op.transaction_successful ? 'success' : 'failed',
-    createdAt: op.created_at,
-    ledger,
-    fee: '0',
-    asset: change ? describeAssetFromBalanceChange(change) : XLM_ASSET,
-    amount: change ? formatBalanceChangeAmount(change.amount) : '0',
-    recipient: isReceive ? undefined : toAddress,
-    sender: isReceive ? fromAddress : undefined,
-  };
+  return null;
 }
 
 export function classifyOperation(
   op: Horizon.ServerApi.OperationRecord,
   walletAddress: string,
   usdcContractId: string,
-  ledger: number
+  ledger: number,
+  escrowContractId?: string
 ): WalletTransaction | null {
   switch (op.type) {
     case 'payment':
@@ -220,7 +294,8 @@ export function classifyOperation(
       return parseInvokeHostFunctionOperation(
         op as Horizon.ServerApi.InvokeHostFunctionOperationRecord,
         walletAddress,
-        ledger
+        ledger,
+        escrowContractId
       );
     default:
       return null;
@@ -231,7 +306,8 @@ export function buildTransactionDetails(
   tx: Horizon.ServerApi.TransactionRecord,
   ops: Horizon.ServerApi.OperationRecord[],
   walletAddress: string,
-  usdcContractId: string
+  usdcContractId: string,
+  escrowContractId?: string
 ): TransactionDetails {
   const status = tx.successful ? 'success' : 'failed';
   const fee = String(tx.fee_charged);
@@ -239,7 +315,7 @@ export function buildTransactionDetails(
 
   let primary: WalletTransaction | null = null;
   for (const op of ops) {
-    const parsed = classifyOperation(op, walletAddress, usdcContractId, tx.ledger_attr);
+    const parsed = classifyOperation(op, walletAddress, usdcContractId, tx.ledger_attr, escrowContractId);
     if (parsed) {
       primary = parsed;
       break;
@@ -276,6 +352,12 @@ export function formatTransactionType(type: TransactionType): string {
       return 'Received';
     case 'send':
       return 'Sent';
+    case 'claim_link_send':
+      return 'Sent claim link';
+    case 'claim_link_receive':
+      return 'Claimed from link';
+    case 'claim_link_refund':
+      return 'Refunded link';
     default:
       return 'Transaction';
   }
@@ -287,6 +369,12 @@ export function formatTransactionDescription(tx: WalletTransaction): string {
       return `Received ${tx.amount} ${tx.asset}`;
     case 'send':
       return `Sent ${tx.amount} ${tx.asset}`;
+    case 'claim_link_send':
+      return `Sent ${tx.amount} ${tx.asset} claim link`;
+    case 'claim_link_receive':
+      return `Claimed ${tx.amount} ${tx.asset} from link`;
+    case 'claim_link_refund':
+      return `Refunded ${tx.amount} ${tx.asset} from link`;
     default:
       return 'Unknown transaction';
   }

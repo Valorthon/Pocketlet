@@ -41,6 +41,7 @@ export async function GET() {
       .call();
 
     const usdcContractId = getUsdcContractId();
+    const escrowContractId = process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID;
     const details: TransactionDetails[] = [];
     for (const tx of txPage.records) {
       const ops = await server.operations().forTransaction(tx.hash).call();
@@ -48,7 +49,8 @@ export async function GET() {
         tx,
         ops.records,
         user.walletContractId,
-        usdcContractId
+        usdcContractId,
+        escrowContractId
       );
       if (parsed.type !== 'unknown') {
         details.push(parsed);

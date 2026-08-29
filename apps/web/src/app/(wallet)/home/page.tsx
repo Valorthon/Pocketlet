@@ -3,10 +3,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowDownLeft, Send, Loader2, X, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { ArrowDownLeft, Send, Loader2, X, ShieldAlert, ShieldCheck, Gift } from 'lucide-react';
 import { CurrencyDisplay } from '@/components/ui/CurrencyDisplay';
 import { TransactionListItem } from '@/components/ui/TransactionListItem';
 import { WalletTransaction } from '@/lib/wallet/transactions';
+import PinModal from '@/components/PinModal';
+import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
+import { getUsdcContractId } from '@/lib/wallet/assets';
+import { hasUsableDeviceKey, getDeviceSigner } from '@/lib/wallet/device-key';
+import { prepareEscrowClaimTx } from '@/lib/wallet/escrow';
 
 interface BalanceData {
   xlm: string;
@@ -18,6 +23,15 @@ interface BalanceData {
 interface UserStatus {
   recoveryPublicKey: string | null;
   recoveryPhraseConfirmed: boolean;
+}
+
+interface PendingClaim {
+  id: string;
+  senderEmail: string;
+  tokenContractId: string;
+  amount: string;
+  expiry: string;
+  createdAt: string;
 }
 
 const BANNER_DISMISS_KEY = 'pocketlet:setupBannerDismissedAt';
@@ -167,6 +181,10 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [hideBalance, setHideBalance] = useState(false);
   const [recent, setRecent] = useState<WalletTransaction[]>([]);
+  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]);
+  const [claimLoading, setClaimLoading] = useState<string | null>(null);
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
 
   const fetchBalance = async () => {
     const res = await fetch('/api/wallet/balance');
@@ -200,9 +218,21 @@ export default function HomePage() {
     }
   };
 
+  const fetchPendingClaims = async () => {
+    try {
+      const res = await fetch('/api/wallet/claim-links/pending');
+      if (!res.ok) return;
+      const body = (await res.json()) as { claims: PendingClaim[] };
+      setPendingClaims(body.claims);
+    } catch {
+      setPendingClaims([]);
+    }
+  };
+
   useEffect(() => {
     fetchBalance();
     fetchRecent();
+    fetchPendingClaims();
     const id = setInterval(() => fetchBalance(), 15000);
     return () => clearInterval(id);
   }, []);
@@ -234,6 +264,81 @@ export default function HomePage() {
 
   const usdcNumber = Number(data.usdc) / 10_000_000;
   const xlmNumber = Number(data.xlm) / 10_000_000;
+
+  const startClaim = (claimId: string) => {
+    setActiveClaimId(claimId);
+    setPinModalOpen(true);
+  };
+
+  const executeClaim = async (pin: string) => {
+    setPinModalOpen(false);
+    if (!activeClaimId || !data) return;
+    setClaimLoading(activeClaimId);
+
+    try {
+      const res = await fetch('/api/wallet/claim-links/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ claimLinkId: activeClaimId }),
+      });
+
+      const body = (await res.json()) as { error?: string; secret?: string; claimHash?: string; amount?: string; tokenContractId?: string };
+      if (!res.ok || !body.secret) {
+        alert(body.error ?? 'Failed to retrieve claim secret');
+        setClaimLoading(null);
+        return;
+      }
+
+      if (!(await hasUsableDeviceKey())) {
+        alert('Device key expired. Please log in again.');
+        setClaimLoading(null);
+        return;
+      }
+
+      const kit = createPasskeyKit();
+      const infoRes = await fetch('/api/wallet/session-key/info');
+      const info = (await infoRes.json()) as { primaryPasskeyKeyId: string };
+      await kit.connectWallet({ keyId: info.primaryPasskeyKeyId });
+
+      if (!kit.contractId) {
+        alert('Wallet not connected');
+        setClaimLoading(null);
+        return;
+      }
+
+      const tx = await prepareEscrowClaimTx(
+        { publicKey: kit.contractId },
+        body.secret,
+        kit.contractId
+      );
+
+      const signer = await getDeviceSigner(pin);
+      await kit.sign(tx, signer);
+      const signedXdr = tx.toXDR();
+
+      const submitRes = await fetch('/api/wallet/claim-links/claim-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ claimLinkId: activeClaimId, signedXdr }),
+      });
+
+      const submitBody = (await submitRes.json()) as { error?: string; hash?: string };
+      if (!submitRes.ok) {
+        alert(submitBody.error ?? 'Claim failed');
+        setClaimLoading(null);
+        return;
+      }
+
+      await fetchPendingClaims();
+      await fetchBalance();
+      router.push(`/transactions/${submitBody.hash}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Claim failed');
+    } finally {
+      setClaimLoading(null);
+      setActiveClaimId(null);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6 pb-6">
@@ -268,6 +373,42 @@ export default function HomePage() {
         </Link>
       </div>
 
+      {pendingClaims.length > 0 && (
+        <div className="px-1">
+          <h3 className="mb-2 text-sm font-bold text-slate-800">Pending Claims</h3>
+          <div className="space-y-2">
+            {pendingClaims.map((claim) => (
+              <div
+                key={claim.id}
+                className="flex items-center justify-between rounded-2xl bg-white p-4 shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                    <Gift className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">
+                      {(Number(claim.amount) / 10_000_000).toLocaleString(undefined, { maximumFractionDigits: 7 })}{' '}
+                      {claim.tokenContractId === getUsdcContractId() ? 'USDC' : 'XLM'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      From {claim.senderEmail} · Expires {new Date(claim.expiry).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => startClaim(claim.id)}
+                  disabled={claimLoading === claim.id}
+                  className="rounded-xl bg-pocketlet-600 px-4 py-2 text-xs font-bold text-white hover:bg-pocketlet-700 disabled:opacity-50"
+                >
+                  {claimLoading === claim.id ? 'Claiming…' : 'Claim'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="-mx-6 flex-1 rounded-t-[32px] bg-slate-50/70 px-4 pb-2 pt-5">
         <div className="mb-3 flex items-center justify-between px-2">
           <h3 className="text-sm font-bold text-slate-800">Recent Activity</h3>
@@ -295,6 +436,17 @@ export default function HomePage() {
           </div>
         )}
       </div>
+
+      <PinModal
+        isOpen={pinModalOpen}
+        title="Claim funds"
+        subtitle="Enter your 6-digit PIN to authorize."
+        onConfirm={executeClaim}
+        onCancel={() => {
+          setPinModalOpen(false);
+          setActiveClaimId(null);
+        }}
+      />
     </div>
   );
 }

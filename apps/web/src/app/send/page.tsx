@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { BASE_FEE } from '@stellar/stellar-sdk';
+import { BASE_FEE, rpc } from '@stellar/stellar-sdk';
 import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
 import type { PasskeyKit } from 'passkey-kit';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Copy } from 'lucide-react';
 import PinModal from '@/components/PinModal';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -18,6 +18,9 @@ import {
   hasUsableDeviceKey,
   getDeviceSigner,
 } from '@/lib/wallet/device-key';
+import { prepareEscrowDepositTx } from '@/lib/wallet/escrow';
+import { generateSecretAndHash, hashRecipientId } from '@/lib/wallet/claim-link-client';
+import { RPC_URL } from '@/lib/wallet/network';
 
 interface TransferForm {
   asset: 'USDC' | 'XLM';
@@ -27,12 +30,18 @@ interface TransferForm {
 
 interface TransferResult {
   hash: string;
+  claimLink?: boolean;
 }
 
 interface ResolvedRecipient {
   type: 'address' | 'username' | 'phone';
   address: string;
   display: string;
+}
+
+interface UnregisteredRecipient {
+  identifier: string;
+  type: 'phone' | 'email';
 }
 
 interface WalletInfo {
@@ -54,17 +63,24 @@ function formatFee(stroops: number): string {
   return xlm.toLocaleString(undefined, { maximumFractionDigits: 7 });
 }
 
+async function getCurrentLedger(): Promise<number> {
+  const server = new rpc.Server(RPC_URL);
+  const latest = await server.getLatestLedger();
+  return latest.sequence;
+}
+
 export default function SendPage() {
   const [form, setForm] = useState<TransferForm>({
     asset: 'USDC',
     amount: '',
     recipient: '',
   });
-  const [step, setStep] = useState<'form' | 'review' | 'confirming' | 'success'>('form');
+  const [step, setStep] = useState<'form' | 'review' | 'claim-link-review' | 'confirming' | 'success'>('form');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TransferResult | null>(null);
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [resolved, setResolved] = useState<ResolvedRecipient | null>(null);
+  const [unregistered, setUnregistered] = useState<UnregisteredRecipient | null>(null);
   const [resolving, setResolving] = useState(false);
   const [fee, setFee] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
@@ -72,9 +88,12 @@ export default function SendPage() {
   const [walletInfoLoading, setWalletInfoLoading] = useState(false);
   const [balances, setBalances] = useState<Balances | null>(null);
   const [balancesLoading, setBalancesLoading] = useState(false);
+  const [expiryDays, setExpiryDays] = useState(7);
 
   const preparedKitRef = useRef<PasskeyKit | null>(null);
   const preparedTxRef = useRef<AssembledTransaction<null> | null>(null);
+  const claimSecretRef = useRef<string | null>(null);
+  const claimHashRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,8 +197,14 @@ export default function SendPage() {
         body: JSON.stringify({ recipient: form.recipient.trim() }),
       });
 
-      const body = (await res.json()) as { error?: string } & Partial<ResolvedRecipient>;
+      const body = (await res.json()) as { error?: string } & Partial<ResolvedRecipient> & { found?: boolean; unregistered?: boolean; identifier?: string; type?: 'phone' | 'email' };
       if (!res.ok) {
+        if (body.unregistered && body.identifier && body.type) {
+          setUnregistered({ identifier: body.identifier, type: body.type });
+          setStep('claim-link-review');
+          setResolving(false);
+          return;
+        }
         setError(body.error ?? 'Recipient not found');
         setResolving(false);
         return;
@@ -203,7 +228,6 @@ export default function SendPage() {
     }
 
     const recipientAddress = resolved.address;
-
     const info = walletInfo;
     if (!info) return;
 
@@ -259,6 +283,83 @@ export default function SendPage() {
     };
   }, [step, resolved, walletInfo, form.asset, form.amount]);
 
+  useEffect(() => {
+    if (step !== 'claim-link-review' || !unregistered || !walletInfo) {
+      setFee(null);
+      preparedKitRef.current = null;
+      preparedTxRef.current = null;
+      claimSecretRef.current = null;
+      claimHashRef.current = null;
+      return;
+    }
+
+    const info = walletInfo;
+    if (!info) return;
+
+    let cancelled = false;
+    setPreparing(true);
+    setError(null);
+
+    const recipientInfo = unregistered;
+    if (!recipientInfo) return;
+
+    async function prepare() {
+      try {
+        const kit = createPasskeyKit();
+        await kit.connectWallet({ keyId: info.primaryPasskeyKeyId });
+
+        if (!kit.contractId) {
+          throw new Error('Wallet not connected');
+        }
+
+        const { secret, claimHash } = await generateSecretAndHash();
+        const recipientIdHash = await hashRecipientId(recipientInfo.identifier);
+        const currentLedger = await getCurrentLedger();
+        const expiryLedger = currentLedger + Math.floor(expiryDays * 24 * 60 * 60 / 5);
+        const baseAmount = amountToBaseUnits(form.amount);
+
+        const tx = await prepareEscrowDepositTx(
+          { publicKey: kit.contractId },
+          getTokenContractId(form.asset),
+          baseAmount,
+          claimHash,
+          recipientIdHash,
+          expiryLedger
+        );
+
+        const simulation = tx.simulation;
+        if (!simulation || !('minResourceFee' in simulation)) {
+          throw new Error('Simulation data unavailable');
+        }
+
+        const minResourceFee = Number(simulation.minResourceFee);
+        const totalFeeStroops = minResourceFee + Number(BASE_FEE);
+
+        if (!cancelled) {
+          preparedKitRef.current = kit;
+          preparedTxRef.current = tx;
+          claimSecretRef.current = secret;
+          claimHashRef.current = claimHash;
+          setFee(formatFee(totalFeeStroops));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to prepare claim link');
+        }
+      } finally {
+        if (!cancelled) {
+          setPreparing(false);
+        }
+      }
+    }
+
+    void prepare();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, unregistered, walletInfo, form.asset, form.amount, expiryDays]);
+
   const confirmTransfer = () => {
     setPinModalOpen(true);
   };
@@ -285,10 +386,8 @@ export default function SendPage() {
       }
 
       const signer = await getDeviceSigner(pin);
-      console.log('Signing transfer with device key:', signer.address);
       await kit.sign(tx, signer);
       const signedXdr = tx.toXDR();
-      console.log('Transfer signed; submitting to server...');
 
       const res = await fetch('/api/wallet/transfer', {
         method: 'POST',
@@ -316,11 +415,78 @@ export default function SendPage() {
     }
   };
 
+  const executeClaimLink = async (pin: string) => {
+    setPinModalOpen(false);
+    setStep('confirming');
+    setError(null);
+
+    try {
+      const kit = preparedKitRef.current;
+      const tx = preparedTxRef.current;
+      const secret = claimSecretRef.current;
+
+      if (!kit || !tx || !secret) {
+        throw new Error('Claim link not prepared');
+      }
+
+      if (!walletInfo) {
+        throw new Error('Wallet info not loaded');
+      }
+
+      if (!unregistered) {
+        throw new Error('Recipient info missing');
+      }
+
+      if (!(await hasUsableDeviceKey())) {
+        throw new Error('Device key expired. Please log in again.');
+      }
+
+      const signer = await getDeviceSigner(pin);
+      await kit.sign(tx, signer);
+      const signedXdr = tx.toXDR();
+
+      const currentLedger = await getCurrentLedger();
+      const expiryLedger = currentLedger + Math.floor(expiryDays * 24 * 60 * 60 / 5);
+
+      const res = await fetch('/api/wallet/claim-links/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signedXdr,
+          asset: form.asset,
+          amount: form.amount,
+          recipient: unregistered.identifier,
+          expiryDays,
+          expiryLedger,
+          claimHash: claimHashRef.current,
+          secret,
+        }),
+      });
+
+      const body = (await res.json()) as { error?: string; hash?: string };
+      if (!res.ok) {
+        setError(body.error ?? 'Claim link creation failed');
+        setStep('claim-link-review');
+        return;
+      }
+
+      setResult({ hash: body.hash ?? '', claimLink: true });
+      setStep('success');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Claim link creation failed');
+      setStep('claim-link-review');
+    }
+  };
+
   const formatAmount = () => {
     const num = Number(form.amount);
     if (Number.isNaN(num)) return form.amount;
     return num.toLocaleString(undefined, { maximumFractionDigits: 7 });
   };
+
+  const shareMessage = result?.claimLink
+    ? `Hey, I sent you ${formatAmount()} ${form.asset} on Pocketlet. Download the app to claim it!`
+    : '';
 
   if (step === 'success' && result) {
     return (
@@ -335,14 +501,31 @@ export default function SendPage() {
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
               <CheckCircle2 className="h-8 w-8" />
             </div>
-            <h1 className="mb-2 text-xl font-bold text-slate-900">Transfer sent</h1>
+            <h1 className="mb-2 text-xl font-bold text-slate-900">
+              {result.claimLink ? 'Claimable link created' : 'Transfer sent'}
+            </h1>
             <p className="mb-4 text-sm text-slate-600">
-              {formatAmount()} {form.asset} is on its way.
+              {result.claimLink
+                ? `${formatAmount()} ${form.asset} is waiting for ${unregistered?.identifier}.`
+                : `${formatAmount()} ${form.asset} is on its way.`}
             </p>
             <div className="mb-4 rounded-lg bg-slate-100 p-3">
               <p className="text-xs text-slate-500">Transaction hash</p>
               <p className="break-all font-mono text-xs text-slate-700">{result.hash}</p>
             </div>
+            {result.claimLink && (
+              <div className="mb-4 rounded-lg bg-slate-100 p-3">
+                <p className="mb-1 text-xs text-slate-500">Share message</p>
+                <p className="text-sm text-slate-700">{shareMessage}</p>
+                <button
+                  onClick={() => navigator.clipboard.writeText(shareMessage)}
+                  className="mt-2 inline-flex items-center gap-1 rounded-lg bg-pocketlet-100 px-3 py-1.5 text-xs font-semibold text-pocketlet-700 hover:bg-pocketlet-200"
+                >
+                  <Copy className="h-3 w-3" />
+                  Copy message
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Link
                 href={`/transactions/${result.hash}`}
@@ -441,11 +624,11 @@ export default function SendPage() {
                 type="text"
                 value={form.recipient}
                 onChange={(e) => setForm((f) => ({ ...f, recipient: e.target.value.trim() }))}
-                placeholder="@username, +639..., or G.../C..."
+                placeholder="@username, +639..., email, or G.../C..."
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-sm text-slate-900 focus:border-pocketlet-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-pocketlet-500"
               />
               <p className="mt-1 text-xs text-slate-500">
-                Enter a Pocketlet username, phone number, or Stellar address.
+                Enter a Pocketlet username, phone number, email, or Stellar address.
               </p>
             </div>
 
@@ -496,6 +679,58 @@ export default function SendPage() {
           </div>
         )}
 
+        {step === 'claim-link-review' && unregistered && (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+              {unregistered.identifier} is not on Pocketlet yet. Send a claimable link instead.
+            </div>
+
+            <Card padded="md" className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">Amount</span>
+                <span className="font-bold text-slate-900">
+                  {formatAmount()} {form.asset}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">To</span>
+                <span className="text-right text-sm font-bold text-slate-900">
+                  {unregistered.identifier}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">Expires in</span>
+                <select
+                  value={expiryDays}
+                  onChange={(e) => setExpiryDays(Number(e.target.value))}
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-bold text-slate-900"
+                >
+                  {[1, 3, 7, 14, 21, 30].map((d) => (
+                    <option key={d} value={d}>
+                      {d} {d === 1 ? 'day' : 'days'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-between border-t border-slate-100 pt-3">
+                <span className="text-sm text-slate-500">Network fee</span>
+                <span className="font-bold text-slate-900">
+                  {fee !== null ? `~${fee} XLM` : preparing ? 'Estimating...' : '—'}
+                </span>
+              </div>
+            </Card>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="secondary" onClick={() => setStep('form')}>
+                Back
+              </Button>
+              <Button onClick={confirmTransfer} disabled={preparing || fee === null}>
+                Confirm
+              </Button>
+            </div>
+          </div>
+        )}
+
         {step === 'confirming' && (
           <div className="rounded-2xl bg-white p-8 text-center shadow-lg">
             <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-pocketlet-200 border-t-pocketlet-600" />
@@ -506,12 +741,22 @@ export default function SendPage() {
 
       <PinModal
         isOpen={pinModalOpen}
-        title="Confirm transfer"
+        title={step === 'claim-link-review' ? 'Confirm claimable link' : 'Confirm transfer'}
         subtitle="Enter your 6-digit PIN to authorize."
-        onConfirm={executeTransfer}
+        onConfirm={(pin) => {
+          if (step === 'claim-link-review') {
+            void executeClaimLink(pin);
+          } else {
+            void executeTransfer(pin);
+          }
+        }}
         onCancel={() => {
           setPinModalOpen(false);
-          setStep('review');
+          if (step === 'claim-link-review') {
+            setStep('claim-link-review');
+          } else {
+            setStep('review');
+          }
         }}
       />
     </main>

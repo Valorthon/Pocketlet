@@ -73,6 +73,38 @@ export const userDevices = pgTable('user_devices', {
 export type UserDevice = typeof userDevices.$inferSelect;
 export type NewUserDevice = typeof userDevices.$inferInsert;
 
+export const claimLinks = pgTable('claim_links', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  senderEmail: text('sender_email').notNull(),
+  recipientPhone: text('recipient_phone'),
+  recipientEmail: text('recipient_email'),
+  tokenContractId: text('token_contract_id').notNull(),
+  amount: text('amount').notNull(),
+  claimHash: text('claim_hash').notNull().unique(),
+  secretCiphertext: text('secret_ciphertext').notNull(),
+  expiry: timestamp('expiry', { withTimezone: true }).notNull(),
+  status: text('status').notNull().default('pending'),
+  txHash: text('tx_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
+});
+
+export type ClaimLink = typeof claimLinks.$inferSelect;
+export type NewClaimLink = typeof claimLinks.$inferInsert;
+
+export const notifications = pgTable('notifications', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  claimLinkId: uuid('claim_link_id').notNull(),
+  channel: text('channel').notNull(),
+  recipient: text('recipient').notNull(),
+  status: text('status').notNull().default('queued'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+
 export const metrics = pgTable(
   'metrics',
   {

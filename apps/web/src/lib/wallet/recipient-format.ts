@@ -52,6 +52,21 @@ export function isValidAddressFormat(address: string): boolean {
  * Return an error message if the recipient input does not match any supported
  * format (Stellar address, phone number, or username), or null if it is valid.
  */
+export function isValidEmailFormat(email: string): boolean {
+  const trimmed = email.trim();
+  if (!trimmed.includes('@')) {
+    return false;
+  }
+  const [local, domain] = trimmed.split('@');
+  if (!local || local.length === 0 || !domain || domain.length === 0) {
+    return false;
+  }
+  if (!domain.includes('.')) {
+    return false;
+  }
+  return true;
+}
+
 export function validateRecipientFormat(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -67,6 +82,9 @@ export function validateRecipientFormat(input: string): string | null {
   if (isValidUsernameFormat(trimmed)) {
     return null;
   }
+  if (isValidEmailFormat(trimmed)) {
+    return null;
+  }
 
-  return 'Enter a valid username, phone number, or Stellar address.';
+  return 'Enter a valid username, phone number, email, or Stellar address.';
 }

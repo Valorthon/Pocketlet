@@ -28,6 +28,8 @@ This is a pnpm monorepo:
 .
 ├── apps/web                    Next.js 14 frontend (App Router)
 ├── packages/config             Shared ESLint, TypeScript, Tailwind config
+├── contracts/                  Soroban smart contracts (Rust)
+│   └── escrow/                 Claimable-link escrow contract
 ├── SPEC.md                     V1 product spec
 ├── FUTURE_VERSIONS.md          V2, V3, and deferred feature roadmap
 ├── TESTNET.md                  End-to-end testnet testing guide
