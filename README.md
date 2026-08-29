@@ -63,7 +63,18 @@ pnpm install
 
 ## Build
 
-No contract build is required for the web app. The passkey-kit wallet uses a canonical WASM hash configured via `NEXT_PUBLIC_WALLET_WASM_HASH`.
+### Contracts
+
+The repo includes a custom Soroban escrow contract under `contracts/escrow`.
+
+```bash
+cd contracts
+stellar contract build
+```
+
+This produces `target/wasm32-unknown-unknown/release/pocketlet_escrow.wasm`.
+
+### Web App
 
 ```bash
 pnpm --filter web build

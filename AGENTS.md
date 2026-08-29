@@ -13,6 +13,7 @@ Read this file, `SPEC.md`, `FUTURE_VERSIONS.md`, `README.md`, `TESTNET.md`, and 
 ```
 /apps/web              Next.js frontend (PWA, App Router)
 /packages/config       Shared ESLint, TypeScript, Tailwind config
+/contracts             Soroban smart contracts (Rust)
 ```
 
 Use `pnpm --filter <workspace-name>` to target packages. For example, add a dependency to the web app with `pnpm --filter web add <pkg>`. Verify the workspace name in `pnpm-workspace.yaml` and each package's `package.json` before using filter names.
