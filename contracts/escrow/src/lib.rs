@@ -3,7 +3,7 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, token, Address, Bytes, BytesN, Env,
 };
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 #[contracttype]
 pub struct Deposit {
     pub sender: Address,
@@ -159,5 +159,319 @@ impl EscrowContract {
     pub fn get_deposit(env: Env, claim_hash: BytesN<32>) -> Option<Deposit> {
         let key = DataKey::Deposit(claim_hash);
         env.storage().persistent().get(&key)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, Ledger};
+    use soroban_sdk::{token, Address, Bytes, BytesN, Env};
+
+    fn setup_env() -> Env {
+        let env = Env::default();
+        env.mock_all_auths();
+        env
+    }
+
+    fn create_token(env: &Env, admin: &Address) -> Address {
+        env.register_stellar_asset_contract(admin.clone())
+    }
+
+    fn mint(env: &Env, token: &Address, to: &Address, amount: i128) {
+        let sac = token::StellarAssetClient::new(env, token);
+        sac.mint(to, &amount);
+    }
+
+    fn compute_claim_hash(env: &Env, secret: &BytesN<32>) -> BytesN<32> {
+        let bytes = Bytes::from_slice(env, &secret.to_array());
+        env.crypto().sha256(&bytes).into()
+    }
+
+    fn default_ledger_info() -> soroban_sdk::testutils::LedgerInfo {
+        soroban_sdk::testutils::LedgerInfo {
+            protocol_version: 20,
+            sequence_number: 100,
+            timestamp: 0,
+            network_id: [0; 32],
+            base_reserve: 10,
+            min_temp_entry_ttl: 16,
+            min_persistent_entry_ttl: 16,
+            max_entry_ttl: 6312000,
+        }
+    }
+
+    #[test]
+    fn test_deposit_and_get_deposit() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[1u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[2u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 100;
+
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+
+        let deposit = client.get_deposit(&claim_hash).unwrap();
+        assert_eq!(deposit.sender, sender);
+        assert_eq!(deposit.token, token);
+        assert_eq!(deposit.amount, 1000);
+        assert_eq!(deposit.recipient_id_hash, recipient_id_hash);
+        assert_eq!(deposit.expiry, expiry);
+        assert!(!deposit.claimed);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_deposit_duplicate_fails() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[1u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[2u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 100;
+
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+        client.deposit(&sender, &token, &500, &claim_hash, &recipient_id_hash, &(expiry + 1));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_deposit_zero_amount_fails() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[1u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[2u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 100;
+
+        client.deposit(&sender, &token, &0, &claim_hash, &recipient_id_hash, &expiry);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_deposit_expiry_not_future_fails() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[1u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[2u8; 32]);
+        let expiry = env.ledger().sequence() as u64;
+
+        client.deposit(&sender, &token, &100, &claim_hash, &recipient_id_hash, &expiry);
+    }
+
+    #[test]
+    fn test_claim_success() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let recipient_wallet = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[3u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[4u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 100;
+
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+
+        let token_client = token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&sender), 0);
+        assert_eq!(token_client.balance(&contract_id), 1000);
+
+        client.claim(&secret, &recipient_wallet);
+
+        let deposit = client.get_deposit(&claim_hash).unwrap();
+        assert!(deposit.claimed);
+        assert_eq!(token_client.balance(&recipient_wallet), 1000);
+        assert_eq!(token_client.balance(&contract_id), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_claim_wrong_secret_fails() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let recipient_wallet = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[5u8; 32]);
+        let wrong_secret = BytesN::from_array(&env, &[6u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[7u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 100;
+
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+
+        client.claim(&wrong_secret, &recipient_wallet);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_claim_already_claimed_fails() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let recipient_wallet = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[8u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[9u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 100;
+
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+
+        client.claim(&secret, &recipient_wallet);
+        client.claim(&secret, &recipient_wallet);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_claim_expired_fails() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let recipient_wallet = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[10u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[11u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 10;
+
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+
+        let mut info = env.ledger().get();
+        info.sequence_number = 120; // past expiry (100 + 10)
+        env.ledger().set(info);
+
+        client.claim(&secret, &recipient_wallet);
+    }
+
+    #[test]
+    fn test_refund_success() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[12u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[13u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 10;
+
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+
+        let mut info = env.ledger().get();
+        info.sequence_number = 120; // past expiry
+        env.ledger().set(info);
+
+        let token_client = token::Client::new(&env, &token);
+        assert_eq!(token_client.balance(&sender), 0);
+
+        client.refund(&claim_hash);
+
+        assert_eq!(token_client.balance(&sender), 1000);
+        assert_eq!(client.get_deposit(&claim_hash), None);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_refund_before_expiry_fails() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[14u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[15u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 10;
+
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+
+        client.refund(&claim_hash);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_refund_already_claimed_fails() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let recipient_wallet = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1000);
+
+        let secret = BytesN::from_array(&env, &[16u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[17u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 10;
+
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+
+        client.claim(&secret, &recipient_wallet);
+
+        let mut info = env.ledger().get();
+        info.sequence_number = 120;
+        env.ledger().set(info);
+
+        client.refund(&claim_hash);
+    }
+
+    #[test]
+    fn test_get_deposit_not_found() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let claim_hash = BytesN::from_array(&env, &[99u8; 32]);
+        assert_eq!(client.get_deposit(&claim_hash), None);
     }
 }

@@ -24,10 +24,19 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32v1-none
+
+      - name: Install Stellar CLI
+        uses: stellar/stellar-cli@v27.1.0
+
+      - name: Run tests
+        run: cargo test
 
       - name: Build escrow contract
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: stellar contract build
+
+      - name: Verify WASM artifact
+        run: test -f target/wasm32v1-none/release/pocketlet_escrow.wasm
 
   web:
     name: Web App
