@@ -90,7 +90,7 @@ jobs:
           echo "- **Network:** Testnet" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload WASM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pocketlet-escrow-wasm
           path: contracts/target/wasm32v1-none/release/pocketlet_escrow.wasm
