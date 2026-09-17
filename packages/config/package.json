@@ -9,7 +9,7 @@
     "eslint"
   ],
   "dependencies": {
-    "@eslint/js": "^9.17.0",
+    "@eslint/js": "^10.0.1",
     "typescript-eslint": "^8.70.0"
   }
 }
