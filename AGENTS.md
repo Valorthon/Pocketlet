@@ -21,7 +21,7 @@ A deployed passkey-based USDC/XLM wallet on Stellar Testnet. Not a scaffold: ~40
 | Stellar | `@stellar/stellar-sdk` 16, `passkey-kit` 0.16, `sac-sdk` 0.4 |
 | Auth | `@simplewebauthn` 13, `jose` (JWT sessions), `bcryptjs` (PIN), `bip39` |
 | Tests | Vitest 4 (TypeScript), `cargo test` (Rust) |
-| Contract | Rust, `soroban-sdk` 22, target `wasm32v1-none`, Stellar CLI 27 |
+| Contract | Rust, `soroban-sdk` 27, target `wasm32v1-none`, Stellar CLI 28 |
 
 **Use `pnpm` only** — never `npm`, `yarn`, or `bun`. Target a workspace with `pnpm --filter web <script>`.
 

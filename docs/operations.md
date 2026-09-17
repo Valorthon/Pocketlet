@@ -27,7 +27,7 @@ The web build is a Next.js **standalone** output. `apps/web/drizzle/` is copied 
 
 Runs on pushes and PRs to `develop`, `stag-test`, and `prod-test`. Two jobs:
 
-- **contracts** — Rust stable with `wasm32v1-none`, Stellar CLI 27, then `cargo test`, `stellar contract build`, and a check that `target/wasm32v1-none/release/pocketlet_escrow.wasm` exists.
+- **contracts** — Rust stable with `wasm32v1-none`, Stellar CLI 28, then `cargo test`, `stellar contract build`, and a check that `target/wasm32v1-none/release/pocketlet_escrow.wasm` exists.
 - **web** — pnpm + Node 22, a Postgres 16 service container, `cp .env.example .env.local`, then lint → typecheck → test → build.
 
 The Postgres service is not optional: the Vitest setup migrates and clears a real database.
