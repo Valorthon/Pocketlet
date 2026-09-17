@@ -1,5 +1,9 @@
 # Competitive Analysis: Blink vs. Pocketlet
 
+Last reviewed: 2026-09-17
+
+**Positioning research, not engineering documentation.** Claims here rest on a competitor's public marketing and docs as of August 2026, none of it archived or independently verified. It has no bearing on how Pocketlet is built or run — for that, see [`docs/README.md`](../README.md). Re-check before relying on any of it.
+
 ## Blink Overview
 
 **Blink** (`useblinkapp.com`) is a recently SCF-funded mobile payment app focused on in-person crypto checkout in emerging markets. It was selected as a **Stellar Community Fund #44 Build Award recipient on the integration track** (announced August 2026).
@@ -36,7 +40,9 @@ Key implication: **A payer cannot pay a Blink merchant from an external wallet, 
 
 From Blink’s docs (emphasis added):
 
-> “On the Blink App, type in the final charge amount… Press **‘Receive’**. Blink will instantly activate a Bluetooth Low-Energy beacon bridging data to **any proximate customer phone** [running Blink].”
+> “On the Blink App, type in the final charge amount… Press **‘Receive’**. Blink will instantly activate a Bluetooth Low-Energy beacon bridging data to **any proximate customer phone**.”
+
+The quote says "any proximate customer phone"; our reading is that this means any phone *running Blink*, since the beacon is received inside the Blink app. That is an inference from the surrounding documentation, not something the source states.
 
 > “Once the blockchain states finalize, Blink’s smart bridges swap the incoming crypto for fiat immediately… **You acquire zero volatility exposure.**”
 

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [develop, staging, main]
   pull_request:
-    branches: [main]
+    branches: [develop, staging, main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,6 +45,24 @@ jobs:
     defaults:
       run:
         working-directory: apps/web
+    # The Vitest setup (apps/web/vitest.setup.ts) applies migrations and truncates
+    # tables on load, so the test step needs a real database, not a mock.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pocketlet
+          POSTGRES_PASSWORD: pocketlet
+          POSTGRES_DB: pocketlet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pocketlet -d pocketlet"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://pocketlet:pocketlet@localhost:5432/pocketlet
     steps:
       - name: Checkout
         uses: actions/checkout@v4

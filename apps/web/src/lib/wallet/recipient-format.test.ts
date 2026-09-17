@@ -64,10 +64,12 @@ describe('isValidAddressFormat', () => {
 });
 
 describe('validateRecipientFormat', () => {
-  it('returns null for a valid address, phone, or username', () => {
+  it('returns null for a valid address, phone, username, or email', () => {
     expect(validateRecipientFormat('GATVJDFPIPADU74ALX4344HEQQZ2LGMNWABPXBOWYMVXM37KMTTUALTU')).toBe(null);
     expect(validateRecipientFormat('+639123456789')).toBe(null);
     expect(validateRecipientFormat('@alice')).toBe(null);
+    // Email is an accepted recipient format: it routes to a claimable link.
+    expect(validateRecipientFormat('alice@example.com')).toBe(null);
   });
 
   it('returns an error for empty input', () => {
@@ -76,10 +78,10 @@ describe('validateRecipientFormat', () => {
 
   it('returns an error for input matching no supported format', () => {
     expect(validateRecipientFormat('hello world')).toBe(
-      'Enter a valid username, phone number, or Stellar address.'
+      'Enter a valid username, phone number, email, or Stellar address.'
     );
-    expect(validateRecipientFormat('alice@example.com')).toBe(
-      'Enter a valid username, phone number, or Stellar address.'
+    expect(validateRecipientFormat('alice@')).toBe(
+      'Enter a valid username, phone number, email, or Stellar address.'
     );
   });
 });
