@@ -21,7 +21,7 @@
     "@noble/hashes": "^2.3.0",
     "@simplewebauthn/browser": "^13.1.0",
     "@simplewebauthn/server": "^13.1.0",
-    "@stellar/stellar-sdk": "^16.0.1",
+    "@stellar/stellar-sdk": "^17.0.1",
     "@types/qrcode.react": "^1.0.5",
     "bcryptjs": "^3.0.3",
     "bip39": "^3.1.0",
