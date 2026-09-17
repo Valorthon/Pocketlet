@@ -116,7 +116,7 @@ Around 23 raw `console.*` calls with no logging abstraction, no alerting, and no
 
 ### Dead code — Open
 
-`apps/web/scripts/fix-tests.ts` (one-off regex codemod), `apps/web/scripts/import-users-json.ts` (pre-Postgres backfill), and the `/swap` route, page, and nav entry.
+`apps/web/scripts/fix-tests.ts` (one-off regex codemod), `apps/web/scripts/import-users-json.ts` (pre-Postgres backfill), the `/swap` route, page, and nav entry, and `default_ledger_info()` in `contracts/escrow/src/lib.rs:191` (never called; the compiler warns on it).
 
 ### Deploy logic is duplicated — Open
 

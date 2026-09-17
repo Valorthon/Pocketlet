@@ -20,7 +20,9 @@ The Soroban contract behind **claimable links** — sending money to someone who
 
 **Errors are string panics, not error codes.** The contract uses `assert!` and `expect` rather than a `#[contracterror]` enum, so callers get panic messages instead of typed codes. Worth migrating.
 
-**The test helper is pinned to old APIs.** `env.register_stellar_asset_contract` is deprecated in `soroban-sdk` 22, and `default_ledger_info()` pins `protocol_version: 20`.
+**The contract compiles with deprecation warnings under `soroban-sdk` 27.** `cargo test` is green (12 tests) but emits five warnings: `env.events().publish` is deprecated in favour of the `#[contractevent]` macro (three call sites — `deposit`, `claim`, `refund`), and `env.register_stellar_asset_contract` wants `register_stellar_asset_contract_v2`. Migrating events is the larger of the two and changes the on-chain event shape, so it needs a deliberate PR rather than a drive-by fix.
+
+**`default_ledger_info()` is dead.** It builds a `LedgerInfo` pinned to `protocol_version: 20` and nothing calls it — the compiler flags it as never used. Delete it, or wire it into the tests that currently set ledger state by hand.
 
 ## The TypeScript mirror
 
