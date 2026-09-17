@@ -4,7 +4,7 @@
 
 Pocketlet is a web wallet for holding and sending digital dollars globally. It feels like a familiar money app, but settles on the Stellar blockchain. V1 runs on **Stellar Testnet**, supports USDC and XLM, and uses passkey-controlled Soroban smart wallets — the platform never holds user signing keys.
 
-- **Live app:** https://pocketlet.up.railway.app/
+- **Live app (public testnet):** https://pocketlet.up.railway.app/
 - **Demo video:** https://youtu.be/FPr7b7jgrFM
 - **Documentation:** [`docs/`](./docs/README.md)
 
@@ -108,7 +108,9 @@ User smart wallets are deployed per account at runtime and derived from `NEXT_PU
 
 ## Deployment
 
-The web app runs on [Railway](https://railway.app/) from `Dockerfile` + `railway.json`; the escrow contract is deployed to testnet by CI. Branch model, workflow triggers, and rollback are documented in [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`docs/operations.md`](./docs/operations.md).
+The web app runs on [Railway](https://railway.app/) from `Dockerfile` + `railway.json`. There are two deployments, both on **Stellar Testnet** — an internal one from the `stag-test` branch and the public one above from `prod-test`. The escrow contract is deployed to testnet by CI from `stag-test`.
+
+**Mainnet is not supported.** Branch model, workflow triggers, and rollback are documented in [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`docs/operations.md`](./docs/operations.md).
 
 ## Security
 
