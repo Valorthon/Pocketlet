@@ -74,7 +74,9 @@ Before opening a PR: `pnpm run lint && pnpm run typecheck && pnpm --filter web t
 
 Verified against the code on 2026-09-17. These are the things that look wrong, are wrong, or will waste your time.
 
-**Tests need a live database, and `.env.local` will not point them at it.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and truncates in `beforeEach`, so without Postgres the whole suite fails at import. Worse, it calls `config({ path: '.env.local' })` *after* importing `./src/lib/db`, which creates the `pg` Pool at module scope — so by the time dotenv runs, the connection string is already fixed. `DATABASE_URL` from `.env.local` is silently ignored and the hardcoded `localhost:5432` fallback is used. **Export `DATABASE_URL` in the shell** if your database is anywhere else. There are also **no foreign keys** in the migrations, and `src/lib/db/test-setup.ts` truncates only `users` and `metrics` — so `user_devices`, `claim_links`, and `notifications` rows leak between tests.
+**Tests need a live database, and `.env.local` will not point them at it.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and clears tables in `beforeEach`, so without Postgres the whole suite fails at import. Worse, it calls `config({ path: '.env.local' })` *after* importing `./src/lib/db`, which creates the `pg` Pool at module scope — so by the time dotenv runs, the connection string is already fixed. `DATABASE_URL` from `.env.local` is silently ignored and the hardcoded `localhost:5432` fallback is used. **Export `DATABASE_URL` in the shell** if your database is anywhere else. (Issue #58.)
+
+**Test isolation is partial.** `src/lib/db/test-setup.ts` deletes from `users` and `metrics` only, so `user_devices`, `claim_links` and `notifications` rows leak between tests. It uses `DELETE`, not `TRUNCATE`, so sequences are not reset. There are no foreign keys anywhere in the schema — see the note at the top of `src/lib/db/schema.ts`.
 
 **`stellarAddress` is a duplicate column.** `api/wallet/deploy/route.ts:121-124` always sets it equal to `walletContractId`. It is a leftover from the classic-account era, but it is *load-bearing*: `resolveRecipient` reads `stellarAddress` while transfers use `walletContractId`. Don't drop it without changing both.
 
@@ -100,17 +102,10 @@ Verified against the code on 2026-09-17. These are the things that look wrong, a
 
 ## Testing expectations
 
-Colocate `*.test.ts` next to the source. 246 cases across 34 files today, but coverage is uneven: **zero component or page tests**, and **all five `claim-links/*` routes are untested** — the newest and most intricate feature. Rust panics in `contracts/escrow` use bare `#[should_panic]` with no `expected =` string, so a test can pass on the wrong panic; add the string when you touch one. Prefer adding tests where the gaps are over padding areas already covered. See [`docs/testing.md`](./docs/testing.md).
+Colocate `*.test.ts` next to the source. Coverage is uneven — the gaps and their tracking issues are in [`docs/production-readiness.md`](./docs/production-readiness.md). Prefer closing those over deepening areas already covered. Rust panics in `contracts/escrow` use bare `#[should_panic]` with no `expected =` string, so a test can pass on the wrong panic; add the string when you touch one. See [`docs/testing.md`](./docs/testing.md).
 
 ## Keeping docs true
 
-This repo previously drifted for a month because facts lived in four places at once. One fact, one home:
-
-| Change | Update |
-| --- | --- |
-| An env var | [`docs/environment.md`](./docs/environment.md) **and** `apps/web/.env.example` |
-| `db/schema.ts` | [`docs/database.md`](./docs/database.md) + generate a migration |
-| The contract interface | [`contracts/escrow/README.md`](./contracts/escrow/README.md) |
-| Feature status | the [README table](./README.md#features) — nowhere else |
-| Branch or CI behaviour | [`CONTRIBUTING.md`](./CONTRIBUTING.md) |
-| An architectural decision | a new ADR in [`docs/decisions/`](./docs/decisions/README.md) |
+Each fact has one home; other docs link to it. When you change something, the
+["if you change X, update Y" table in `CONTRIBUTING.md`](./CONTRIBUTING.md#if-you-change-x-update-y)
+says what to update. It is the only copy — don't start another.

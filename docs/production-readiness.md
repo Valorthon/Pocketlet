@@ -70,7 +70,7 @@ Still open: the testnet `fee_payer_secret` remains on local disk under `POCKETLE
 
 ### No foreign keys — Open
 
-**Issue #62.** `user_devices.email`, `claim_links.sender_email`, and `notifications.claim_link_id` have no referential integrity. Orphan rows are possible and deletes don't cascade. This also means test cleanup is incomplete — see [database.md](./database.md).
+**Issue #62.** `user_devices.email`, `claim_links.sender_email`, and `notifications.claim_link_id` have no referential integrity. Orphan rows are possible and deletes don't cascade. This also means test cleanup is incomplete — see [testing.md](./testing.md#conventions).
 
 ## Product
 

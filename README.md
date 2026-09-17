@@ -46,7 +46,7 @@ Open http://localhost:3000. Migrations are applied automatically at startup.
 
 > Passkeys are bound to an origin. Use `http://localhost:3000` exactly, or configure HTTPS with a matching `WEBAUTHN_RP_ID`.
 
-Two variables in `.env.example` ship empty and **throw at runtime** if you exercise claimable links: `CLAIM_SECRET_ENCRYPTION_KEY` (generate with `openssl rand -hex 32`) and `NEXT_PUBLIC_ESCROW_CONTRACT_ID` (deploy the contract, below). Everything else works with the defaults. See [`docs/environment.md`](./docs/environment.md) for the full reference.
+Two variables in `.env.example` ship empty and **throw at runtime** if you exercise claimable links: `CLAIM_SECRET_ENCRYPTION_KEY` (generate with `openssl rand -hex 32`) and `NEXT_PUBLIC_ESCROW_CONTRACT_ID` (deploy the contract, below). Everything else works with the defaults. `.env.example` documents every variable.
 
 ## Project structure
 
@@ -75,7 +75,7 @@ pnpm --filter web db:studio # Browse the database
 pnpm run deploy:contract    # Build and deploy the escrow contract to testnet
 ```
 
-Tests need a live Postgres — `vitest.setup.ts` runs migrations on load and truncates between tests. Run `docker compose up -d` first.
+Tests need a live Postgres — run `docker compose up -d` first. See [`docs/testing.md`](./docs/testing.md).
 
 ### Building the contract
 
@@ -95,7 +95,7 @@ A short version; the full picture with a diagram is in [`docs/architecture.md`](
 - **Fee payer** — a server-held account rebuilds user-authorized `invoke_host_function` operations with itself as source, re-simulates for current resource fees, signs, and submits to Soroban RPC. It pays network fees and is **not** a signer on any user wallet.
 - **Balances** — read from the USDC and XLM Stellar Asset Contracts via passkey-kit's `SACClient`.
 - **Claimable links** — funds go into the escrow contract against a hashed secret; the recipient claims with the secret, or the sender refunds after expiry.
-- **Storage** — PostgreSQL via Drizzle ORM. See [`docs/database.md`](./docs/database.md).
+- **Storage** — PostgreSQL via Drizzle ORM; the schema and its caveats are in [`apps/web/src/lib/db/schema.ts`](./apps/web/src/lib/db/schema.ts).
 
 ## Deployed contracts (Testnet)
 

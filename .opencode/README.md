@@ -2,18 +2,13 @@
 
 Last reviewed: 2026-09-17
 
-`skills/` holds a vendored copy of the **`stellar-dev` skill pack** — reference documentation on Soroban contracts, dApp development, Stellar data access, assets, agentic payments, standards/SEPs, and ZK proofs.
+`skills/` is a vendored copy of the **`stellar-dev` skill pack** — reference material on Soroban contracts, dApp development, Stellar data access, assets, agentic payments, SEPs, and ZK proofs. Worth consulting before designing Stellar or Soroban work; `smart-contracts/` has the most depth.
 
-It was added on 2026-07-19 for the [opencode](https://opencode.ai) agent and has not been re-synced since. Roughly 4,500 lines.
+**It is third-party documentation with no recorded upstream revision.** Added 2026-07-19 and never re-synced since, with no pinned version and no sync mechanism, so assume it lags current Stellar tooling.
 
-## Using it
+Precedence when it disagrees with something else:
 
-Consult these before designing Stellar or Soroban work — they cover SEP selection, SAC semantics, contract testing and security patterns, and passkey/smart-account details that are easy to get subtly wrong. `smart-contracts/` has the most depth: `development.md`, `testing.md`, and `security.md` alongside `SKILL.md`.
-
-## Caveats
-
-**This is third-party documentation with no recorded upstream revision.** There is no sync mechanism and no pinned version, so it may lag the current Stellar tooling. Where it disagrees with the [official Stellar docs](https://developers.stellar.org/) or with this repo's own code, trust those instead.
-
-If your agent tooling already provides the `stellar-dev` skills natively, prefer its copy — it will be newer.
-
-Note that `.opencode/.gitignore` excludes `package.json`, `package-lock.json`, and `node_modules`, so only `skills/` is tracked.
+1. This repo's own code.
+2. The [official Stellar docs](https://developers.stellar.org/).
+3. A newer copy of these skills that your agent tooling provides natively.
+4. This directory.

@@ -118,7 +118,7 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 * **SEP-2 (Federation):** Evaluated for P2P addressing. V1 uses an internal username/phone mapping. SEP-2 may be adopted in a future version if the user base grows and public addressing is needed.
 
 ### Data Layer
-* **PostgreSQL** via Drizzle ORM holds accounts, device keys, claim links, notification records, and operational counters. Migrations are applied at boot. Schema detail in [database.md](./database.md).
+* **PostgreSQL** via Drizzle ORM holds accounts, device keys, claim links, notification records, and operational counters. Migrations are applied at boot. Schema detail in `apps/web/src/lib/db/schema.ts`.
 * **No user key material is persisted.** Passkey private keys never leave the device, and the BIP39 recovery phrase is generated client-side — the server stores only the derived public key.
 * **Custom contract:** the claimable-link escrow contract in `contracts/escrow` ([interface](../contracts/escrow/README.md)).
 

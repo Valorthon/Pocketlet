@@ -93,13 +93,11 @@ Sending to someone with no wallet:
 
 The contract only ever sees hashes — never the secret, never a phone number or email.
 
-> **Unit mismatch to watch.** The contract's `expiry` is a **ledger sequence**; `claim_links.expiry` in Postgres is a **timestamp**. They are converted ad hoc in `api/wallet/claim-links/create/route.ts`.
-
-Interface details: [`contracts/escrow/README.md`](../contracts/escrow/README.md).
+The contract interface, and the traps in it — including the fact that `expiry` means something different on each side of the boundary — are in [`contracts/escrow/README.md`](../contracts/escrow/README.md).
 
 ## Storage
 
-PostgreSQL via Drizzle ORM: `users`, `user_devices`, `claim_links`, `notifications`, `metrics`. Migrations live in `apps/web/drizzle/` and are applied at boot by `src/instrumentation.ts`. See [database.md](./database.md).
+PostgreSQL via Drizzle ORM. The schema and its caveats live in `apps/web/src/lib/db/schema.ts`; migrations in `apps/web/drizzle/` are applied at boot ([ADR 0005](./decisions/0005-migrate-on-boot.md)).
 
 Only one thing remains on disk: the testnet `fee_payer_secret`, under `POCKETLET_DATA_DIR`.
 

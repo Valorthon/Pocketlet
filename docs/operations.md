@@ -23,7 +23,7 @@ Runs on pushes and PRs to `develop`, `staging`, and `main`. Two jobs:
 - **contracts** — Rust stable with `wasm32v1-none`, Stellar CLI 27, then `cargo test`, `stellar contract build`, and a check that `target/wasm32v1-none/release/pocketlet_escrow.wasm` exists.
 - **web** — pnpm + Node 22, a Postgres 16 service container, `cp .env.example .env.local`, then lint → typecheck → test → build.
 
-The Postgres service is not optional: the Vitest setup migrates and truncates a real database.
+The Postgres service is not optional: the Vitest setup migrates and clears a real database.
 
 ### CD — `.github/workflows/cd.yml`
 
@@ -42,7 +42,7 @@ After a contract deploy, set `NEXT_PUBLIC_ESCROW_CONTRACT_ID` to the new address
 | `RAILWAY_TOKEN` | secret | Optional — only to push deploys from Actions rather than Railway's integration |
 | `RAILWAY_PROJECT_ID`, `RAILWAY_SERVICE_NAME` | variables | Optional, target a specific Railway service |
 
-Runtime secrets (`SESSION_SECRET`, `FEE_PAYER_SECRET_KEY`, `CLAIM_SECRET_ENCRYPTION_KEY`, `ADMIN_SECRET_TOKEN`) are set in the Railway environment, not in GitHub. See [environment.md](./environment.md).
+Runtime secrets (`SESSION_SECRET`, `FEE_PAYER_SECRET_KEY`, `CLAIM_SECRET_ENCRYPTION_KEY`, `ADMIN_SECRET_TOKEN`) are set in the Railway environment, not in GitHub. Generate each with `openssl rand -hex 32`, and store them in a secrets manager rather than an env file. Rotating `FEE_PAYER_SECRET_KEY` needs no user action — drain and retire the old account; rotating `SESSION_SECRET` signs everyone out and invalidates outstanding recovery tokens. Every variable is described in `apps/web/.env.example`.
 
 ## Deploying manually
 
@@ -71,9 +71,9 @@ pnpm run deploy:web          # railway up (needs @railway/cli)
 
 ## Common production problems
 
-**App won't start.** The guardrails fail fast by design. On the public network, startup aborts if `SESSION_SECRET` is default/short, `WEBAUTHN_ORIGIN` isn't HTTPS, `WEBAUTHN_RP_ID` is `localhost`, or `FEE_PAYER_SECRET_KEY` is missing. The error names the variable. Note that build-time and runtime checks cover slightly different sets — see [environment.md](./environment.md#public-network-guardrails).
+**App won't start.** The guardrails fail fast by design. On the public network, startup aborts if `SESSION_SECRET` is default/short, `WEBAUTHN_ORIGIN` isn't HTTPS, `WEBAUTHN_RP_ID` is `localhost`, or `FEE_PAYER_SECRET_KEY` is missing. The error names the variable. Note that the build-time checks in `next.config.mjs` and the runtime checks in `src/lib/auth/config.ts` cover slightly different sets (issue #57).
 
-**Transactions fail to submit.** The fee payer is probably out of XLM. On testnet it refunds via Friendbot; on the public network it needs topping up. It is not a signer on user wallets, so this never puts funds at risk.
+**Transactions fail to submit.** The fee payer is probably out of XLM. On testnet it refunds via Friendbot; on the public network it needs topping up. User funds are never at risk — [why](../docs/architecture.md#why-there-is-a-fee-payer).
 
 **Claim links throw.** `CLAIM_SECRET_ENCRYPTION_KEY` or `NEXT_PUBLIC_ESCROW_CONTRACT_ID` is unset in the environment.
 

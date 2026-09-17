@@ -59,8 +59,8 @@ Docs here rotted for a month because the same fact lived in four files. Each fac
 
 | You changed | Update |
 | --- | --- |
-| An environment variable | [`docs/environment.md`](./docs/environment.md) **and** `apps/web/.env.example` |
-| `apps/web/src/lib/db/schema.ts` | [`docs/database.md`](./docs/database.md), and run `pnpm --filter web db:generate` |
+| An environment variable | [`apps/web/.env.example`](./apps/web/.env.example) — the only home; `src/lib/env-parity.test.ts` fails if you forget |
+| `apps/web/src/lib/db/schema.ts` | The comments in that file, and run `pnpm --filter web db:generate` |
 | The escrow contract interface | [`contracts/escrow/README.md`](./contracts/escrow/README.md) |
 | Whether a feature works | the [README feature table](./README.md#features) — and nowhere else |
 | A branch rule or workflow trigger | this file |

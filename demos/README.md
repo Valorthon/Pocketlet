@@ -2,16 +2,8 @@
 
 Last reviewed: 2026-09-17
 
-Five standalone HTML/CSS/JS pages used to record the [demo video](https://youtu.be/FPr7b7jgrFM). They are presentation slides, **not part of the application** — no build step, no dependencies, no connection to `apps/web`.
+Standalone HTML/CSS/JS pages used to record the [demo video](https://youtu.be/FPr7b7jgrFM). Open any `index.html` directly in a browser; each directory is self-contained and titled with the slide it covers.
 
-| Directory | Slide |
-| --- | --- |
-| `01/` | The hook and the problem |
-| `02/` | Solution and value proposition |
-| `03/` | V1 product demo |
-| `04/` | Trust and recovery |
-| `05/` | Closing and roadmap |
+**These are not part of the application** — no build step, no dependencies, and no connection to `apps/web`. If you are looking for a build config that ties them in, there isn't one.
 
-Open any `index.html` directly in a browser. Each directory is self-contained (`index.html`, `style.css`, `script.js`) and loads Inter from Google Fonts.
-
-These are marketing artefacts and will drift from the product. Check the [feature table](../README.md#features) for what actually works.
+They are marketing artefacts and will drift from the product. The [feature table](../README.md#features) is what actually works.

@@ -2,56 +2,64 @@
 
 Last reviewed: 2026-09-17
 
-Two things live here: how the automated suites are laid out, and a manual end-to-end checklist for the testnet flows.
+How to run the suites, and a manual end-to-end checklist for the testnet flows.
 
 ## Running the suites
 
 ```bash
-docker compose up -d              # required — see below
+docker compose up -d              # required — the suite needs a real database
 pnpm --filter web test            # Vitest
 pnpm run lint
 pnpm run typecheck
 
-cd contracts && cargo test        # 12 contract unit tests
+cd contracts && cargo test        # contract unit tests
 ```
 
-**The TypeScript suite requires a live Postgres.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and calls `resetDatabase()` in `beforeEach`. Without a database the suite fails at import, not with a helpful message.
+`apps/web/vitest.setup.ts` applies migrations at module load and clears tables
+in `beforeEach`, so without Postgres the suite fails at import rather than with
+a useful message.
 
-> **`DATABASE_URL` in `.env.local` is ignored by the test suite.** `vitest.setup.ts` imports `./src/lib/db` before it calls `config({ path: '.env.local' })`, and that module creates the `pg` Pool at module scope. The connection string is therefore already resolved — from the real environment, or from the hardcoded `postgres://pocketlet:pocketlet@localhost:5432/pocketlet` fallback — before dotenv ever runs. If your database is not on `localhost:5432` with those credentials, export it instead:
+> **Export `DATABASE_URL`; setting it in `.env.local` does not work.** The
+> reason is in [`AGENTS.md`](../AGENTS.md#landmines) and tracked as issue #58.
 >
 > ```bash
-> DATABASE_URL=postgres://user:pass@localhost:55432/pocketlet pnpm --filter web test
+> DATABASE_URL=postgres://user:pass@localhost:5432/pocketlet pnpm --filter web test
 > ```
->
-> The failure mode is a confusing `password authentication failed`, because the suite quietly connected to whatever else is on port 5432.
 
-## Layout and conventions
+## Conventions
 
-- Vitest, `environment: 'node'`, `globals: true`, `pool: 'forks'`, `maxWorkers: 1`. The `@` alias maps to `src`.
-- Tests are colocated: `foo.ts` → `foo.test.ts`.
-- 246 cases across 34 files; 16 use `vi.mock`.
-- Rust tests live inline in `contracts/escrow/src/lib.rs` behind `#[cfg(test)]`.
+Test config lives in `apps/web/vitest.config.ts`; read it rather than trusting a
+summary here. Tests are colocated — `foo.ts` alongside `foo.test.ts`. Rust tests
+live inline in `contracts/escrow/src/lib.rs` behind `#[cfg(test)]`.
 
-Test data does not fully reset between cases — `resetDatabase()` truncates only `users` and `metrics`, so `user_devices`, `claim_links`, and `notifications` leak. Clean up explicitly in those areas. See [database.md](./database.md).
+`resetDatabase()` in `src/lib/db/test-setup.ts` deletes rows from `users` and
+`metrics` only, so `user_devices`, `claim_links` and `notifications` leak
+between tests — clean up explicitly when working in those areas. It uses
+`DELETE`, not `TRUNCATE`, so sequences are not reset.
 
-## Known gaps
+`apps/web/.env.example` is the only home for configuration, kept honest by
+`src/lib/env-parity.test.ts`. If you add a `process.env` read, add it there too
+or that test fails.
 
-Worth knowing before you claim something is covered:
+## Coverage
 
-- **No component or page tests at all.** `@vitejs/plugin-react` and `fake-indexeddb` are installed, but nothing renders a component. There is no React Testing Library.
-- **All five `api/wallet/claim-links/*` routes are untested** — the newest and most intricate feature.
-- Untested routes: most of `api/auth/*` (`challenge`, `email-challenge`, `login-options`, `login-verify`, `device-login`, `login-seedphrase`, `register-device`, `logout`, `pin*`), `api/admin/stats`, `api/wallet/device-key/submit`, `api/wallet/transactions/detail`.
-- Untested libs: `admin.ts`, `notifications.ts`, `auth/session.ts`, and `wallet/{assets,network,token,recipient,device-key,claim-secrets,claim-link-client}.ts`.
-- No coverage tooling is configured — no `--coverage` script, no thresholds.
-- Contract tests use bare `#[should_panic]` with no `expected =` string, so a test can pass on the *wrong* panic. Add the string when you touch one.
+Known gaps and their tracking issues are in
+[production-readiness.md](./production-readiness.md). To see what is untested
+right now rather than trusting a list that rots:
 
-New work should close these gaps rather than add depth where coverage already exists.
+```bash
+# Routes and libs with no adjacent test file
+cd apps/web && for f in $(find src -name '*.ts' ! -name '*.test.ts'); do
+  [ -f "${f%.ts}.test.ts" ] || echo "$f"
+done
+```
 
----
+New work should close the gaps it finds rather than deepen areas already
+covered.
 
-# Manual end-to-end checklist (Stellar Testnet)
+## Manual end-to-end checklist (Stellar Testnet)
 
-## Setup
+### Setup
 
 ```bash
 docker compose up -d
@@ -113,8 +121,6 @@ From `/home` → **Send**, with a raw testnet address, amount `0.5`, asset USDC 
 
 **Expect:** the recipient resolves to a Stellar address before submission, and the transfer completes.
 
-> Addressing by **email** will not resolve, even for a registered user — it falls through to the claimable-link path. That's a known issue, not a test failure.
-
 ### 7. Claimable link to an unregistered recipient
 
 1. From **Send**, enter a phone number or email that belongs to no account.
@@ -123,8 +129,6 @@ From `/home` → **Send**, with a raw testnet address, amount `0.5`, asset USDC 
 4. Open the link in a private window, sign up, and claim.
 
 **Expect:** funds move from escrow to the new user's wallet; `status` becomes claimed; `claimed_at` is set. Refunding before expiry must fail — the contract rejects it.
-
-> No notification is actually delivered. `notifications` rows are written with `status: 'sent'` while `src/lib/notifications.ts` only logs.
 
 ### 8. Device-key login
 
@@ -146,11 +150,13 @@ Log out and back in on the same device. A `user_devices` row should exist with a
 
 ### 11. Swaps
 
-`/swap` shows a placeholder and the API returns HTTP 410. This is expected — see the [feature table](../README.md#features).
+Expected to be inert — see the [feature table](../README.md#features).
 
-## Troubleshooting
+### Troubleshooting
 
-**Passkey registration fails.** Use `http://localhost:3000` exactly, or HTTPS with a matching `WEBAUTHN_RP_ID`. Passkeys don't work over plain HTTP on non-localhost origins.
+**Passkey registration fails.** Use `http://localhost:3000` exactly, or HTTPS with a matching `WEBAUTHN_RP_ID` — passkeys are origin-bound and will not work over plain HTTP on a non-localhost origin.
+
+**Claim links throw.** See [operations.md](./operations.md#common-production-problems); the cause is the same locally.
 
 **Wallet deployment fails.** Check that `NEXT_PUBLIC_WALLET_WASM_HASH` is installed on testnet, that the RPC URL is reachable, and that Friendbot can fund the fee payer.
 
@@ -162,8 +168,6 @@ Log out and back in on the same device. A `user_devices` row should exist with a
 UPDATE users SET recovery_locked_until = NULL, recovery_attempts = 0
 WHERE email = 'you@example.com';
 ```
-
-**Claim link throws immediately.** `CLAIM_SECRET_ENCRYPTION_KEY` or `NEXT_PUBLIC_ESCROW_CONTRACT_ID` is unset. Both throw rather than degrading.
 
 **Start completely fresh.** Drop and recreate the database — migrations reapply on the next boot:
 
