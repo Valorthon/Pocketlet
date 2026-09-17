@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [develop, staging, main]
+    branches: [develop, stag-test, prod-test]
   pull_request:
-    branches: [develop, staging, main]
+    branches: [develop, stag-test, prod-test]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -37,7 +37,7 @@ jobs:
 
       - name: Verify WASM artifact
         run: test -f target/wasm32v1-none/release/pocketlet_escrow.wasm
-        # Testnet deployment is handled by .github/workflows/cd.yml on the staging branch
+        # Escrow contract deployment is handled by .github/workflows/cd.yml on the stag-test branch
 
   web:
     name: Web App
@@ -93,6 +93,7 @@ jobs:
 
       - name: Build
         run: pnpm run build
-        # Production deployment to Railway is handled by .github/workflows/cd.yml on the main branch
+        # Railway deployment is handled by .github/workflows/cd.yml on the stag-test (internal)
+        # and prod-test (public) branches. Both target Stellar Testnet; mainnet is not supported.
         # See railway.json and Dockerfile for deployment configuration
 

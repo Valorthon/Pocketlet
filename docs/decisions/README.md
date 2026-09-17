@@ -14,8 +14,9 @@ ADRs are immutable once merged. If a decision changes, add a new ADR and mark th
 | [0004](./0004-railway-docker-deployment.md) | Railway + Docker for hosting | Accepted |
 | [0005](./0005-migrate-on-boot.md) | Apply database migrations at application startup | Accepted |
 | [0006](./0006-escrow-claim-link-design.md) | Hash-based escrow for claimable links | Accepted |
+| [0007](./0007-testnet-branch-model.md) | Two testnet release branches, no `main` | Accepted |
 
-These six were written retrospectively on 2026-09-17, reconstructed from the code and git history. They record *what* was decided and what follows from it; where the original reasoning is uncertain, they say so.
+0001–0006 were written retrospectively on 2026-09-17, reconstructed from the code and git history. They record *what* was decided and what follows from it; where the original reasoning is uncertain, they say so.
 
 ## Template
 

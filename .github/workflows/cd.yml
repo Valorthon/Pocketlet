@@ -2,7 +2,7 @@ name: CD
 
 on:
   push:
-    branches: [main, staging]
+    branches: [stag-test, prod-test]
   workflow_dispatch:
 
 concurrency:
@@ -39,9 +39,11 @@ jobs:
               - 'pnpm-workspace.yaml'
 
   deploy-contract:
-    name: Deploy Contract (Testnet)
+    name: Deploy Contract (Testnet, from stag-test)
     needs: changes
-    if: github.ref == 'refs/heads/staging' && needs.changes.outputs.contracts == 'true'
+    # Contracts deploy from the internal branch only. prod-test keeps whatever
+    # NEXT_PUBLIC_ESCROW_CONTRACT_ID its Railway environment already holds.
+    if: github.ref == 'refs/heads/stag-test' && needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -98,7 +100,11 @@ jobs:
   deploy-web:
     name: Deploy Web (Railway)
     needs: changes
-    if: github.ref == 'refs/heads/main' && needs.changes.outputs.web == 'true'
+    if: needs.changes.outputs.web == 'true'
+    # stag-test -> internal service, prod-test -> public service. The environment
+    # supplies RAILWAY_TOKEN / RAILWAY_PROJECT_ID / RAILWAY_SERVICE_NAME, so the
+    # steps below are identical for both targets.
+    environment: ${{ github.ref == 'refs/heads/prod-test' && 'prod-test' || 'stag-test' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

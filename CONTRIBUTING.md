@@ -6,22 +6,29 @@ Setup lives in the [README quickstart](./README.md#quickstart). Stack, conventio
 
 ## Remotes
 
-`origin` → `Valorthon/Pocketlet` is **canonical**. Open PRs and issues there.
+`origin` → `Valorthon/Pocketlet` is the only remote. Open PRs and issues there.
 
-`public` → `SaltinStillWaters/Pocketlet` is a secondary mirror. Don't treat it as the source of truth.
+A second remote, `public` → `SaltinStillWaters/Pocketlet`, was retired on 2026-09-17. It deployed nothing and had drifted behind. If you still have it locally, drop it: `git remote remove public`.
 
 ## Branch model
+
+Pocketlet runs on **Stellar Testnet only — mainnet is not supported**, so there is deliberately no `main` branch. Both deploy branches point at testnet; they differ in audience and in which Railway service they feed.
 
 | Branch | Role | What happens on push |
 | --- | --- | --- |
 | `develop` | Default branch. All feature work merges here. | CI (lint, typecheck, test, build, contract build) |
-| `staging` | Contract release branch. | CI + deploys the escrow contract to testnet |
-| `main` | Web release branch. | CI + triggers the Railway web deploy job |
-| `production` | What Railway actually serves. | Railway auto-deploy |
+| `stag-test` | Internal testnet release — the team's shakeout target. | CI + Railway deploy to the internal service + deploys the escrow contract to testnet |
+| `prod-test` | Public testnet release — what outside users see. | CI + Railway deploy to the public service |
 
-Flow: `feat/…` or `fix/…` → PR into `develop` → promote to `staging` (contracts) or `main` (web) → `production`.
+Flow: `feat/…` or `fix/…` → PR into `develop` → promote to `stag-test` → promote to `prod-test`.
+
+The two deploys are fully separate environments — separate Railway services, separate databases, separate domains. Passkeys are bound to a domain, so an account registered on `stag-test` does not exist on `prod-test`. Details in [`docs/operations.md`](./docs/operations.md).
+
+Adding mainnet support later means a new branch and a new ADR, not renaming these.
 
 > **History note.** Between 2026-08-06 and 2026-09-17, CI triggered only on `main` and `staging`, while every PR merged into `develop`. About 15 PRs landed with no CI at all and `main` fell 67 commits behind. The triggers now include `develop`. If you change a workflow trigger, update this table in the same PR — the mismatch between the documented model and the actual triggers is exactly what let this go unnoticed.
+>
+> **Rename, 2026-09-17.** `staging` → `stag-test`, `main` → `prod-test`, `production` deleted. Older PRs, CI runs, and commit messages still use the old names — [ADR 0007](./docs/decisions/0007-testnet-branch-model.md) explains the change.
 
 ## Branch and commit naming
 
@@ -63,7 +70,9 @@ Docs here rotted for a month because the same fact lived in four files. Each fac
 | `apps/web/src/lib/db/schema.ts` | The comments in that file, and run `pnpm --filter web db:generate` |
 | The escrow contract interface | [`contracts/escrow/README.md`](./contracts/escrow/README.md) |
 | Whether a feature works | the [README feature table](./README.md#features) — and nowhere else |
+| Which version a feature belongs to | [`docs/roadmap.md`](./docs/roadmap.md) — versions only; it never states status |
 | A branch rule or workflow trigger | this file |
+| A Railway service, environment, or deploy target | [`docs/operations.md`](./docs/operations.md) |
 | Something with a non-obvious rationale | a new ADR in [`docs/decisions/`](./docs/decisions/README.md) |
 | A testnet shortcut, or closing one | [`docs/production-readiness.md`](./docs/production-readiness.md) |
 

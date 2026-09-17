@@ -1,3 +1,5 @@
+<!-- Target `develop`, unless this is a promotion to `stag-test` or `prod-test`. -->
+
 ## What and why
 
 <!-- What changes, and what problem it solves. Link the issue: fixes #123 -->
