@@ -18,7 +18,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@noble/hashes": "^2.3.0",
+    "@noble/hashes": "^2.4.0",
     "@simplewebauthn/browser": "^13.1.0",
     "@simplewebauthn/server": "^13.1.0",
     "@stellar/stellar-sdk": "^16.0.1",
@@ -30,13 +30,13 @@
     "jose": "^6.2.12",
     "lucide-react": "^0.469.0",
     "next": "14.2.35",
-    "passkey-kit": "^0.16.2",
+    "passkey-kit": "^0.18.3",
     "pg": "^8.23.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sac-sdk": "^0.4.4",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
     "@pocketlet/config": "workspace:*",
