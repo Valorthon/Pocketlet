@@ -1,21 +1,57 @@
 version: 2
+
+# Groups deliberately cover minor and patch updates only. A major belongs in its
+# own PR so it can be judged on its merits, and so one breaking bump cannot hold
+# safe updates hostage — PR #71 bundled TypeScript 7, ESLint 10, Tailwind 4 and
+# Vitest 5 with four harmless bumps and could not be merged at all.
+#
+# Because each major now takes its own PR slot, open-pull-requests-limit must be
+# high enough to fit the groups plus the pending majors. When the cap is too low
+# Dependabot silently withholds the remainder with no signal anywhere in the UI.
+
 updates:
+  # npm — this single root entry covers the whole pnpm workspace; Dependabot
+  # already reaches apps/* and packages/* from here, so do not add a
+  # `directories:` list or the same bump is raised twice.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     groups:
+      production-dependencies:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
       dev-dependencies:
         dependency-type: development
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: cargo
     directory: /contracts
     schedule:
       interval: monthly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 5
+    groups:
+      cargo:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 8
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
