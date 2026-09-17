@@ -141,18 +141,9 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 
 ## 10. Future Versions
 
-Detailed roadmap for V1+, V2, and V3 is documented in [roadmap.md](./roadmap.md).
-
 V2 focuses on the Philippines market (PHP stablecoin, fiat rails, QR Ph). V3 expands the product to support multiple stablecoins and additional regional markets.
 
-High-level deferred features include:
-* Fiat on-ramp via licensed Stellar Anchor (V2 — Philippines)
-* PHP stablecoin (PHPC) support (V2)
-* QR Ph merchant scan-and-pay off-ramp (V2)
-* DEX swaps (reintroduction with real Stellar DEX/AMM)
-* Self-custody seed export UI
-* SEP-2 federation server
-* Multi-stablecoin support (V3)
+Which features belong to V1+, V2, and V3 — and why each was deferred — is in [roadmap.md](./roadmap.md). It is the only copy of that list.
 
 ---
 

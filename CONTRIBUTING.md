@@ -70,6 +70,7 @@ Docs here rotted for a month because the same fact lived in four files. Each fac
 | `apps/web/src/lib/db/schema.ts` | The comments in that file, and run `pnpm --filter web db:generate` |
 | The escrow contract interface | [`contracts/escrow/README.md`](./contracts/escrow/README.md) |
 | Whether a feature works | the [README feature table](./README.md#features) — and nowhere else |
+| Which version a feature belongs to | [`docs/roadmap.md`](./docs/roadmap.md) — versions only; it never states status |
 | A branch rule or workflow trigger | this file |
 | A Railway service, environment, or deploy target | [`docs/operations.md`](./docs/operations.md) |
 | Something with a non-obvious rationale | a new ADR in [`docs/decisions/`](./docs/decisions/README.md) |

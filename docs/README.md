@@ -17,7 +17,7 @@ Last reviewed: 2026-09-17
 | Run tests, or test a flow end to end | [testing.md](./testing.md) |
 | Deploy, roll back, or debug prod | [operations.md](./operations.md) |
 | Understand what the product is for | [product-spec.md](./product-spec.md) |
-| See what's planned | [roadmap.md](./roadmap.md) |
+| See which version a feature belongs to | [roadmap.md](./roadmap.md) |
 | Know what blocks mainnet | [production-readiness.md](./production-readiness.md) |
 | Know why something was built this way | [decisions/](./decisions/README.md) |
 | Work on the smart contract | [`contracts/escrow/README.md`](../contracts/escrow/README.md) |
