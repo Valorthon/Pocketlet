@@ -2,6 +2,7 @@
   "name": "pocketlet",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Pocketlet — abstracted USDC/XLM wallet on Stellar",
   "packageManager": "pnpm@11.13.1",
   "scripts": {

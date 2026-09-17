@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Wallet, KeyRound } from 'lucide-react';
 import { PinKeypad } from '@/components/ui/PinKeypad';
@@ -8,7 +8,7 @@ import { deriveRecoveryKeypair, isValidRecoveryPhrase } from '@/lib/wallet/recov
 import { ensureDeviceKey } from '@/lib/wallet/device-key';
 import { connectPasskeyKitByContractId, createPasskeyKit, Ed25519Signer } from '@/lib/wallet/passkey-kit';
 
-export default function SeedphraseLoginPage() {
+function SeedphraseLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get('email') ?? '';
@@ -202,5 +202,30 @@ export default function SeedphraseLoginPage() {
         </button>
       </div>
     </main>
+  );
+}
+
+// useSearchParams() opts the subtree into client-side rendering, so Next
+// requires a Suspense boundary above it or `next build` fails prerendering
+// this route.
+export default function SeedphraseLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
+          <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+            <div className="mb-6 flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-pocketlet-500 text-white">
+                <Wallet className="h-5 w-5" />
+              </div>
+              <span className="text-lg font-bold tracking-tight text-slate-900">Pocketlet</span>
+            </div>
+            <p className="text-sm text-slate-500">Loading...</p>
+          </div>
+        </main>
+      }
+    >
+      <SeedphraseLoginForm />
+    </Suspense>
   );
 }

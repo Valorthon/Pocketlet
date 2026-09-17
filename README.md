@@ -1,231 +1,148 @@
 # Pocketlet
 
-[![CI](https://github.com/Valorthon/pocketlet/actions/workflows/ci.yml/badge.svg)](https://github.com/Valorthon/pocketlet/actions/workflows/ci.yml)
+[![CI](https://github.com/Valorthon/Pocketlet/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Valorthon/Pocketlet/actions/workflows/ci.yml?query=branch%3Adevelop)
 
-Pocketlet is a simple web wallet for holding and sending digital dollars globally. It feels like a familiar money app, but settles on the Stellar blockchain. V1 runs on Stellar Testnet, supports USDC and XLM, and uses passkey-based abstracted custody with a Soroban smart wallet.
+Pocketlet is a web wallet for holding and sending digital dollars globally. It feels like a familiar money app, but settles on the Stellar blockchain. V1 runs on **Stellar Testnet**, supports USDC and XLM, and uses passkey-controlled Soroban smart wallets — the platform never holds user signing keys.
 
-## Links
-
-- **Live App**: https://pocketlet.up.railway.app/
-- **Demo Video**: https://youtu.be/FPr7b7jgrFM
+- **Live app:** https://pocketlet.up.railway.app/
+- **Demo video:** https://youtu.be/FPr7b7jgrFM
+- **Documentation:** [`docs/`](./docs/README.md)
 
 ## Features
 
-- **Email + passkey signup** — authenticate with a device passkey; a BIP39 recovery phrase is generated client-side for backup recovery.
-- **Abstracted custody** — each user gets a Soroban smart wallet controlled by a WebAuthn/Passkey signer.
-- **Receive USDC/XLM** — share a Stellar address or QR code.
-- **P2P transfers** — send USDC or XLM to any Stellar address (Pocketlet users by username/phone, or raw addresses).
-- **USDC ↔ XLM swaps** — *deferred to a future version* while the DEX integration is rebuilt for the passkey-kit wallet.
-- **PIN confirmation** — required for all payments.
-- **Transaction details** — view fees, operation details, and on-chain hash.
-- **Lost-passkey recovery** — email verification plus a waiting period, then restore access with the BIP39 recovery phrase or a backup passkey.
+| Feature | Status |
+| --- | --- |
+| Email + passkey signup, with a client-generated BIP39 recovery phrase | Shipped |
+| Passkey-controlled Soroban smart wallet (one per user) | Shipped |
+| Receive USDC/XLM via address or QR code | Shipped |
+| P2P transfers by username, phone, or raw Stellar address | Shipped |
+| Claimable links — send to someone who has no wallet yet, via an escrow contract | Shipped |
+| PIN confirmation on all payments | Shipped |
+| Device-key login (a short-lived Ed25519 signer, so routine sends need only a PIN) | Shipped |
+| Lost-passkey recovery via recovery phrase or backup passkey | Shipped |
+| Transaction history and on-chain detail view | Shipped |
+| Admin dashboard (`/admin`, token-gated) | Shipped |
+| USDC ↔ XLM swaps | **Deferred** — the API returns `410` and `/swap` is a placeholder while the DEX integration is rebuilt |
 
-## Project Structure
+Feature status lives in this table only. Other docs link here rather than restating it.
 
-This is a pnpm monorepo:
+## Quickstart
 
-```
-.
-├── apps/web                    Next.js 14 frontend (App Router)
-├── packages/config             Shared ESLint, TypeScript, Tailwind config
-├── contracts/                  Soroban smart contracts (Rust)
-│   └── escrow/                 Claimable-link escrow contract
-├── SPEC.md                     V1 product spec
-├── FUTURE_VERSIONS.md          V2, V3, and deferred feature roadmap
-├── TESTNET.md                  End-to-end testnet testing guide
-├── COMPETITIVE_ANALYSIS.md     Market and competitor notes
-└── README.md                   This file
-```
-
-## Deployed Contracts (Testnet)
-
-These are the contracts currently deployed on Stellar Testnet for this project:
-
-| Contract | Address | Notes |
-| --- | --- | --- |
-| Circle USDC SAC | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` | Official Circle testnet USDC Stellar Asset Contract |
-| Pocketlet Smart Wallet (example) | `CA7FMXWUMM3C37O4QF4E4R4KKXZIEBV7CTFHKDRDXPBLZQ2NMC5PZC5G` | One of the wallets deployed during testnet testing |
-| Pocketlet Smart Wallet (example) | `CCTTR6BVBPGWW76HFCRSPQAXZCOC4HKUF5BKK3ZDO7V7B6PIPDKP2BFQ` | Another wallet deployed during testnet testing |
-
-Swaps are currently disabled in the UI. A DEX integration will be added in a future version.
-
-## Prerequisites
-
-- [Node.js](https://nodejs.org/) 22+ (LTS recommended)
-- [pnpm](https://pnpm.io/) 11.13.1 (the monorepo uses `packageManager: pnpm@11.13.1`)
-- A Stellar Testnet wallet (e.g., [Laboratory](https://laboratory.stellar.org/#testnet), [LOBSTR](https://lobstr.co/), or a testnet-funded account) for end-to-end testing
-
-## Install
+You need [Node.js 22+](https://nodejs.org/), [pnpm 11.13.1](https://pnpm.io/), and [Docker](https://docs.docker.com/get-docker/) (for Postgres). To build the smart contract you also need [Rust](https://rustup.rs/) and the [Stellar CLI](https://developers.stellar.org/docs/build/smart-contracts/getting-started/setup).
 
 ```bash
+# 1. Start Postgres
+docker compose up -d
+
+# 2. Configure
+cp apps/web/.env.example apps/web/.env.local
+
+# 3. Install and run
 pnpm install
+pnpm run dev:web
 ```
 
-## Build
+Open http://localhost:3000. Migrations are applied automatically at startup.
 
-### Contracts
+> Passkeys are bound to an origin. Use `http://localhost:3000` exactly, or configure HTTPS with a matching `WEBAUTHN_RP_ID`.
 
-The repo includes a custom Soroban escrow contract under `contracts/escrow`.
+Two variables in `.env.example` ship empty and **throw at runtime** if you exercise claimable links: `CLAIM_SECRET_ENCRYPTION_KEY` (generate with `openssl rand -hex 32`) and `NEXT_PUBLIC_ESCROW_CONTRACT_ID` (deploy the contract, below). Everything else works with the defaults. `.env.example` documents every variable.
+
+## Project structure
+
+```
+apps/web/              Next.js 14 frontend + API routes (App Router)
+packages/config/       Shared ESLint, TypeScript, Tailwind config
+contracts/escrow/      Soroban claimable-link escrow contract (Rust)
+docs/                  Project documentation — start at docs/README.md
+demos/                 Static pitch-deck slides (not part of the app)
+screenshots/           Images used by this README
+.opencode/skills/      Vendored Stellar reference docs for coding agents
+```
+
+`AGENTS.md` (symlinked as `CLAUDE.md`) is the operating manual for coding agents and new developers — stack, commands, conventions, and known landmines.
+
+## Common commands
+
+```bash
+pnpm run dev:web            # Start the web app in dev mode
+pnpm run build:web          # Build the Next.js app
+pnpm run start:web          # Start the production build
+pnpm --filter web test      # Run frontend unit tests (requires Postgres running)
+pnpm run lint               # ESLint
+pnpm run typecheck          # tsc --noEmit
+pnpm --filter web db:studio # Browse the database
+pnpm run deploy:contract    # Build and deploy the escrow contract to testnet
+```
+
+Tests need a live Postgres — run `docker compose up -d` first. See [`docs/testing.md`](./docs/testing.md).
+
+### Building the contract
 
 ```bash
 cd contracts
 stellar contract build
 ```
 
-This produces `target/wasm32-unknown-unknown/release/pocketlet_escrow.wasm`.
+This produces `target/wasm32v1-none/release/pocketlet_escrow.wasm`. See [`contracts/escrow/README.md`](./contracts/escrow/README.md) for the contract interface.
 
-### Web App
+## Architecture
 
-```bash
-pnpm --filter web build
-```
+A short version; the full picture with a diagram is in [`docs/architecture.md`](./docs/architecture.md).
 
-## Run Tests
+- **Smart wallet** — `passkey-kit` deploys a passkey-controlled Soroban smart wallet per user. The primary signer is a WebAuthn credential (Secp256r1).
+- **Recovery** — a BIP39 phrase (Stellar path `m/44'/148'/0'`) generated client-side and never sent to the server, plus an optional backup passkey.
+- **Fee payer** — a server-held account rebuilds user-authorized `invoke_host_function` operations with itself as source, re-simulates for current resource fees, signs, and submits to Soroban RPC. It pays network fees and is **not** a signer on any user wallet.
+- **Balances** — read from the USDC and XLM Stellar Asset Contracts via passkey-kit's `SACClient`.
+- **Claimable links** — funds go into the escrow contract against a hashed secret; the recipient claims with the secret, or the sender refunds after expiry.
+- **Storage** — PostgreSQL via Drizzle ORM; the schema and its caveats are in [`apps/web/src/lib/db/schema.ts`](./apps/web/src/lib/db/schema.ts).
 
-### Frontend (unit tests)
+## Deployed contracts (Testnet)
 
-```bash
-pnpm --filter web test
-```
+| Contract | Address |
+| --- | --- |
+| Circle USDC SAC | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` |
+| Pocketlet escrow | Set `NEXT_PUBLIC_ESCROW_CONTRACT_ID` — printed in the CD workflow summary, or by `pnpm run deploy:contract` |
 
-### Lint and TypeScript
-
-```bash
-pnpm run lint
-pnpm run typecheck
-```
-
-## Configure the Web App
-
-Copy the example environment file and edit as needed:
-
-```bash
-cp apps/web/.env.example apps/web/.env.local
-```
-
-Key variables:
-
-| Variable | Description | Default |
-| --- | --- | --- |
-| `NEXT_PUBLIC_STELLAR_RPC_URL` | Soroban RPC endpoint | `https://soroban-testnet.stellar.org` |
-| `NEXT_PUBLIC_STELLAR_HORIZON_URL` | Horizon REST endpoint | `https://horizon-testnet.stellar.org` |
-| `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE` | Stellar network passphrase | Testnet |
-| `NEXT_PUBLIC_USDC_CONTRACT_ID` | Circle testnet USDC SAC | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` |
-| `NEXT_PUBLIC_WALLET_WASM_HASH` | Canonical passkey-kit smart-wallet WASM hash | pinned testnet hash |
-| `FEE_PAYER_SECRET_KEY` | Server-held fee payer secret (required on public network) | generated & funded automatically on testnet |
-| `RECOVERY_WAITING_PERIOD_MS` | Lost-passkey recovery waiting period | 24 hours (set to `60000` for quick testing) |
-| `WEBAUTHN_RP_ID` | WebAuthn relying party ID | `localhost` |
-| `WEBAUTHN_ORIGIN` | WebAuthn origin | `http://localhost:3000` |
-| `NEXT_PUBLIC_PASSKEY_RP_ID` | Optional passkey-kit RP ID override | falls back to `WEBAUTHN_RP_ID` |
-| `SESSION_SECRET` | JWT session signing secret | `change-me-in-production` |
-| `POCKETLET_DATA_DIR` | Optional directory for `.data` storage | `.data` in the working directory |
-
-## Run the App
-
-```bash
-pnpm run dev:web
-```
-
-Open `http://localhost:3000`.
-
-For passkey registration/login to work in Chrome, you must use `localhost` (or configure HTTPS and `WEBAUTHN_RP_ID` accordingly). Passkeys are tied to origin.
-
-## Testnet End-to-End Flow
-
-See [`TESTNET.md`](./TESTNET.md) for a step-by-step guide to test the full V1 flow on Stellar Testnet:
-
-1. Deploy the smart wallet
-2. Receive USDC/XLM from an external testnet wallet
-3. Send USDC/XLM to another account
-4. Recover a lost passkey
-
-## Architecture Overview
-
-- **Smart wallet** — passkey-kit creates a passkey-controlled Soroban smart wallet for each user. The platform never holds the user's signing key.
-- **Signer model** — the primary signer is a WebAuthn/Passkey (Secp256r1). Users also get a BIP39 recovery phrase (Stellar derivation path `m/44'/148'/0'`) and can optionally register a backup passkey.
-- **Fee payer** — a server-held account (`FEE_PAYER_SECRET_KEY`) rebuilds user-authorized `invoke_host_function` operations with itself as the source account, re-simulates for current resource fees, signs the envelope, and submits directly to Soroban RPC. It covers network fees on testnet and is not a signer on any user wallet.
-- **Balances** — read from the Stellar Asset Contract (SAC) for USDC and XLM via `passkey-kit`'s `SACClient`.
-- **Transfers** — user-authorized SAC token transfers signed by the user's passkey and submitted by the fee payer via direct RPC.
-- **Swaps** — temporarily disabled in V1 while the DEX integration is rebuilt for the passkey-kit wallet.
-- **Transactions** — fetched from Horizon and classified into receive, send, and (historical) swap.
+User smart wallets are deployed per account at runtime and derived from `NEXT_PUBLIC_WALLET_WASM_HASH`.
 
 ## Deployment
 
-The repository includes CI/CD workflows for automated deployment:
+The web app runs on [Railway](https://railway.app/) from `Dockerfile` + `railway.json`; the escrow contract is deployed to testnet by CI. Branch model, workflow triggers, and rollback are documented in [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`docs/operations.md`](./docs/operations.md).
 
-- **Frontend** — deployed to [Railway](https://railway.app/) using `railway.json` and `Dockerfile`. Railway is already configured to auto-deploy on push.
-  - The `.github/workflows/cd.yml` `deploy-web` job triggers on pushes to `main` when web-related files change.
-  - `RAILWAY_TOKEN` is **optional**. Set it as a repository secret only if you want GitHub Actions to trigger deployment manually via the Railway CLI.
-  - Optional repository variables: `RAILWAY_PROJECT_ID` and `RAILWAY_SERVICE_NAME`.
-- **Smart Contract** — the `pocketlet-escrow` Soroban contract is automatically built and deployed to Stellar Testnet by the `deploy-contract` job in `.github/workflows/cd.yml` on pushes to `staging` when contract files change.
-  - Use the local script `pnpm run deploy:contract` (or `bash contracts/deploy.sh`) to deploy manually.
-  - Set `STELLAR_DEPLOYER_SECRET` as a repository secret for deterministic testnet addresses; otherwise a fresh key is generated and funded via Friendbot.
-  - The deployed contract address is printed in the workflow summary and can be set as `NEXT_PUBLIC_ESCROW_CONTRACT_ID`.
+## Security
 
-## Scripts
+V1 is a testnet technology interface. It does not custody funds, perform KYC, or process fiat. User funds live in each user's own smart wallet, and the platform never holds signing keys.
 
-```bash
-pnpm run dev:web            # Start the web app in dev mode
-pnpm run build:web          # Build the Next.js app
-pnpm run start:web          # Start the production build
-pnpm --filter web test      # Run frontend unit tests
-pnpm run lint               # Run ESLint on the web app
-pnpm run typecheck          # Run TypeScript type checking on the web app
-pnpm run deploy:web         # Deploy the web app to Railway (requires @railway/cli)
-pnpm run deploy:contract    # Build and deploy the escrow contract to testnet
-```
-
-## Security Notes
-
-- V1 is a testnet technology interface. It does not custody funds, perform KYC, or process fiat.
-- User funds live in their own Soroban smart wallet.
-- The platform never holds user signing keys. Passkey credentials live on the user's device; the recovery phrase is generated client-side and is never sent to the server.
-- Recovery uses the BIP39 phrase or an optional backup passkey. Email verification is still required for account creation and passkey recovery, but it cannot alone rotate wallet signers.
-- The fee payer (`FEE_PAYER_SECRET_KEY`) rebuilds, signs, and submits user-authorized Soroban operations, paying network fees in the process. It never holds user funds and cannot move them. Store it in a secrets manager in production.
-- Email verification returns the code in the API response for testnet convenience. Replace with a real transactional email provider before production.
-- On the Stellar public network, `SESSION_SECRET` is required, and `WEBAUTHN_ORIGIN` must be HTTPS with a real `WEBAUTHN_RP_ID` (not `localhost`). The app fails fast on startup if these production requirements are not met.
-
-### Secrets rotation
-
-Before production, establish a rotation cadence for these environment secrets:
-
-- `SESSION_SECRET` — rotates session signing keys. Changing this invalidates all existing signed sessions and recovery tokens, forcing users to sign in again.
-- `FEE_PAYER_SECRET_KEY` — rotates the Stellar account that submits user transactions. The old fee payer can be drained and retired; users do not need to rotate anything on their wallets because the fee payer is not a signer.
-
-Store both in a secrets manager (e.g. AWS Secrets Manager, HashiCorp Vault, or 1Password Secrets Automation). For `SESSION_SECRET`, generate a fresh random value of at least 32 bytes (e.g. `openssl rand -hex 32`). Rotate during a low-traffic window and monitor for failed authentication as a signal that old sessions have expired.
+Known testnet shortcuts that must be closed before mainnet — including email verification codes returned in API responses and an unbound WebAuthn challenge — are tracked in [`docs/production-readiness.md`](./docs/production-readiness.md). Reporting policy is in [`SECURITY.md`](./SECURITY.md).
 
 ## Screenshots
 
-### Home / Balance
+### Home
 
-![Home screen showing wallet balance](./screenshots/home.png)
+![Pocketlet home screen showing the wallet balance card](./screenshots/home.png)
 
-### Send Flow
+### Send flow
 
-![](./screenshots/send_1.png)
-
-![](./screenshots/send_2.png)
-
-![](./screenshots/send_3.png)
-
-![](./screenshots/send_4.png)
-
-![](./screenshots/send_5.png)
-
-![](./screenshots/send_6.png)
+![Send screen: choosing a recipient](./screenshots/send_1.png)
+![Send screen: entering an amount](./screenshots/send_2.png)
+![Send screen: selecting USDC or XLM](./screenshots/send_3.png)
+![Send screen: reviewing the resolved address and network fee](./screenshots/send_4.png)
+![Send screen: PIN confirmation](./screenshots/send_5.png)
+![Send screen: transfer submitted with transaction hash](./screenshots/send_6.png)
 
 ### History
-![](./screenshots/history.png)
+
+![Transaction history list showing sent and received payments](./screenshots/history.png)
 
 ### Receive
-![](./screenshots/receive.png)
+
+![Receive screen showing the wallet address and QR code](./screenshots/receive.png)
 
 ### Profile
 
-![](./screenshots/profile.png)
-
-
+![Profile screen showing username, phone, and security settings](./screenshots/profile.png)
 
 ## License
 
-UNLICENSED — this project is in active development.
+Proprietary — all rights reserved. See [`LICENSE`](./LICENSE). Public visibility is not a grant of rights.
