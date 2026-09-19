@@ -82,7 +82,7 @@ pnpm run deploy:web          # railway up (needs @railway/cli)
 
 `/admin` shows counters from the `metrics` table (`api/admin/stats`), gated by a bearer token.
 
-> While `ADMIN_SECRET_TOKEN` is still the `.env.example` default, admin auth **fails closed and silently** — `/admin` gives no indication why. If the dashboard appears broken, check that variable first.
+> While `ADMIN_SECRET_TOKEN` is unset or still the `.env.example` default, admin auth fails closed: `api/admin/stats` returns **503** with "Admin API is not configured", which `/admin` shows on the login card, and logs the same to the server. A wrong token returns an undifferentiated **401**.
 
 `src/lib/metrics.ts` increments counters with `incrementMetric()`. There is no external monitoring, alerting, or log aggregation; the app writes ~23 raw `console.*` calls with no logging abstraction. Railway's log view is the only observability today.
 

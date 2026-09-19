@@ -8,8 +8,20 @@ import { HORIZON_URL } from '@/lib/wallet/network';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const authHeader = request.headers.get('authorization');
-  if (!verifyAdminToken(authHeader)) {
+  const auth = verifyAdminToken(request.headers.get('authorization'));
+  if (!auth.ok) {
+    if (auth.reason === 'unconfigured') {
+      console.error(
+        'Admin stats refused: ADMIN_SECRET_TOKEN is unset or still the .env.example default.'
+      );
+      return NextResponse.json(
+        {
+          error:
+            'Admin API is not configured. Set ADMIN_SECRET_TOKEN to a strong random value via a secrets manager.',
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

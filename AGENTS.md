@@ -74,13 +74,11 @@ Before opening a PR: `pnpm run lint && pnpm run typecheck && pnpm --filter web t
 
 Verified against the code on 2026-09-17. These are the things that look wrong, are wrong, or will waste your time.
 
-**Tests need a live database, and `.env.local` will not point them at it.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and clears tables in `beforeEach`, so without Postgres the whole suite fails at import. Worse, it calls `config({ path: '.env.local' })` *after* importing `./src/lib/db`, which creates the `pg` Pool at module scope — so by the time dotenv runs, the connection string is already fixed. `DATABASE_URL` from `.env.local` is silently ignored and the hardcoded `localhost:5432` fallback is used. **Export `DATABASE_URL` in the shell** if your database is anywhere else. (Issue #58.)
+**Tests need a live database.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and clears tables in `beforeEach`, so without Postgres the whole suite fails at import rather than with a useful message. `DATABASE_URL` is honoured from `apps/web/.env.local` — `apps/web/vitest.env.ts` is listed first in `setupFiles` so dotenv runs before `./src/lib/db` constructs the `pg` Pool at module scope. Keep it first; putting the dotenv call inside `vitest.setup.ts` is always too late, because ES module imports are evaluated before any statement body. (That was issue #58.) `drizzle.config.ts` loads `.env.local` for the same reason.
 
 **Test isolation is partial.** `src/lib/db/test-setup.ts` deletes from `users` and `metrics` only, so `user_devices`, `claim_links` and `notifications` rows leak between tests. It uses `DELETE`, not `TRUNCATE`, so sequences are not reset. There are no foreign keys anywhere in the schema — see the note at the top of `src/lib/db/schema.ts`.
 
 **`stellarAddress` is a duplicate column.** `api/wallet/deploy/route.ts:121-124` always sets it equal to `walletContractId`. It is a leftover from the classic-account era, but it is *load-bearing*: `resolveRecipient` reads `stellarAddress` while transfers use `walletContractId`. Don't drop it without changing both.
-
-**Recipient resolution silently ignores email.** `src/lib/wallet/recipient.ts` handles raw address, phone, and username only — `RecipientType` has no `'email'`. But `users.email` is the primary key and the `/send` placeholder advertises email, so a *registered* user addressed by email falls through to the unregistered branch and gets a claim link instead of a direct transfer.
 
 **The production guardrails are duplicated and drifting.** `next.config.mjs` (build time) validates `CLAIM_SECRET_ENCRYPTION_KEY` but not `FEE_PAYER_SECRET_KEY`. `src/lib/auth/config.ts` (runtime) does the exact reverse. Both check `SESSION_SECRET` and the WebAuthn origin. Change one, change the other.
 
@@ -90,8 +88,6 @@ Verified against the code on 2026-09-17. These are the things that look wrong, a
 
 **Dead code that still looks alive:**
 - `/swap` page and `api/wallet/swap` — the route returns HTTP 410, the page is a placeholder, and it's still in the nav.
-- `apps/web/scripts/fix-tests.ts` — a one-off regex codemod over test files, no script entry, no reason to run.
-- `apps/web/scripts/import-users-json.ts` — pre-Postgres backfill; the JSON store is gone.
 - `POCKETLET_DATA_DIR` now holds only `fee_payer_secret`, not user data.
 
 **Notifications don't notify.** `src/lib/notifications.ts` `console.log`s and writes the row with `status: 'sent'` without sending anything.

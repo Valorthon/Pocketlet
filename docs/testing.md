@@ -19,12 +19,13 @@ cd contracts && cargo test        # contract unit tests
 in `beforeEach`, so without Postgres the suite fails at import rather than with
 a useful message.
 
-> **Export `DATABASE_URL`; setting it in `.env.local` does not work.** The
-> reason is in [`AGENTS.md`](../AGENTS.md#landmines) and tracked as issue #58.
->
-> ```bash
-> DATABASE_URL=postgres://user:pass@localhost:5432/pocketlet pnpm --filter web test
-> ```
+`DATABASE_URL` is read from `apps/web/.env.local` if your database is not on
+the default `localhost:5432` — `apps/web/vitest.env.ts` loads it before the db
+module is imported. An exported `DATABASE_URL` still takes precedence:
+
+```bash
+DATABASE_URL=postgres://user:pass@localhost:5442/pocketlet pnpm --filter web test
+```
 
 ## Conventions
 
