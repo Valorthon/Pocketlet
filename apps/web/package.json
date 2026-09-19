@@ -19,8 +19,8 @@
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
-    "@simplewebauthn/browser": "^13.1.0",
-    "@simplewebauthn/server": "^13.1.0",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.2",
     "@stellar/stellar-sdk": "^16.0.1",
     "bcryptjs": "^3.0.3",
     "bip39": "^3.1.0",
