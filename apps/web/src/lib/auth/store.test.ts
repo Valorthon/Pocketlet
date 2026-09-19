@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
+import type { AuthenticatorTransport } from '@simplewebauthn/server';
 import { resetDatabase } from '../db/test-setup';
 import {
   createUser,
@@ -122,7 +122,7 @@ describe('auth store', () => {
       id: 'backup-key-id',
       publicKey: 'backup-pubkey',
       counter: 0,
-      transports: ['hybrid'] as AuthenticatorTransportFuture[],
+      transports: ['hybrid'] as AuthenticatorTransport[],
     };
     const user = await setBackupPasskey('backup@example.com', { credential });
     expect(user.hasBackupPasskey).toBe(true);

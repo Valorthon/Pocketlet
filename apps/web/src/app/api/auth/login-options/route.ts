@@ -1,4 +1,4 @@
-import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
+import type { AuthenticatorTransport } from '@simplewebauthn/server';
 import { generateAuthenticationOptions } from '@simplewebauthn/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { RP_ID } from '@/lib/auth/config';
@@ -17,17 +17,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
 
-  const allowCredentials: { id: string; transports?: AuthenticatorTransportFuture[] }[] = [
+  const allowCredentials: { id: string; transports?: AuthenticatorTransport[] }[] = [
     {
       id: user.credential.id,
-      transports: user.credential.transports as AuthenticatorTransportFuture[] | undefined,
+      transports: user.credential.transports as AuthenticatorTransport[] | undefined,
     },
   ];
 
   if (user.hasBackupPasskey && user.backupCredential) {
     allowCredentials.push({
       id: user.backupCredential.id,
-      transports: user.backupCredential.transports as AuthenticatorTransportFuture[] | undefined,
+      transports: user.backupCredential.transports as AuthenticatorTransport[] | undefined,
     });
   }
 
