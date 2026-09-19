@@ -8,6 +8,23 @@ version: 2
 # Because each major now takes its own PR slot, open-pull-requests-limit must be
 # high enough to fit the groups plus the pending majors. When the cap is too low
 # Dependabot silently withholds the remainder with no signal anywhere in the UI.
+#
+# Two stacks are kept OUT of the general production group, for the same reason
+# in a different form — PR #81 bundled passkey-kit 0.16 -> 0.18 with two
+# harmless bumps and went green:
+#
+#   stellar   passkey-kit is pre-1.0, where a "minor" is allowed to break, and
+#             it is the custody layer. It also pins a peer range on
+#             @stellar/stellar-sdk, so the two must move together; bumped alone
+#             it leaves an unmet peer that pnpm only warns about.
+#   webauthn  @simplewebauthn/browser and /server are one protocol
+#             implementation split across two packages. Majors are INCLUDED in
+#             this group on purpose, so the pair always arrives as one PR
+#             rather than as a skewed half (#87 green, #89 red).
+#
+# Neither stack is exercised by CI — nothing there deploys a wallet or signs
+# with a passkey — so a green check on these PRs means "typechecks and builds",
+# not "login still works". Run the manual checklist in docs/testing.md.
 
 updates:
   # npm — this single root entry covers the whole pnpm workspace; Dependabot
@@ -19,8 +36,26 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
+      stellar:
+        patterns:
+          - "passkey-kit"
+          - "passkey-kit-sdk"
+          - "@stellar/*"
+          - "sac-sdk"
+        update-types:
+          - minor
+          - patch
+      webauthn:
+        patterns:
+          - "@simplewebauthn/*"
       production-dependencies:
         dependency-type: production
+        exclude-patterns:
+          - "passkey-kit"
+          - "passkey-kit-sdk"
+          - "@stellar/*"
+          - "sac-sdk"
+          - "@simplewebauthn/*"
         update-types:
           - minor
           - patch
