@@ -28,11 +28,13 @@ Fix: integrate a transactional email provider (Resend, SendGrid, SES) and remove
 
 Fix: extract one shared validator used by both.
 
-### Admin token comparison is not constant-time — Open
+### Admin token comparison is not constant-time — Closed
 
-**Issue #61.** `src/lib/admin.ts:2` compares the bearer token with `===`, which is theoretically vulnerable to timing analysis. It does fail closed when the token is still the `.env.example` default — but silently, with no signal on `/admin` explaining why.
+**Issue #61.** `src/lib/admin.ts` compared the bearer token with `===`, which is theoretically vulnerable to timing analysis. It failed closed when the token was still the `.env.example` default, but silently — `/admin` gave no signal explaining why.
 
-Fix: use `crypto.timingSafeEqual`, and surface a clear error when the token is unconfigured.
+`verifyAdminToken` now compares SHA-256 digests of both sides with `timingSafeEqual`. Hashing first keeps both buffers at a fixed 32 bytes, so the comparison cannot throw on a length mismatch and no length check leaks the secret's size. It returns `{ ok: false, reason: 'unconfigured' | 'invalid' }` instead of a bare boolean: `api/admin/stats` answers an unconfigured token with **503** and an actionable message (which `/admin` already renders verbatim) and logs it server-side, while a wrong token still gets an undifferentiated **401**. Covered by `src/lib/admin.test.ts`.
+
+`ADMIN_SECRET_TOKEN` is deliberately *not* added to the production startup validators — that would have to land in both `next.config.mjs` and `src/lib/auth/config.ts`, deepening the drift described above.
 
 ### Fee payer key handling — Open
 
