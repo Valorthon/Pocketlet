@@ -28,11 +28,13 @@ Fix: integrate a transactional email provider (Resend, SendGrid, SES) and remove
 
 Fix: extract one shared validator used by both.
 
-### Admin token comparison is not constant-time — Open
+### Admin token comparison is not constant-time — Closed
 
-**Issue #61.** `src/lib/admin.ts:2` compares the bearer token with `===`, which is theoretically vulnerable to timing analysis. It does fail closed when the token is still the `.env.example` default — but silently, with no signal on `/admin` explaining why.
+**Issue #61.** `src/lib/admin.ts` compared the bearer token with `===`, which is theoretically vulnerable to timing analysis. It failed closed when the token was still the `.env.example` default, but silently — `/admin` gave no signal explaining why.
 
-Fix: use `crypto.timingSafeEqual`, and surface a clear error when the token is unconfigured.
+`verifyAdminToken` now compares SHA-256 digests of both sides with `timingSafeEqual`. Hashing first keeps both buffers at a fixed 32 bytes, so the comparison cannot throw on a length mismatch and no length check leaks the secret's size. It returns `{ ok: false, reason: 'unconfigured' | 'invalid' }` instead of a bare boolean: `api/admin/stats` answers an unconfigured token with **503** and an actionable message (which `/admin` already renders verbatim) and logs it server-side, while a wrong token still gets an undifferentiated **401**. Covered by `src/lib/admin.test.ts`.
+
+`ADMIN_SECRET_TOKEN` is deliberately *not* added to the production startup validators — that would have to land in both `next.config.mjs` and `src/lib/auth/config.ts`, deepening the drift described above.
 
 ### Fee payer key handling — Open
 
@@ -64,7 +66,7 @@ Fix: wire a real email/SMS provider and set `status` from the delivery result.
 
 ### Storage — mostly Closed
 
-**Issue #24.** User records moved from `apps/web/.data/users.json` to PostgreSQL ([ADR 0002](./decisions/0002-postgres-over-file-storage.md)). `apps/web/scripts/import-users-json.ts` was the one-off backfill and can be deleted.
+**Issue #24.** User records moved from `apps/web/.data/users.json` to PostgreSQL ([ADR 0002](./decisions/0002-postgres-over-file-storage.md)). `apps/web/scripts/import-users-json.ts` was the one-off backfill; it has since been deleted (issue #104).
 
 Still open: the testnet `fee_payer_secret` remains on local disk under `POCKETLET_DATA_DIR`, and belongs in a secrets manager.
 
@@ -80,9 +82,11 @@ Still open: the testnet `fee_payer_secret` remains on local disk under `POCKETLE
 
 Fix: rebuild around a real Stellar DEX/AMM using SAC or Soroban DEX flows, with quotes, slippage protection, and price-impact display. Until then, remove the dead nav entry.
 
-### Email is not a recipient resolution path — Open
+### Email is not a recipient resolution path — Closed
 
-**Issue #59.** `src/lib/wallet/recipient.ts` resolves raw addresses, phone numbers, and usernames, but not email — despite `users.email` being the primary key and the send UI suggesting email works. A **registered** user addressed by email falls through to the claimable-link branch and gets an escrow deposit instead of a direct transfer.
+**Issue #59.** `src/lib/wallet/recipient.ts` resolved raw addresses, phone numbers, and usernames, but not email — despite `users.email` being the primary key and the send UI advertising email. A **registered** user addressed by email fell through to the claimable-link branch and got an escrow deposit instead of a direct transfer.
+
+`resolveRecipient` now has an `email` branch that looks the user up with `getUserByEmail` (which normalizes to lowercase, so case does not matter) and returns their `stellarAddress`. The claim-link branch in `api/wallet/resolve` is unchanged and still catches genuinely unregistered emails, plus registered users whose wallet is not deployed yet. `api/wallet/transfer` reads only `resolved.address`, so email transfers work there too.
 
 ### `stellar_address` duplicates `wallet_contract_id` — Open
 
@@ -94,13 +98,11 @@ Always set to the same value at `api/wallet/deploy/route.ts:121-124`, but load-b
 
 ## Engineering
 
-### The test suite ignores `DATABASE_URL` from `.env.local` — Open
+### The test suite ignores `DATABASE_URL` from `.env.local` — Closed
 
-**Issue #58.** `apps/web/vitest.setup.ts` calls `config({ path: '.env.local' })` *after* importing `./src/lib/db`, which creates the `pg` Pool at module scope. ES module imports are evaluated first, so the connection string is resolved before dotenv runs, and the `.env.local` value never applies — the hardcoded `localhost:5432` fallback is used instead.
+**Issue #58.** `apps/web/vitest.setup.ts` called `config({ path: '.env.local' })` *after* importing `./src/lib/db`, which creates the `pg` Pool at module scope. ES module imports are evaluated first, so the connection string was resolved before dotenv ran and the `.env.local` value never applied — the hardcoded `localhost:5432` fallback was used instead. The failure mode was a misleading `password authentication failed` whenever anything else occupied port 5432; it passed in CI only because the service container matches the fallback.
 
-The failure mode is a misleading `password authentication failed` when anything else occupies port 5432. It works in CI only because the service container happens to match the fallback.
-
-Fix: move the `config()` call into a file loaded before the setup module (or use Vitest's `envFile`/`globalSetup`), so the environment is populated before `src/lib/db` is imported.
+The dotenv call moved to `apps/web/vitest.env.ts`, listed ahead of `vitest.setup.ts` in `setupFiles` so it is evaluated first. `apps/web/drizzle.config.ts` had the same defect and now loads `.env.local` too. dotenv does not override an already-exported variable, so a shell `DATABASE_URL` and CI's job-level env still win.
 
 ### Test coverage gaps — Open
 
@@ -116,7 +118,7 @@ Around 23 raw `console.*` calls with no logging abstraction, no alerting, and no
 
 ### Dead code — Open
 
-`apps/web/scripts/fix-tests.ts` (one-off regex codemod), `apps/web/scripts/import-users-json.ts` (pre-Postgres backfill), the `/swap` route, page, and nav entry, and `default_ledger_info()` in `contracts/escrow/src/lib.rs:191` (never called; the compiler warns on it).
+The `/swap` route, page, and nav entry, and `default_ledger_info()` in `contracts/escrow/src/lib.rs:191` (never called; the compiler warns on it). The two one-off scripts under `apps/web/scripts/` were deleted in issue #104.
 
 ### Deploy logic is duplicated — Open
 
