@@ -29,9 +29,6 @@ importers:
       '@stellar/stellar-sdk':
         specifier: ^16.0.1
         version: 16.0.1
-      '@types/qrcode.react':
-        specifier: ^1.0.5
-        version: 1.0.5
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -1000,9 +997,6 @@ packages:
 
   '@types/prop-types@15.7.15':
     resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
-
-  '@types/qrcode.react@1.0.5':
-    resolution: {integrity: sha512-BghPtnlwvrvq8QkGa1H25YnN+5OIgCKFuQruncGWLGJYOzeSKiix/4+B9BtfKF2wf5ja8yfyWYA3OXju995G8w==}
 
   '@types/react-dom@18.3.7':
     resolution: {integrity: sha512-MEe3UeoENYVFXzoXEWsvcpg6ZvlrFNlOQ7EOsvhI3CfAXwzPfO8Qwuxd40nepsYKqyyVQnTdEfv68q91yLcKrQ==}
@@ -3188,10 +3182,6 @@ snapshots:
       pg-types: 2.2.0
 
   '@types/prop-types@15.7.15': {}
-
-  '@types/qrcode.react@1.0.5':
-    dependencies:
-      '@types/react': 18.3.31
 
   '@types/react-dom@18.3.7(@types/react@18.3.31)':
     dependencies:
