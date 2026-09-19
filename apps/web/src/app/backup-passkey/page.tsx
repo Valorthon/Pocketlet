@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { createPasskeyKit, SignerStore } from '@/lib/wallet/passkey-kit';
+import {
+  createPasskeyKit,
+  fetchPasskeyChallenge,
+  SignerStore,
+} from '@/lib/wallet/passkey-kit';
 import {
   checkPasskeySupport,
   formatPasskeyKitError,
@@ -59,7 +63,8 @@ export default function BackupPasskeyPage() {
         return;
       }
 
-      const kit = createPasskeyKit();
+      const challenge = await fetchPasskeyChallenge();
+      const kit = createPasskeyKit(challenge);
       await kit.connectWallet({ keyId: walletInfo.primaryPasskeyKeyId });
 
       const backup = await kit.createKey('Pocketlet Backup', 'Pocketlet user', {

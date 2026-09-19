@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { CheckCircle2 } from 'lucide-react';
 import {
   createPasskeyKit,
+  fetchPasskeyChallenge,
   connectPasskeyKitByContractId,
   SignerStore,
   SignerKey,
@@ -193,7 +194,10 @@ export default function RecoverPage() {
         return;
       }
 
-      const kit = createPasskeyKit();
+      // Recovery has no session; the challenge endpoint also accepts the
+      // recovery cookie, which is what authenticates this ceremony.
+      const challenge = await fetchPasskeyChallenge();
+      const kit = createPasskeyKit(challenge);
       connectPasskeyKitByContractId(kit, status.contractId);
 
       const newPasskey = await kit.createKey('Pocketlet Recovery', email || 'Pocketlet user', {

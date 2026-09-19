@@ -22,6 +22,13 @@
       "when": 1789859672490,
       "tag": "0002_fuzzy_shaman",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789859906245,
+      "tag": "0003_clumsy_photon",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Wallet, Loader2 } from 'lucide-react';
-import { createPasskeyKit } from '@/lib/wallet/passkey-kit';
+import {
+  createPasskeyKit,
+  fetchPasskeyChallenge,
+} from '@/lib/wallet/passkey-kit';
 import {
   checkPasskeySupport,
   formatPasskeyKitError,
@@ -73,7 +76,10 @@ export default function SignupPage() {
         return;
       }
 
-      const kit = createPasskeyKit();
+      // The server issues the WebAuthn challenge and requires it back in the
+      // registration response, so it has to be fetched before the ceremony.
+      const challenge = await fetchPasskeyChallenge();
+      const kit = createPasskeyKit(challenge);
       const result = await kit.createWallet('Pocketlet', email, {
         authenticatorSelection: {
           residentKey: 'preferred',

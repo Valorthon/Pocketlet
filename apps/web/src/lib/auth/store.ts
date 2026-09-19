@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db, schema } from '@/lib/db';
 import { hashPin, verifyPin } from './pin';
 
@@ -16,6 +16,8 @@ export interface User {
   emailVerified: boolean;
   verificationCode?: string;
   pendingChallenge?: string;
+  passkeyChallenge?: string;
+  passkeyChallengeExpiresAt?: Date;
   credential?: Credential;
   walletContractId?: string;
   stellarAddress?: string;
@@ -68,6 +70,8 @@ function mapUser(row: typeof schema.users.$inferSelect): User {
     emailVerified: row.emailVerified,
     verificationCode: row.verificationCode ?? undefined,
     pendingChallenge: row.pendingChallenge ?? undefined,
+    passkeyChallenge: row.passkeyChallenge ?? undefined,
+    passkeyChallengeExpiresAt: row.passkeyChallengeExpiresAt ?? undefined,
     credential: toCredential(row.credential),
     walletContractId: row.walletContractId ?? undefined,
     stellarAddress: row.stellarAddress ?? undefined,
@@ -277,6 +281,78 @@ export async function setPendingChallenge(
   }
 
   return mapUser(updated);
+}
+
+/**
+ * How long a passkey registration challenge stays usable.
+ *
+ * Long enough for a user to work through a biometric prompt, short enough
+ * that a leaked challenge is not worth replaying.
+ */
+export const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+/** Issue a registration challenge, replacing any outstanding one. */
+export async function setPasskeyChallenge(
+  email: string,
+  challenge: string
+): Promise<User> {
+  const normalized = normalizeEmail(email);
+  const [updated] = await db
+    .update(users)
+    .set({
+      passkeyChallenge: challenge,
+      passkeyChallengeExpiresAt: new Date(Date.now() + PASSKEY_CHALLENGE_TTL_MS),
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
+    throw new Error('User not found');
+  }
+
+  return mapUser(updated);
+}
+
+/**
+ * Take the outstanding registration challenge, clearing it in the same step.
+ *
+ * Returns null when there is none, when it has expired, or when another
+ * request took it first. The clear is a compare-and-swap on the challenge
+ * value rather than a read followed by a blind write, so two concurrent
+ * requests cannot both consume the same challenge — which is the whole point
+ * of binding the ceremony to a server nonce (issue #56).
+ */
+export async function takePasskeyChallenge(
+  email: string
+): Promise<string | null> {
+  const normalized = normalizeEmail(email);
+  const row = await db.query.users.findFirst({
+    where: eq(users.email, normalized),
+  });
+
+  const challenge = row?.passkeyChallenge;
+  const expiresAt = row?.passkeyChallengeExpiresAt;
+  if (!challenge || !expiresAt || expiresAt.getTime() <= Date.now()) {
+    return null;
+  }
+
+  const [taken] = await db
+    .update(users)
+    .set({ passkeyChallenge: null, passkeyChallengeExpiresAt: null })
+    .where(
+      and(eq(users.email, normalized), eq(users.passkeyChallenge, challenge))
+    )
+    .returning({ email: users.email });
+
+  return taken ? challenge : null;
+}
+
+/** Drop any outstanding login challenge. Consumed challenges must not linger. */
+export async function clearPendingChallenge(email: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ pendingChallenge: null })
+    .where(eq(users.email, normalizeEmail(email)));
 }
 
 export async function setCredential(

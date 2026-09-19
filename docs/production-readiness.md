@@ -10,11 +10,17 @@ Status key: **Open** — still a gap. **Closed** — resolved, kept for the reco
 
 ## Security
 
-### WebAuthn challenge is not bound to a server nonce — Open
+### WebAuthn challenge is not bound to a server nonce — Closed
 
-**Issue #56.** Three flows verify a WebAuthn assertion without binding the challenge to a server-generated nonce: `api/wallet/deploy/route.ts:31`, `api/wallet/backup-passkey/route.ts:59`, `api/wallet/recovery/submit/route.ts:157`. Each carries an identical `TODO(V1 production)`.
+**Issue #56.** Wallet deploy, backup passkey and recovery submit all passed `expectedChallenge: () => true` to `verifyRegistrationResponse`, accepting whatever challenge the browser had generated. A captured registration response could therefore be replayed.
 
-Replay protection is incomplete. This is the most serious open item and must be closed before mainnet.
+`POST /api/wallet/passkey-challenge` now issues a 32-byte base64url nonce, stored on the user row with a five-minute expiry, and all three routes require it back. `takePasskeyChallenge` clears the nonce as it reads it, using a compare-and-swap on the value rather than a read followed by a blind write, so concurrent requests cannot both spend one.
+
+The client side needed changing too: passkey-kit generates its own challenge inside `createWallet`/`createKey` and `CreateOptions` has no challenge field, so `createPasskeyKit(challenge)` injects a wrapper through the kit's `WebAuthn` configuration point that overwrites the challenge and otherwise delegates to `@simplewebauthn/browser`. Authentication ceremonies are passed through untouched — passkey-kit sets that challenge to the transaction payload and the smart wallet verifies the binding on-chain.
+
+Registration uses `users.passkey_challenge`, separate from the `pending_challenge` column that the Ed25519 and login flows share, so enrolling a backup passkey mid-session cannot clobber an in-flight login. `api/auth/login-verify` also never cleared its challenge after use — the same replay class — and now does.
+
+Covered by `src/lib/auth/passkey-challenge.test.ts` (single-use, expiry, concurrency, isolation) and route tests including an end-to-end replay rejection.
 
 ### Email verification codes are returned in API responses — Open
 

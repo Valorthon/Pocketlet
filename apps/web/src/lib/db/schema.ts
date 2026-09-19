@@ -34,7 +34,15 @@ export const users = pgTable('users', {
   email: text('email').primaryKey(),
   emailVerified: boolean('email_verified').notNull().default(false),
   verificationCode: text('verification_code'),
+  // pendingChallenge serves the Ed25519 device/seedphrase flows and WebAuthn
+  // login. Passkey *registration* uses its own pair of columns so that
+  // enrolling a backup passkey during an active login cannot clobber the
+  // login's challenge, and so registration challenges can expire (issue #56).
   pendingChallenge: text('pending_challenge'),
+  passkeyChallenge: text('passkey_challenge'),
+  passkeyChallengeExpiresAt: timestamp('passkey_challenge_expires_at', {
+    withTimezone: true,
+  }),
   // Primary passkey (WebAuthn credential)
   credential: jsonb('credential').$type<Credential>(),
   // Wallet. stellarAddress is always set equal to walletContractId

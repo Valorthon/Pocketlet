@@ -6,6 +6,7 @@ import type { AuthenticationResponseJSON } from '@simplewebauthn/browser';
 import { NextRequest, NextResponse } from 'next/server';
 import { ORIGIN, RP_ID } from '@/lib/auth/config';
 import {
+  clearPendingChallenge,
   getUserByEmail,
   updateCredentialCounter,
   updateBackupCredentialCounter,
@@ -77,6 +78,11 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    // A challenge is single-use. This used to be left in place until the next
+    // login-options call overwrote it, which made the assertion replayable in
+    // the meantime (issue #56).
+    await clearPendingChallenge(email);
 
     if (isBackup) {
       await updateBackupCredentialCounter(

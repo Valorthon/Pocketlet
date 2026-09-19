@@ -8,6 +8,7 @@ import {
   isRecoveryLocked,
   setCredential,
   setWallet,
+  takePasskeyChallenge,
 } from '@/lib/auth/store';
 import { isWaitingPeriodElapsed } from '@/lib/auth/recovery';
 import { createSessionToken, cookieOptions } from '@/lib/auth/session';
@@ -149,13 +150,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // The challenge is issued by api/wallet/passkey-challenge and cleared as it
+  // is read, so a captured registration response cannot be replayed (#56).
+  const expectedChallenge = await takePasskeyChallenge(user.email);
+  if (!expectedChallenge) {
+    return NextResponse.json(
+      { error: 'No pending passkey challenge. Start the ceremony again.' },
+      { status: 400 }
+    );
+  }
+
   let verification;
   try {
     verification = await verifyRegistrationResponse({
       response: response as never,
-      // V1 testnet shortcut: passkey-kit generates the challenge client-side.
-      // TODO(V1 production): bind the challenge to a server-generated nonce.
-      expectedChallenge: () => true,
+      expectedChallenge,
       expectedOrigin: ORIGIN,
       expectedRPID: RP_ID,
       requireUserVerification: true,

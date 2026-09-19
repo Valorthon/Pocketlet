@@ -84,7 +84,7 @@ Verified against the code on 2026-09-17. These are the things that look wrong, a
 
 **The escrow expiry unit changes across the boundary.** The contract takes `expiry` as a **ledger sequence**; `claim_links.expiry` in Postgres is a **timestamp**. The conversion is done ad hoc in `api/wallet/claim-links/create/route.ts`.
 
-**Open security gap:** three copies of `TODO(V1 production): bind the WebAuthn challenge to a server-generated nonce` — `api/wallet/deploy/route.ts:31`, `api/wallet/backup-passkey/route.ts:59`, `api/wallet/recovery/submit/route.ts:157`. Replay protection is incomplete. See [`docs/production-readiness.md`](./docs/production-readiness.md).
+**Passkey registration needs a server challenge, and the client must ask for one first.** `createPasskeyKit()` with no argument cannot register a passkey — `api/wallet/deploy`, `api/wallet/backup-passkey` and `api/wallet/recovery/submit` reject a response whose challenge they did not issue. Call `fetchPasskeyChallenge()` and pass the result to `createPasskeyKit(challenge)`; it injects the nonce through passkey-kit's `WebAuthn` config point, because `createWallet`/`createKey` otherwise generate their own. Challenges are single-use and expire in five minutes. Registration uses `users.passkey_challenge`, deliberately separate from the `pending_challenge` column the login and Ed25519 flows share. (That was issue #56.)
 
 **Dead code that still looks alive:**
 - `/swap` page and `api/wallet/swap` — the route returns HTTP 410, the page is a placeholder, and it's still in the nav.
