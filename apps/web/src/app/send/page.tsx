@@ -34,7 +34,7 @@ interface TransferResult {
 }
 
 interface ResolvedRecipient {
-  type: 'address' | 'username' | 'phone';
+  type: 'address' | 'username' | 'phone' | 'email';
   address: string;
   display: string;
 }

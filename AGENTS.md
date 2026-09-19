@@ -80,8 +80,6 @@ Verified against the code on 2026-09-17. These are the things that look wrong, a
 
 **`stellarAddress` is a duplicate column.** `api/wallet/deploy/route.ts:121-124` always sets it equal to `walletContractId`. It is a leftover from the classic-account era, but it is *load-bearing*: `resolveRecipient` reads `stellarAddress` while transfers use `walletContractId`. Don't drop it without changing both.
 
-**Recipient resolution silently ignores email.** `src/lib/wallet/recipient.ts` handles raw address, phone, and username only — `RecipientType` has no `'email'`. But `users.email` is the primary key and the `/send` placeholder advertises email, so a *registered* user addressed by email falls through to the unregistered branch and gets a claim link instead of a direct transfer.
-
 **The production guardrails are duplicated and drifting.** `next.config.mjs` (build time) validates `CLAIM_SECRET_ENCRYPTION_KEY` but not `FEE_PAYER_SECRET_KEY`. `src/lib/auth/config.ts` (runtime) does the exact reverse. Both check `SESSION_SECRET` and the WebAuthn origin. Change one, change the other.
 
 **The escrow expiry unit changes across the boundary.** The contract takes `expiry` as a **ledger sequence**; `claim_links.expiry` in Postgres is a **timestamp**. The conversion is done ad hoc in `api/wallet/claim-links/create/route.ts`.

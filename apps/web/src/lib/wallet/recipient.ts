@@ -1,7 +1,8 @@
 import { Address } from '@stellar/stellar-sdk';
-import { getUserByPhone, getUserByUsername, isValidPhone, isValidUsername, normalizePhone, normalizeUsername } from '@/lib/auth/store';
+import { getUserByEmail, getUserByPhone, getUserByUsername, isValidPhone, isValidUsername, normalizePhone, normalizeUsername } from '@/lib/auth/store';
+import { isValidEmailFormat } from './recipient-format';
 
-export type RecipientType = 'address' | 'username' | 'phone';
+export type RecipientType = 'address' | 'username' | 'phone' | 'email';
 
 export interface ResolvedRecipient {
   type: RecipientType;
@@ -47,6 +48,20 @@ export async function resolveRecipient(
         type: 'username',
         address: user.stellarAddress,
         display: `@${normalized}`,
+      };
+    }
+  }
+
+  // 4. Email — users.email is the primary key. getUserByEmail normalizes
+  // (trim + lowercase) internally, so mixed-case input resolves, and
+  // user.email is the stored normalized value.
+  if (isValidEmailFormat(trimmed)) {
+    const user = await getUserByEmail(trimmed);
+    if (user?.stellarAddress) {
+      return {
+        type: 'email',
+        address: user.stellarAddress,
+        display: user.email,
       };
     }
   }

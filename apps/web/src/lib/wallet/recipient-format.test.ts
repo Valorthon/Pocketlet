@@ -68,7 +68,8 @@ describe('validateRecipientFormat', () => {
     expect(validateRecipientFormat('GATVJDFPIPADU74ALX4344HEQQZ2LGMNWABPXBOWYMVXM37KMTTUALTU')).toBe(null);
     expect(validateRecipientFormat('+639123456789')).toBe(null);
     expect(validateRecipientFormat('@alice')).toBe(null);
-    // Email is an accepted recipient format: it routes to a claimable link.
+    // Email resolves to a registered user's wallet, or falls back to a
+    // claimable link when nobody owns it.
     expect(validateRecipientFormat('alice@example.com')).toBe(null);
   });
 

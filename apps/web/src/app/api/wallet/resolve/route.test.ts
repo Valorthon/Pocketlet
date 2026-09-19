@@ -45,6 +45,25 @@ async function createUserWithWallet(email: string, username?: string, phone?: st
   return createSessionToken({ email });
 }
 
+const RECIPIENT_ADDRESS =
+  'GCCUPAD2H2RHIQMAPPY6RPLOVCAU5MY5BA43UPKU2UGB4AIEPJSXDDGI';
+
+/** A second, registered user — the one being addressed, not the caller. */
+async function createRecipient(email: string) {
+  await createUser(email, '000000');
+  await setEmailVerified(email);
+  await setCredential(email, {
+    id: 'cred-id-2',
+    publicKey: 'base64-pubkey-2',
+    counter: 0,
+  });
+  await setWallet(email, {
+    walletContractId: 'CRECIPIENT2',
+    stellarAddress: RECIPIENT_ADDRESS,
+    primaryPasskeyKeyId: 'cred-id-2',
+  });
+}
+
 function createResolveRequest(body: unknown, token?: string) {
   if (token) {
     cookieJar[SESSION_COOKIE_NAME] = token;
@@ -103,6 +122,56 @@ describe('POST /api/wallet/resolve', () => {
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain('Recipient not found');
+  });
+
+  it('resolves a registered email to a direct transfer', async () => {
+    const token = await createUserWithWallet('alice@example.com');
+    await createRecipient('bob@example.com');
+    const req = createResolveRequest({ recipient: 'bob@example.com' }, token);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { type: string; address: string; display: string };
+    expect(body.type).toBe('email');
+    expect(body.display).toBe('bob@example.com');
+    expect(body.address).toBe(RECIPIENT_ADDRESS);
+  });
+
+  it('resolves a registered email regardless of case', async () => {
+    const token = await createUserWithWallet('alice@example.com');
+    await createRecipient('bob@example.com');
+    const req = createResolveRequest({ recipient: '  Bob@Example.COM ' }, token);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { type: string; display: string };
+    expect(body.type).toBe('email');
+    expect(body.display).toBe('bob@example.com');
+  });
+
+  it('offers a claim link for an email nobody is registered under', async () => {
+    const token = await createUserWithWallet('alice@example.com');
+    const req = createResolveRequest({ recipient: 'nobody@example.com' }, token);
+    const res = await POST(req);
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as {
+      unregistered: boolean;
+      identifier: string;
+      type: string;
+    };
+    expect(body.unregistered).toBe(true);
+    expect(body.type).toBe('email');
+    expect(body.identifier).toBe('nobody@example.com');
+  });
+
+  it('offers a claim link for a registered email whose wallet is not deployed', async () => {
+    const token = await createUserWithWallet('alice@example.com');
+    await createUser('carol@example.com', '000000');
+    await setEmailVerified('carol@example.com');
+    const req = createResolveRequest({ recipient: 'carol@example.com' }, token);
+    const res = await POST(req);
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { unregistered: boolean; type: string };
+    expect(body.unregistered).toBe(true);
+    expect(body.type).toBe('email');
   });
 
   it('returns 400 when recipient is missing', async () => {

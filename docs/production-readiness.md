@@ -82,9 +82,11 @@ Still open: the testnet `fee_payer_secret` remains on local disk under `POCKETLE
 
 Fix: rebuild around a real Stellar DEX/AMM using SAC or Soroban DEX flows, with quotes, slippage protection, and price-impact display. Until then, remove the dead nav entry.
 
-### Email is not a recipient resolution path — Open
+### Email is not a recipient resolution path — Closed
 
-**Issue #59.** `src/lib/wallet/recipient.ts` resolves raw addresses, phone numbers, and usernames, but not email — despite `users.email` being the primary key and the send UI suggesting email works. A **registered** user addressed by email falls through to the claimable-link branch and gets an escrow deposit instead of a direct transfer.
+**Issue #59.** `src/lib/wallet/recipient.ts` resolved raw addresses, phone numbers, and usernames, but not email — despite `users.email` being the primary key and the send UI advertising email. A **registered** user addressed by email fell through to the claimable-link branch and got an escrow deposit instead of a direct transfer.
+
+`resolveRecipient` now has an `email` branch that looks the user up with `getUserByEmail` (which normalizes to lowercase, so case does not matter) and returns their `stellarAddress`. The claim-link branch in `api/wallet/resolve` is unchanged and still catches genuinely unregistered emails, plus registered users whose wallet is not deployed yet. `api/wallet/transfer` reads only `resolved.address`, so email transfers work there too.
 
 ### `stellar_address` duplicates `wallet_contract_id` — Open
 
