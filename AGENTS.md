@@ -90,8 +90,6 @@ Verified against the code on 2026-09-17. These are the things that look wrong, a
 
 **Dead code that still looks alive:**
 - `/swap` page and `api/wallet/swap` — the route returns HTTP 410, the page is a placeholder, and it's still in the nav.
-- `apps/web/scripts/fix-tests.ts` — a one-off regex codemod over test files, no script entry, no reason to run.
-- `apps/web/scripts/import-users-json.ts` — pre-Postgres backfill; the JSON store is gone.
 - `POCKETLET_DATA_DIR` now holds only `fee_payer_secret`, not user data.
 
 **Notifications don't notify.** `src/lib/notifications.ts` `console.log`s and writes the row with `status: 'sent'` without sending anything.

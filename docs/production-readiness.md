@@ -64,7 +64,7 @@ Fix: wire a real email/SMS provider and set `status` from the delivery result.
 
 ### Storage — mostly Closed
 
-**Issue #24.** User records moved from `apps/web/.data/users.json` to PostgreSQL ([ADR 0002](./decisions/0002-postgres-over-file-storage.md)). `apps/web/scripts/import-users-json.ts` was the one-off backfill and can be deleted.
+**Issue #24.** User records moved from `apps/web/.data/users.json` to PostgreSQL ([ADR 0002](./decisions/0002-postgres-over-file-storage.md)). `apps/web/scripts/import-users-json.ts` was the one-off backfill; it has since been deleted (issue #104).
 
 Still open: the testnet `fee_payer_secret` remains on local disk under `POCKETLET_DATA_DIR`, and belongs in a secrets manager.
 
@@ -116,7 +116,7 @@ Around 23 raw `console.*` calls with no logging abstraction, no alerting, and no
 
 ### Dead code — Open
 
-`apps/web/scripts/fix-tests.ts` (one-off regex codemod), `apps/web/scripts/import-users-json.ts` (pre-Postgres backfill), the `/swap` route, page, and nav entry, and `default_ledger_info()` in `contracts/escrow/src/lib.rs:191` (never called; the compiler warns on it).
+The `/swap` route, page, and nav entry, and `default_ledger_info()` in `contracts/escrow/src/lib.rs:191` (never called; the compiler warns on it). The two one-off scripts under `apps/web/scripts/` were deleted in issue #104.
 
 ### Deploy logic is duplicated — Open
 
