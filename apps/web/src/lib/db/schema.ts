@@ -10,9 +10,14 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-// NOTE: there are no foreign keys anywhere in this schema. userDevices.email,
-// claimLinks.senderEmail and notifications.claimLinkId are plain columns, so
-// orphan rows are possible and deletes do not cascade (issue #62).
+// Referential integrity: userDevices.email and claimLinks.senderEmail
+// reference users.email; notifications.claimLinkId references claimLinks.id.
+// Delete behaviour differs on purpose — a device signer or a notification is
+// meaningless without its parent and cascades, but a claim link records an
+// escrow deposit that may still hold funds on-chain, so it restricts and a
+// user with outstanding links cannot be deleted out from under it.
+// claimLinks.recipientEmail is deliberately NOT a reference: the whole point
+// of a claim link is that the recipient has no account yet (issue #62).
 
 export type Credential = {
   id: string;
@@ -85,7 +90,9 @@ export type NewUser = typeof users.$inferInsert;
 // expiresAt is enforced at login.
 export const userDevices = pgTable('user_devices', {
   id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').notNull(),
+  email: text('email')
+    .notNull()
+    .references(() => users.email, { onDelete: 'cascade' }),
   devicePublicKey: text('device_public_key').notNull().unique(),
   deviceName: text('device_name'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -98,7 +105,9 @@ export type NewUserDevice = typeof userDevices.$inferInsert;
 
 export const claimLinks = pgTable('claim_links', {
   id: uuid('id').primaryKey().defaultRandom(),
-  senderEmail: text('sender_email').notNull(),
+  senderEmail: text('sender_email')
+    .notNull()
+    .references(() => users.email, { onDelete: 'restrict' }),
   recipientPhone: text('recipient_phone'),
   recipientEmail: text('recipient_email'),
   tokenContractId: text('token_contract_id').notNull(),
@@ -121,7 +130,9 @@ export type NewClaimLink = typeof claimLinks.$inferInsert;
 
 export const notifications = pgTable('notifications', {
   id: uuid('id').primaryKey().defaultRandom(),
-  claimLinkId: uuid('claim_link_id').notNull(),
+  claimLinkId: uuid('claim_link_id')
+    .notNull()
+    .references(() => claimLinks.id, { onDelete: 'cascade' }),
   channel: text('channel').notNull(),
   recipient: text('recipient').notNull(),
   status: text('status').notNull().default('queued'),

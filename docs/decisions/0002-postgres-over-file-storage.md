@@ -23,7 +23,7 @@ Data survives redeploys, concurrent writes are safe, and features like claim lin
 
 It also added a deployment concern: migrations must run before the new code serves traffic, which [0005](./0005-migrate-on-boot.md) addresses.
 
-The migration was done quickly and **no foreign keys were defined**. `user_devices.email`, `claim_links.sender_email`, and `notifications.claim_link_id` have no referential integrity, which leaves orphan rows possible and makes test cleanup incomplete. This was an oversight rather than a decision, and it is tracked in [production-readiness.md](../production-readiness.md).
+The migration was done quickly and **no foreign keys were defined**. `user_devices.email`, `claim_links.sender_email`, and `notifications.claim_link_id` had no referential integrity, which left orphan rows possible and made test cleanup incomplete. This was an oversight rather than a decision, and it was corrected in issue #62 — see [production-readiness.md](../production-readiness.md).
 
 Note also that `stellar_address` was carried over from the classic-account era and duplicates `wallet_contract_id`.
 

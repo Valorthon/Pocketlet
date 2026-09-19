@@ -72,9 +72,15 @@ Fix: wire a real email/SMS provider and set `status` from the delivery result.
 
 Still open: the testnet `fee_payer_secret` remains on local disk under `POCKETLET_DATA_DIR`, and belongs in a secrets manager.
 
-### No foreign keys — Open
+### No foreign keys — Closed
 
-**Issue #62.** `user_devices.email`, `claim_links.sender_email`, and `notifications.claim_link_id` have no referential integrity. Orphan rows are possible and deletes don't cascade. This also means test cleanup is incomplete — see [testing.md](./testing.md#conventions).
+**Issue #62.** `user_devices.email`, `claim_links.sender_email`, and `notifications.claim_link_id` had no referential integrity, so orphan rows were possible and deletes did not cascade.
+
+All three are now foreign keys (migration `0002_fuzzy_shaman.sql`). Delete behaviour differs by intent: `user_devices` and `notifications` cascade, because a device signer or a queued notification is meaningless without its parent; `claim_links.sender_email` **restricts**, because a claim link records an escrow deposit that may still hold funds on-chain and must not disappear with its sender. `claim_links.recipient_email` is deliberately not a reference — an unregistered recipient is the whole point of a claim link.
+
+`resetDatabase()` now issues a single `TRUNCATE ... RESTART IDENTITY CASCADE` over all five tables instead of deleting from two, which is order-independent (so the restrict constraint cannot trip it) and faster. Covered by `src/lib/db/schema.test.ts`.
+
+The migration begins with three hand-added `DELETE` statements that sweep pre-existing orphans. Migrations run at boot and at test import, so without them a single leftover row would abort startup — and any database that ran the old `resetDatabase()` is likely to hold some.
 
 ## Product
 

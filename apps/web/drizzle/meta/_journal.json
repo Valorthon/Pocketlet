@@ -15,6 +15,13 @@
       "when": 1787993672893,
       "tag": "0001_little_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789859672490,
+      "tag": "0002_fuzzy_shaman",
+      "breakpoints": true
     }
   ]
 }
