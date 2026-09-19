@@ -94,13 +94,11 @@ Always set to the same value at `api/wallet/deploy/route.ts:121-124`, but load-b
 
 ## Engineering
 
-### The test suite ignores `DATABASE_URL` from `.env.local` — Open
+### The test suite ignores `DATABASE_URL` from `.env.local` — Closed
 
-**Issue #58.** `apps/web/vitest.setup.ts` calls `config({ path: '.env.local' })` *after* importing `./src/lib/db`, which creates the `pg` Pool at module scope. ES module imports are evaluated first, so the connection string is resolved before dotenv runs, and the `.env.local` value never applies — the hardcoded `localhost:5432` fallback is used instead.
+**Issue #58.** `apps/web/vitest.setup.ts` called `config({ path: '.env.local' })` *after* importing `./src/lib/db`, which creates the `pg` Pool at module scope. ES module imports are evaluated first, so the connection string was resolved before dotenv ran and the `.env.local` value never applied — the hardcoded `localhost:5432` fallback was used instead. The failure mode was a misleading `password authentication failed` whenever anything else occupied port 5432; it passed in CI only because the service container matches the fallback.
 
-The failure mode is a misleading `password authentication failed` when anything else occupies port 5432. It works in CI only because the service container happens to match the fallback.
-
-Fix: move the `config()` call into a file loaded before the setup module (or use Vitest's `envFile`/`globalSetup`), so the environment is populated before `src/lib/db` is imported.
+The dotenv call moved to `apps/web/vitest.env.ts`, listed ahead of `vitest.setup.ts` in `setupFiles` so it is evaluated first. `apps/web/drizzle.config.ts` had the same defect and now loads `.env.local` too. dotenv does not override an already-exported variable, so a shell `DATABASE_URL` and CI's job-level env still win.
 
 ### Test coverage gaps — Open
 
