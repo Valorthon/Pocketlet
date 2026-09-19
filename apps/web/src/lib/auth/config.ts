@@ -1,68 +1,13 @@
-import { Networks } from '@stellar/stellar-sdk';
+// Runtime half of the production guardrails. The build-time half is in
+// next.config.mjs; both call the same module so they cannot drift apart
+// again (issue #57). Re-exported because this module is the documented home
+// of auth config, and because importing it is what triggers validation.
+export {
+  validateProductionConfig,
+  isProductionNetwork,
+} from '@/lib/config/production-guardrails.mjs';
 
-const DEV_SESSION_SECRETS = [
-  'change-me-in-production',
-  'dev-secret-change-in-production',
-];
-
-function isProductionNetwork(): boolean {
-  return (
-    (process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET) ===
-    Networks.PUBLIC
-  );
-}
-
-export function validateProductionConfig(): void {
-  if (!isProductionNetwork()) {
-    return;
-  }
-
-  const sessionSecret = process.env.SESSION_SECRET?.trim();
-  if (!sessionSecret) {
-    throw new Error(
-      'SESSION_SECRET is required in production. ' +
-        'Set a strong, random secret (at least 32 bytes) via a secrets manager.'
-    );
-  }
-
-  if (DEV_SESSION_SECRETS.includes(sessionSecret)) {
-    throw new Error(
-      'SESSION_SECRET cannot use the default/dev value in production. ' +
-        'Generate a new random secret and update it via a secrets manager.'
-    );
-  }
-
-  if (sessionSecret.length < 32) {
-    throw new Error(
-      'SESSION_SECRET must be at least 32 characters long in production. ' +
-        'Generate a longer random secret via a secrets manager.'
-    );
-  }
-
-  const origin = process.env.WEBAUTHN_ORIGIN?.trim();
-  if (!origin || !origin.startsWith('https://')) {
-    throw new Error(
-      'WEBAUTHN_ORIGIN must be a valid HTTPS URL in production. ' +
-        'Plain HTTP origins are insecure and WebAuthn will fail on non-localhost origins.'
-    );
-  }
-
-  const rpId = process.env.WEBAUTHN_RP_ID?.trim();
-  if (!rpId || rpId === 'localhost') {
-    throw new Error(
-      'WEBAUTHN_RP_ID must be a real domain in production. ' +
-        'localhost is not allowed because passkeys are origin-bound.'
-    );
-  }
-
-  const feePayerSecret = process.env.FEE_PAYER_SECRET_KEY?.trim();
-  if (!feePayerSecret) {
-    throw new Error(
-      'FEE_PAYER_SECRET_KEY is required in production. ' +
-        'Set the fee payer account secret via a secrets manager.'
-    );
-  }
-}
+import { validateProductionConfig } from '@/lib/config/production-guardrails.mjs';
 
 export const RP_NAME = process.env.WEBAUTHN_RP_NAME ?? 'Pocketlet';
 export const RP_ID = process.env.WEBAUTHN_RP_ID?.trim() || 'localhost';

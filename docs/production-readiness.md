@@ -22,11 +22,13 @@ Replay protection is incomplete. This is the most serious open item and must be 
 
 Fix: integrate a transactional email provider (Resend, SendGrid, SES) and remove the code from responses.
 
-### Production guardrails are duplicated and drifting — Open
+### Production guardrails are duplicated and drifting — Closed
 
-**Issue #57.** The public-network checks exist twice and do not agree. `next.config.mjs` (build time) validates `CLAIM_SECRET_ENCRYPTION_KEY` but not `FEE_PAYER_SECRET_KEY`; `src/lib/auth/config.ts` (runtime) does the reverse. Both cover `SESSION_SECRET` and the WebAuthn settings.
+**Issue #57.** The public-network checks existed twice and did not agree. `next.config.mjs` (build time) validated `CLAIM_SECRET_ENCRYPTION_KEY` but not `FEE_PAYER_SECRET_KEY`; `src/lib/auth/config.ts` (runtime) did the reverse. Because `output: 'standalone'` means the build-time copy never re-runs in the deployed container, `CLAIM_SECRET_ENCRYPTION_KEY` was in practice only ever enforced on the build machine.
 
-Fix: extract one shared validator used by both.
+Both now call `src/lib/config/production-guardrails.mjs`, which enforces the union: `SESSION_SECRET` (presence, not a placeholder, at least 32 characters), an HTTPS `WEBAUTHN_ORIGIN`, a non-`localhost` `WEBAUTHN_RP_ID`, `FEE_PAYER_SECRET_KEY` and `CLAIM_SECRET_ENCRYPTION_KEY`. Two latent bugs went with it: every guarded secret is now rejected if left at an `.env.example` placeholder (previously only `SESSION_SECRET` was), and an empty `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE` is treated as unset rather than as "not the public network", which used to switch all guardrails off silently.
+
+The module is plain ESM JavaScript, not TypeScript, because Next 14 loads `next.config.mjs` through Node's ESM loader with no transpilation and has no `next.config.ts` support. It keeps the passphrase as a literal rather than importing `Networks` from `@stellar/stellar-sdk`, so `next build` does not pay for the SDK at config-load time. Covered by `src/lib/config/production-guardrails.test.ts`.
 
 ### Admin token comparison is not constant-time — Closed
 
@@ -34,7 +36,7 @@ Fix: extract one shared validator used by both.
 
 `verifyAdminToken` now compares SHA-256 digests of both sides with `timingSafeEqual`. Hashing first keeps both buffers at a fixed 32 bytes, so the comparison cannot throw on a length mismatch and no length check leaks the secret's size. It returns `{ ok: false, reason: 'unconfigured' | 'invalid' }` instead of a bare boolean: `api/admin/stats` answers an unconfigured token with **503** and an actionable message (which `/admin` already renders verbatim) and logs it server-side, while a wrong token still gets an undifferentiated **401**. Covered by `src/lib/admin.test.ts`.
 
-`ADMIN_SECRET_TOKEN` is deliberately *not* added to the production startup validators — that would have to land in both `next.config.mjs` and `src/lib/auth/config.ts`, deepening the drift described above.
+`ADMIN_SECRET_TOKEN` is still not among the production startup requirements. The reason originally given — that it would have to be added in two drifting places — no longer applies now that #57 is closed; adding it to `src/lib/config/production-guardrails.mjs` is a one-line change. It is left out because it would make a mainnet build fail for a service that may legitimately run without the admin dashboard, which is a product decision rather than a security one.
 
 ### Fee payer key handling — Open
 

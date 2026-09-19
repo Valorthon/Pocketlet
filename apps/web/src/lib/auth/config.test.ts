@@ -8,6 +8,7 @@ const originalEnv = {
   WEBAUTHN_RP_ID: process.env.WEBAUTHN_RP_ID,
   WEBAUTHN_ORIGIN: process.env.WEBAUTHN_ORIGIN,
   FEE_PAYER_SECRET_KEY: process.env.FEE_PAYER_SECRET_KEY,
+  CLAIM_SECRET_ENCRYPTION_KEY: process.env.CLAIM_SECRET_ENCRYPTION_KEY,
 };
 
 function clearFeePayerEnv(): void {
@@ -19,6 +20,11 @@ function setValidFeePayerEnv(): void {
     'SBI2ATXEXZNK7L53NN4AWQMVCZB2HVULL3LKM7FYVZWL25IUHJOE65YS';
 }
 
+function setValidClaimSecretEnv(): void {
+  process.env.CLAIM_SECRET_ENCRYPTION_KEY =
+    '9f2c7a1e5b3d80460fae1c9d7b25380e46af1c9d7b25380e46af1c9d7b25380e';
+}
+
 beforeAll(() => {
   vi.resetModules();
   delete process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE;
@@ -26,6 +32,7 @@ beforeAll(() => {
   delete process.env.WEBAUTHN_RP_ID;
   delete process.env.WEBAUTHN_ORIGIN;
   clearFeePayerEnv();
+  delete process.env.CLAIM_SECRET_ENCRYPTION_KEY;
 });
 
 afterAll(() => {
@@ -36,6 +43,8 @@ afterAll(() => {
   process.env.WEBAUTHN_RP_ID = originalEnv.WEBAUTHN_RP_ID;
   process.env.WEBAUTHN_ORIGIN = originalEnv.WEBAUTHN_ORIGIN;
   process.env.FEE_PAYER_SECRET_KEY = originalEnv.FEE_PAYER_SECRET_KEY;
+  process.env.CLAIM_SECRET_ENCRYPTION_KEY =
+    originalEnv.CLAIM_SECRET_ENCRYPTION_KEY;
 });
 
 async function importConfig() {
@@ -107,8 +116,35 @@ describe('auth config', () => {
     process.env.WEBAUTHN_RP_ID = 'example.com';
     process.env.WEBAUTHN_ORIGIN = 'https://example.com';
     clearFeePayerEnv();
+    setValidClaimSecretEnv();
     await expect(importConfig()).rejects.toThrow(
       'FEE_PAYER_SECRET_KEY is required in production'
+    );
+  });
+
+  // Runtime never used to check this one — only next.config.mjs did, and with
+  // output: 'standalone' that copy does not re-run in the deployed container.
+  it('throws in production when CLAIM_SECRET_ENCRYPTION_KEY is missing', async () => {
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.PUBLIC;
+    process.env.SESSION_SECRET = 'strong-production-secret-32-characters';
+    process.env.WEBAUTHN_RP_ID = 'example.com';
+    process.env.WEBAUTHN_ORIGIN = 'https://example.com';
+    setValidFeePayerEnv();
+    delete process.env.CLAIM_SECRET_ENCRYPTION_KEY;
+    await expect(importConfig()).rejects.toThrow(
+      'CLAIM_SECRET_ENCRYPTION_KEY is required in production'
+    );
+  });
+
+  it('throws in production when a secret is still a placeholder', async () => {
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE = Networks.PUBLIC;
+    process.env.SESSION_SECRET = 'strong-production-secret-32-characters';
+    process.env.WEBAUTHN_RP_ID = 'example.com';
+    process.env.WEBAUTHN_ORIGIN = 'https://example.com';
+    process.env.FEE_PAYER_SECRET_KEY = 'change-me-in-production';
+    setValidClaimSecretEnv();
+    await expect(importConfig()).rejects.toThrow(
+      'FEE_PAYER_SECRET_KEY cannot use the default/dev value'
     );
   });
 
@@ -118,6 +154,7 @@ describe('auth config', () => {
     process.env.WEBAUTHN_RP_ID = 'example.com';
     process.env.WEBAUTHN_ORIGIN = 'https://example.com';
     setValidFeePayerEnv();
+    setValidClaimSecretEnv();
     const mod = await importConfig();
     expect(mod.SESSION_SECRET).toBe('strong-production-secret-32-characters');
     expect(mod.RP_ID).toBe('example.com');

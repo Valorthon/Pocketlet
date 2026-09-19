@@ -80,7 +80,7 @@ Verified against the code on 2026-09-17. These are the things that look wrong, a
 
 **`stellarAddress` is a duplicate column.** `api/wallet/deploy/route.ts:121-124` always sets it equal to `walletContractId`. It is a leftover from the classic-account era, but it is *load-bearing*: `resolveRecipient` reads `stellarAddress` while transfers use `walletContractId`. Don't drop it without changing both.
 
-**The production guardrails are duplicated and drifting.** `next.config.mjs` (build time) validates `CLAIM_SECRET_ENCRYPTION_KEY` but not `FEE_PAYER_SECRET_KEY`. `src/lib/auth/config.ts` (runtime) does the exact reverse. Both check `SESSION_SECRET` and the WebAuthn origin. Change one, change the other.
+**The production guardrails live in one `.mjs` file, on purpose.** `next.config.mjs` (build time) and `src/lib/auth/config.ts` (runtime) both call `src/lib/config/production-guardrails.mjs`. It is plain ESM JavaScript rather than TypeScript because Next 14 loads `next.config.mjs` through Node's ESM loader with no transpilation — don't convert it to `.ts`, and don't import `@stellar/stellar-sdk` from it. Add a new check there, not in either caller. (That was issue #57.)
 
 **The escrow expiry unit changes across the boundary.** The contract takes `expiry` as a **ledger sequence**; `claim_links.expiry` in Postgres is a **timestamp**. The conversion is done ad hoc in `api/wallet/claim-links/create/route.ts`.
 
