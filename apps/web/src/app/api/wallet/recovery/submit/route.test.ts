@@ -11,12 +11,15 @@ import {
   setRecoveryInitiated,
   verifyRecoveryCode,
   getUserByEmail,
+  setPasskeyChallenge,
 } from '@/lib/auth/store';
 import {
   createRecoveryToken,
   RECOVERY_COOKIE_NAME,
 } from '@/lib/auth/recovery-token';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
+
+const CHALLENGE = 'test-passkey-challenge';
 
 let cookieJar: Record<string, string> = {};
 
@@ -104,6 +107,7 @@ async function makeRecoverableUser(email: string) {
     email,
     'GDDOY5WE2IDQMJS4HIASB5G7GFXMGQ4O4YYT46QETSWAC65JIFBB25KP'
   );
+  await setPasskeyChallenge(email, CHALLENGE);
 }
 
 async function setRecoverySession(email: string) {

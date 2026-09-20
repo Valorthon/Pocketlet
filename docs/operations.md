@@ -1,6 +1,6 @@
 # Operations
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-20
 
 How Pocketlet gets deployed, and what to do when it misbehaves. Branch semantics are in [`CONTRIBUTING.md`](../CONTRIBUTING.md#branch-model).
 
@@ -88,7 +88,7 @@ pnpm run deploy:web          # railway up (needs @railway/cli)
 
 ## Common production problems
 
-**App won't start.** The guardrails fail fast by design. On the public network, startup aborts if `SESSION_SECRET` is default/short, `WEBAUTHN_ORIGIN` isn't HTTPS, `WEBAUTHN_RP_ID` is `localhost`, or `FEE_PAYER_SECRET_KEY` is missing. The error names the variable. Note that the build-time checks in `next.config.mjs` and the runtime checks in `src/lib/auth/config.ts` cover slightly different sets (issue #57).
+**App won't start.** The guardrails fail fast by design. On the public network, startup aborts if `SESSION_SECRET` is missing, a placeholder, or under 32 characters; if `WEBAUTHN_ORIGIN` isn't HTTPS; if `WEBAUTHN_RP_ID` is `localhost`; or if `FEE_PAYER_SECRET_KEY` or `CLAIM_SECRET_ENCRYPTION_KEY` is missing or a placeholder. The error names the variable. Build time (`next.config.mjs`) and runtime (`src/lib/auth/config.ts`) enforce the same list — both call `src/lib/config/production-guardrails.mjs`.
 
 **Transactions fail to submit.** The fee payer is probably out of XLM. On testnet it refunds via Friendbot; on the public network it needs topping up. User funds are never at risk — [why](../docs/architecture.md#why-there-is-a-fee-payer).
 

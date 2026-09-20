@@ -37,7 +37,7 @@ These are deliberate testnet shortcuts, not findings:
 - Email and recovery verification codes are returned in API responses, because there is no mail provider wired up.
 - `FEE_PAYER_SECRET_KEY` is auto-generated and Friendbot-funded on testnet when unset. It is required on the public network, and the app refuses to start without it.
 - `.env.example` ships placeholder secrets. On the Stellar public network the app fails fast if `SESSION_SECRET` is default or short, if `WEBAUTHN_ORIGIN` is not HTTPS, or if `WEBAUTHN_RP_ID` is `localhost`.
-- The WebAuthn challenge is not yet bound to a server-generated nonce in three flows (wallet deploy, backup passkey, recovery submit). This is a real replay-protection gap, already tracked, and must be closed before mainnet.
+- WebAuthn registration challenges are server-generated, single-use and expire after five minutes; wallet deploy, backup passkey and recovery submit all require one. Authentication challenges are bound to the transaction payload and verified on-chain by the smart wallet.
 
 ## Handling secrets
 

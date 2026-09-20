@@ -7,6 +7,7 @@ import {
   getUserByEmail,
   setCredential,
   setWallet,
+  takePasskeyChallenge,
 } from '@/lib/auth/store';
 import { incrementMetric } from '@/lib/metrics';
 import { submitSignedTransaction } from '@/lib/wallet/submit';
@@ -23,22 +24,20 @@ export interface DeployRequest {
 }
 
 /**
- * The passkey-kit client generates its own WebAuthn challenge during
- * `createWallet`. We verify the registration response cryptographically and
- * check origin/RPID, but we do not enforce a server-known challenge here.
- * The deploy transaction itself is signed by the passkey and validated on-chain.
+ * Verify a registration response against the challenge this server issued.
  *
- * TODO(V1 production): bind the WebAuthn challenge to a server-generated nonce
- * stored in the session instead of accepting any challenge. This is acceptable
- * for testnet because the on-chain signature is the real authorization check.
+ * The client asks `api/wallet/passkey-challenge` for a nonce and passes it to
+ * passkey-kit, which puts it in the credential-creation options; the signed
+ * response must carry it back. `takePasskeyChallenge` clears the nonce as it
+ * reads it, so a captured response cannot be replayed (issue #56).
  */
 async function verifyPasskeyRegistrationResponse(
-  response: unknown
+  response: unknown,
+  expectedChallenge: string
 ): Promise<ReturnType<typeof verifyRegistrationResponse>> {
   return verifyRegistrationResponse({
     response: response as never,
-    // V1 testnet shortcut: passkey-kit generates the challenge client-side.
-    expectedChallenge: () => true,
+    expectedChallenge,
     expectedOrigin: ORIGIN,
     expectedRPID: RP_ID,
     requireUserVerification: true,
@@ -91,8 +90,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const expectedChallenge = await takePasskeyChallenge(user.email);
+  if (!expectedChallenge) {
+    return NextResponse.json(
+      { error: 'No pending passkey challenge. Start the ceremony again.' },
+      { status: 400 }
+    );
+  }
+
   try {
-    const verification = await verifyPasskeyRegistrationResponse(response);
+    const verification = await verifyPasskeyRegistrationResponse(
+      response,
+      expectedChallenge
+    );
 
     if (!verification.verified || !verification.registrationInfo) {
       return NextResponse.json(

@@ -1,6 +1,6 @@
 # Agent & Developer Operating Manual
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-20
 
 Read this file first. It is the working manual for coding agents and new developers: what the system actually is, which commands work, what the conventions are, and which traps have already cost someone a day.
 
@@ -76,15 +76,15 @@ Verified against the code on 2026-09-17. These are the things that look wrong, a
 
 **Tests need a live database.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and clears tables in `beforeEach`, so without Postgres the whole suite fails at import rather than with a useful message. `DATABASE_URL` is honoured from `apps/web/.env.local` — `apps/web/vitest.env.ts` is listed first in `setupFiles` so dotenv runs before `./src/lib/db` constructs the `pg` Pool at module scope. Keep it first; putting the dotenv call inside `vitest.setup.ts` is always too late, because ES module imports are evaluated before any statement body. (That was issue #58.) `drizzle.config.ts` loads `.env.local` for the same reason.
 
-**Test isolation is partial.** `src/lib/db/test-setup.ts` deletes from `users` and `metrics` only, so `user_devices`, `claim_links` and `notifications` rows leak between tests. It uses `DELETE`, not `TRUNCATE`, so sequences are not reset. There are no foreign keys anywhere in the schema — see the note at the top of `src/lib/db/schema.ts`.
+**Deleting a user can fail, on purpose.** `claim_links.sender_email` references `users.email` with `on delete restrict`, so a user with outstanding claim links cannot be deleted — a claim link is an escrow deposit that may still hold funds on-chain. `user_devices` and `notifications` cascade instead. `src/lib/db/test-setup.ts` truncates all five tables in one statement, so tests no longer leak rows. (That was issue #62.)
 
 **`stellarAddress` is a duplicate column.** `api/wallet/deploy/route.ts:121-124` always sets it equal to `walletContractId`. It is a leftover from the classic-account era, but it is *load-bearing*: `resolveRecipient` reads `stellarAddress` while transfers use `walletContractId`. Don't drop it without changing both.
 
-**The production guardrails are duplicated and drifting.** `next.config.mjs` (build time) validates `CLAIM_SECRET_ENCRYPTION_KEY` but not `FEE_PAYER_SECRET_KEY`. `src/lib/auth/config.ts` (runtime) does the exact reverse. Both check `SESSION_SECRET` and the WebAuthn origin. Change one, change the other.
+**The production guardrails live in one `.mjs` file, on purpose.** `next.config.mjs` (build time) and `src/lib/auth/config.ts` (runtime) both call `src/lib/config/production-guardrails.mjs`. It is plain ESM JavaScript rather than TypeScript because Next 14 loads `next.config.mjs` through Node's ESM loader with no transpilation — don't convert it to `.ts`, and don't import `@stellar/stellar-sdk` from it. Add a new check there, not in either caller. (That was issue #57.)
 
 **The escrow expiry unit changes across the boundary.** The contract takes `expiry` as a **ledger sequence**; `claim_links.expiry` in Postgres is a **timestamp**. The conversion is done ad hoc in `api/wallet/claim-links/create/route.ts`.
 
-**Open security gap:** three copies of `TODO(V1 production): bind the WebAuthn challenge to a server-generated nonce` — `api/wallet/deploy/route.ts:31`, `api/wallet/backup-passkey/route.ts:59`, `api/wallet/recovery/submit/route.ts:157`. Replay protection is incomplete. See [`docs/production-readiness.md`](./docs/production-readiness.md).
+**Passkey registration needs a server challenge, and the client must ask for one first.** `createPasskeyKit()` with no argument cannot register a passkey — `api/wallet/deploy`, `api/wallet/backup-passkey` and `api/wallet/recovery/submit` reject a response whose challenge they did not issue. Call `fetchPasskeyChallenge()` and pass the result to `createPasskeyKit(challenge)`; it injects the nonce through passkey-kit's `WebAuthn` config point, because `createWallet`/`createKey` otherwise generate their own. Challenges are single-use and expire in five minutes. Registration uses `users.passkey_challenge`, deliberately separate from the `pending_challenge` column the login and Ed25519 flows share. (That was issue #56.)
 
 **Dead code that still looks alive:**
 - `/swap` page and `api/wallet/swap` — the route returns HTTP 410, the page is a placeholder, and it's still in the nav.

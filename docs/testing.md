@@ -1,6 +1,6 @@
 # Testing
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-20
 
 How to run the suites, and a manual end-to-end checklist for the testnet flows.
 
@@ -33,10 +33,12 @@ Test config lives in `apps/web/vitest.config.ts`; read it rather than trusting a
 summary here. Tests are colocated — `foo.ts` alongside `foo.test.ts`. Rust tests
 live inline in `contracts/escrow/src/lib.rs` behind `#[cfg(test)]`.
 
-`resetDatabase()` in `src/lib/db/test-setup.ts` deletes rows from `users` and
-`metrics` only, so `user_devices`, `claim_links` and `notifications` leak
-between tests — clean up explicitly when working in those areas. It uses
-`DELETE`, not `TRUNCATE`, so sequences are not reset.
+`resetDatabase()` in `src/lib/db/test-setup.ts` truncates all five tables
+between tests, so nothing leaks. It is one `TRUNCATE ... RESTART IDENTITY
+CASCADE` rather than a sequence of deletes: `claim_links.sender_email`
+restricts deletes, so an ordered `DELETE` would have to delete children first,
+and `CASCADE` is required because `TRUNCATE` refuses to touch a referenced
+table even when the referencing one is named in the same statement.
 
 `apps/web/.env.example` is the only home for configuration, kept honest by
 `src/lib/env-parity.test.ts`. If you add a `process.env` read, add it there too

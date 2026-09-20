@@ -7,6 +7,10 @@ import {
   Ed25519Signer,
 } from 'passkey-kit';
 import { IndexedDBStorage } from 'passkey-kit/storage';
+import {
+  startRegistration,
+  startAuthentication,
+} from '@simplewebauthn/browser';
 import { Asset } from '@stellar/stellar-sdk';
 import { type AssembledTransaction } from '@stellar/stellar-sdk/contract';
 import { RPC_URL, NETWORK_PASSPHRASE } from './network';
@@ -32,12 +36,58 @@ export const RP_ID =
   undefined;
 
 /**
+ * Fetch a single-use registration challenge from the server.
+ *
+ * Needed because passkey-kit generates its own random challenge and exposes
+ * no way to supply one — see `serverChallengeWebAuthn`. Requires a session or
+ * a recovery cookie.
+ */
+export async function fetchPasskeyChallenge(): Promise<string> {
+  const res = await fetch('/api/wallet/passkey-challenge', { method: 'POST' });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? 'Could not start the passkey ceremony');
+  }
+  const body = (await res.json()) as { challenge: string };
+  return body.challenge;
+}
+
+/**
+ * Wrap the WebAuthn ceremony so registration uses a server-issued challenge.
+ *
+ * `createWallet` and `createKey` call `generateChallenge()` internally and
+ * `CreateOptions` has no challenge field, so the only way to bind the ceremony
+ * to a server nonce is through the kit's `WebAuthn` injection point — intended
+ * for tests, but it is the documented seam and the alternative is
+ * reimplementing the ceremony. We overwrite the challenge on the way through
+ * and otherwise delegate to the real @simplewebauthn/browser (issue #56).
+ *
+ * Authentication is passed through untouched: passkey-kit sets that challenge
+ * to the transaction payload, and the smart wallet verifies that binding
+ * on-chain.
+ */
+function serverChallengeWebAuthn(challenge: string) {
+  return {
+    startRegistration: (args: Parameters<typeof startRegistration>[0]) =>
+      startRegistration({
+        ...args,
+        optionsJSON: { ...args.optionsJSON, challenge },
+      }),
+    startAuthentication,
+  };
+}
+
+/**
  * Create a browser-side PasskeyKit client for the current network.
  *
  * The kit handles WebAuthn ceremonies, deterministic wallet-address
  * derivation, and signing. It holds no secrets.
+ *
+ * Pass `challenge` (from {@link fetchPasskeyChallenge}) whenever the kit will
+ * register a passkey — `createWallet` or `createKey`. The server requires it:
+ * without it the registration response is rejected.
  */
-export function createPasskeyKit(): PasskeyKit {
+export function createPasskeyKit(challenge?: string): PasskeyKit {
   return new PasskeyKit({
     rpcUrl: RPC_URL,
     networkPassphrase: NETWORK_PASSPHRASE,
@@ -45,6 +95,7 @@ export function createPasskeyKit(): PasskeyKit {
     rpId: RP_ID,
     storage: new IndexedDBStorage(),
     timeoutInSeconds: 300,
+    ...(challenge ? { WebAuthn: serverChallengeWebAuthn(challenge) } : {}),
   });
 }
 

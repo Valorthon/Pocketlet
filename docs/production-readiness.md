@@ -1,6 +1,6 @@
 # Production readiness
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-20
 
 Everything that stands between the current testnet build and something deployable to the Stellar public network. These are deliberate shortcuts and known defects, not surprises — [`SECURITY.md`](../SECURITY.md) points here so researchers don't re-report them.
 
@@ -10,11 +10,17 @@ Status key: **Open** — still a gap. **Closed** — resolved, kept for the reco
 
 ## Security
 
-### WebAuthn challenge is not bound to a server nonce — Open
+### WebAuthn challenge is not bound to a server nonce — Closed
 
-**Issue #56.** Three flows verify a WebAuthn assertion without binding the challenge to a server-generated nonce: `api/wallet/deploy/route.ts:31`, `api/wallet/backup-passkey/route.ts:59`, `api/wallet/recovery/submit/route.ts:157`. Each carries an identical `TODO(V1 production)`.
+**Issue #56.** Wallet deploy, backup passkey and recovery submit all passed `expectedChallenge: () => true` to `verifyRegistrationResponse`, accepting whatever challenge the browser had generated. A captured registration response could therefore be replayed.
 
-Replay protection is incomplete. This is the most serious open item and must be closed before mainnet.
+`POST /api/wallet/passkey-challenge` now issues a 32-byte base64url nonce, stored on the user row with a five-minute expiry, and all three routes require it back. `takePasskeyChallenge` clears the nonce as it reads it, using a compare-and-swap on the value rather than a read followed by a blind write, so concurrent requests cannot both spend one.
+
+The client side needed changing too: passkey-kit generates its own challenge inside `createWallet`/`createKey` and `CreateOptions` has no challenge field, so `createPasskeyKit(challenge)` injects a wrapper through the kit's `WebAuthn` configuration point that overwrites the challenge and otherwise delegates to `@simplewebauthn/browser`. Authentication ceremonies are passed through untouched — passkey-kit sets that challenge to the transaction payload and the smart wallet verifies the binding on-chain.
+
+Registration uses `users.passkey_challenge`, separate from the `pending_challenge` column that the Ed25519 and login flows share, so enrolling a backup passkey mid-session cannot clobber an in-flight login. `api/auth/login-verify` also never cleared its challenge after use — the same replay class — and now does.
+
+Covered by `src/lib/auth/passkey-challenge.test.ts` (single-use, expiry, concurrency, isolation) and route tests including an end-to-end replay rejection. The injection wrapper itself is covered by `src/lib/wallet/passkey-kit.test.ts`, which asserts that registration receives the server nonce, that authentication passes through unrewritten, and that a kit built without a challenge does not override the kit's own WebAuthn implementation.
 
 ### Email verification codes are returned in API responses — Open
 
@@ -22,11 +28,13 @@ Replay protection is incomplete. This is the most serious open item and must be 
 
 Fix: integrate a transactional email provider (Resend, SendGrid, SES) and remove the code from responses.
 
-### Production guardrails are duplicated and drifting — Open
+### Production guardrails are duplicated and drifting — Closed
 
-**Issue #57.** The public-network checks exist twice and do not agree. `next.config.mjs` (build time) validates `CLAIM_SECRET_ENCRYPTION_KEY` but not `FEE_PAYER_SECRET_KEY`; `src/lib/auth/config.ts` (runtime) does the reverse. Both cover `SESSION_SECRET` and the WebAuthn settings.
+**Issue #57.** The public-network checks existed twice and did not agree. `next.config.mjs` (build time) validated `CLAIM_SECRET_ENCRYPTION_KEY` but not `FEE_PAYER_SECRET_KEY`; `src/lib/auth/config.ts` (runtime) did the reverse. Because `output: 'standalone'` means the build-time copy never re-runs in the deployed container, `CLAIM_SECRET_ENCRYPTION_KEY` was in practice only ever enforced on the build machine.
 
-Fix: extract one shared validator used by both.
+Both now call `src/lib/config/production-guardrails.mjs`, which enforces the union: `SESSION_SECRET` (presence, not a placeholder, at least 32 characters), an HTTPS `WEBAUTHN_ORIGIN`, a non-`localhost` `WEBAUTHN_RP_ID`, `FEE_PAYER_SECRET_KEY` and `CLAIM_SECRET_ENCRYPTION_KEY`. Two latent bugs went with it: every guarded secret is now rejected if left at an `.env.example` placeholder (previously only `SESSION_SECRET` was), and an empty `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE` is treated as unset rather than as "not the public network", which used to switch all guardrails off silently.
+
+The module is plain ESM JavaScript, not TypeScript, because Next 14 loads `next.config.mjs` through Node's ESM loader with no transpilation and has no `next.config.ts` support. It keeps the passphrase as a literal rather than importing `Networks` from `@stellar/stellar-sdk`, so `next build` does not pay for the SDK at config-load time. Covered by `src/lib/config/production-guardrails.test.ts`.
 
 ### Admin token comparison is not constant-time — Closed
 
@@ -34,7 +42,7 @@ Fix: extract one shared validator used by both.
 
 `verifyAdminToken` now compares SHA-256 digests of both sides with `timingSafeEqual`. Hashing first keeps both buffers at a fixed 32 bytes, so the comparison cannot throw on a length mismatch and no length check leaks the secret's size. It returns `{ ok: false, reason: 'unconfigured' | 'invalid' }` instead of a bare boolean: `api/admin/stats` answers an unconfigured token with **503** and an actionable message (which `/admin` already renders verbatim) and logs it server-side, while a wrong token still gets an undifferentiated **401**. Covered by `src/lib/admin.test.ts`.
 
-`ADMIN_SECRET_TOKEN` is deliberately *not* added to the production startup validators — that would have to land in both `next.config.mjs` and `src/lib/auth/config.ts`, deepening the drift described above.
+`ADMIN_SECRET_TOKEN` is still not among the production startup requirements. The reason originally given — that it would have to be added in two drifting places — no longer applies now that #57 is closed; adding it to `src/lib/config/production-guardrails.mjs` is a one-line change. It is left out because it would make a mainnet build fail for a service that may legitimately run without the admin dashboard, which is a product decision rather than a security one.
 
 ### Fee payer key handling — Open
 
@@ -70,9 +78,15 @@ Fix: wire a real email/SMS provider and set `status` from the delivery result.
 
 Still open: the testnet `fee_payer_secret` remains on local disk under `POCKETLET_DATA_DIR`, and belongs in a secrets manager.
 
-### No foreign keys — Open
+### No foreign keys — Closed
 
-**Issue #62.** `user_devices.email`, `claim_links.sender_email`, and `notifications.claim_link_id` have no referential integrity. Orphan rows are possible and deletes don't cascade. This also means test cleanup is incomplete — see [testing.md](./testing.md#conventions).
+**Issue #62.** `user_devices.email`, `claim_links.sender_email`, and `notifications.claim_link_id` had no referential integrity, so orphan rows were possible and deletes did not cascade.
+
+All three are now foreign keys (migration `0002_fuzzy_shaman.sql`). Delete behaviour differs by intent: `user_devices` and `notifications` cascade, because a device signer or a queued notification is meaningless without its parent; `claim_links.sender_email` **restricts**, because a claim link records an escrow deposit that may still hold funds on-chain and must not disappear with its sender. `claim_links.recipient_email` is deliberately not a reference — an unregistered recipient is the whole point of a claim link.
+
+`resetDatabase()` now issues a single `TRUNCATE ... RESTART IDENTITY CASCADE` over all five tables instead of deleting from two, which is order-independent (so the restrict constraint cannot trip it) and faster. Covered by `src/lib/db/schema.test.ts`.
+
+The migration begins with three hand-added `DELETE` statements that sweep pre-existing orphans. Migrations run at boot and at test import, so without them a single leftover row would abort startup — and any database that ran the old `resetDatabase()` is likely to hold some.
 
 ## Product
 

@@ -5,9 +5,12 @@ import {
   createUser,
   setEmailVerified,
   getUserByEmail,
+  setPasskeyChallenge,
 } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
+
+const CHALLENGE = 'test-passkey-challenge';
 
 let cookieJar: Record<string, string> = {};
 
@@ -67,6 +70,7 @@ describe('POST /api/wallet/deploy', () => {
   it('deploys a wallet and stores the contract id', async () => {
     await createUser('alice@example.com', '000000');
     await setEmailVerified('alice@example.com');
+    await setPasskeyChallenge('alice@example.com', CHALLENGE);
     const token = await createSessionToken({ email: 'alice@example.com' });
 
     const req = createDeployRequest(
@@ -96,6 +100,7 @@ describe('POST /api/wallet/deploy', () => {
   it('returns existing wallet if already deployed', async () => {
     await createUser('alice@example.com', '000000');
     await setEmailVerified('alice@example.com');
+    await setPasskeyChallenge('alice@example.com', CHALLENGE);
 
     const { setWallet } = await import('@/lib/auth/store');
     await setWallet('alice@example.com', {
@@ -125,6 +130,7 @@ describe('POST /api/wallet/deploy', () => {
   it('rejects mismatched credential id', async () => {
     await createUser('alice@example.com', '000000');
     await setEmailVerified('alice@example.com');
+    await setPasskeyChallenge('alice@example.com', CHALLENGE);
     const token = await createSessionToken({ email: 'alice@example.com' });
 
     const req = createDeployRequest(
@@ -146,6 +152,7 @@ describe('POST /api/wallet/deploy', () => {
   it('rejects missing required fields', async () => {
     await createUser('alice@example.com', '000000');
     await setEmailVerified('alice@example.com');
+    await setPasskeyChallenge('alice@example.com', CHALLENGE);
     const token = await createSessionToken({ email: 'alice@example.com' });
 
     const req = createDeployRequest(
