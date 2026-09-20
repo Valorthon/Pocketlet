@@ -51,7 +51,7 @@ Two variables in `.env.example` ship empty and **throw at runtime** if you exerc
 ## Project structure
 
 ```
-apps/web/              Next.js 14 frontend + API routes (App Router)
+apps/web/              Next.js 15 frontend + API routes (App Router)
 packages/config/       Shared ESLint, TypeScript, Tailwind config
 contracts/escrow/      Soroban claimable-link escrow contract (Rust)
 docs/                  Project documentation — start at docs/README.md

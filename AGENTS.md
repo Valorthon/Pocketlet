@@ -15,11 +15,11 @@ A deployed passkey-based USDC/XLM wallet on Stellar Testnet. Not a scaffold: ~40
 | Layer | Choice |
 | --- | --- |
 | Monorepo | pnpm workspaces (`apps/*`, `packages/*`), `pnpm@11.13.1`, Node 22+ |
-| Frontend + API | Next.js 14.2.35 App Router, React 18, TypeScript 5.7 |
+| Frontend + API | Next.js 15.5.25 App Router, React 18, TypeScript 5.7 |
 | Styling | Tailwind 3.4 |
 | Database | PostgreSQL + Drizzle ORM (`drizzle-orm`, `drizzle-kit`, `pg`) |
-| Stellar | `@stellar/stellar-sdk` 16, `passkey-kit` 0.16, `sac-sdk` 0.4 |
-| Auth | `@simplewebauthn` 13, `jose` (JWT sessions), `bcryptjs` (PIN), `bip39` |
+| Stellar | `@stellar/stellar-sdk` 16.3, `passkey-kit` 0.16, `sac-sdk` 0.4 |
+| Auth | `@simplewebauthn` 14, `jose` (JWT sessions), `bcryptjs` (PIN), `bip39` |
 | Tests | Vitest 4 (TypeScript), `cargo test` (Rust) |
 | Contract | Rust, `soroban-sdk` 27, target `wasm32v1-none`, Stellar CLI 28 |
 
@@ -72,7 +72,7 @@ Before opening a PR: `pnpm run lint && pnpm run typecheck && pnpm --filter web t
 
 ## Landmines
 
-Verified against the code on 2026-09-17. These are the things that look wrong, are wrong, or will waste your time.
+Verified against the code on 2026-09-20. These are the things that look wrong, are wrong, or will waste your time.
 
 **Tests need a live database.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and clears tables in `beforeEach`, so without Postgres the whole suite fails at import rather than with a useful message. `DATABASE_URL` is honoured from `apps/web/.env.local` — `apps/web/vitest.env.ts` is listed first in `setupFiles` so dotenv runs before `./src/lib/db` constructs the `pg` Pool at module scope. Keep it first; putting the dotenv call inside `vitest.setup.ts` is always too late, because ES module imports are evaluated before any statement body. (That was issue #58.) `drizzle.config.ts` loads `.env.local` for the same reason.
 
@@ -80,7 +80,7 @@ Verified against the code on 2026-09-17. These are the things that look wrong, a
 
 **`stellarAddress` is a duplicate column.** `api/wallet/deploy/route.ts:121-124` always sets it equal to `walletContractId`. It is a leftover from the classic-account era, but it is *load-bearing*: `resolveRecipient` reads `stellarAddress` while transfers use `walletContractId`. Don't drop it without changing both.
 
-**The production guardrails live in one `.mjs` file, on purpose.** `next.config.mjs` (build time) and `src/lib/auth/config.ts` (runtime) both call `src/lib/config/production-guardrails.mjs`. It is plain ESM JavaScript rather than TypeScript because Next 14 loads `next.config.mjs` through Node's ESM loader with no transpilation — don't convert it to `.ts`, and don't import `@stellar/stellar-sdk` from it. Add a new check there, not in either caller. (That was issue #57.)
+**The production guardrails live in one `.mjs` file, on purpose.** `next.config.mjs` (build time) and `src/lib/auth/config.ts` (runtime) both call `src/lib/config/production-guardrails.mjs`. It is plain ESM JavaScript rather than TypeScript because Next loads `next.config.mjs` through Node's ESM loader with no transpilation — don't convert it to `.ts`, and don't import `@stellar/stellar-sdk` from it. Add a new check there, not in either caller. (That was issue #57.)
 
 **The escrow expiry unit changes across the boundary.** The contract takes `expiry` as a **ledger sequence**; `claim_links.expiry` in Postgres is a **timestamp**. The conversion is done ad hoc in `api/wallet/claim-links/create/route.ts`.
 
@@ -92,7 +92,11 @@ Verified against the code on 2026-09-17. These are the things that look wrong, a
 
 **Notifications don't notify.** `src/lib/notifications.ts` `console.log`s and writes the row with `status: 'sent'` without sending anything.
 
-**Lint won't catch React bugs.** The shared ESLint config is base + `typescript-eslint` only — no `eslint-config-next`, no `react-hooks` plugin, despite 25 `'use client'` files. Hook-dependency mistakes get through.
+**Lint won't catch React bugs.** The shared ESLint config is base + `typescript-eslint` only — no `eslint-config-next`, no `react-hooks` plugin, despite 25 `'use client'` files. Hook-dependency mistakes get through. Because there is no `eslint-config-next`, `next-env.d.ts` also has to be ignored explicitly in `packages/config/eslint/index.mjs` — Next writes triple-slash references into it and `@typescript-eslint/triple-slash-reference` rejects them.
+
+**`next build` rewrites a tracked file, after lint has already run.** It regenerates `apps/web/next-env.d.ts`. CI's order is lint → typecheck → test → build, so a lint error introduced by the build only shows up on the *next* run. If you change the Next version, run `pnpm run lint` again after `pnpm --filter web build`. Separately, `tsc` caches to `apps/web/tsconfig.tsbuildinfo` (gitignored) and `.next/types` is generated: after switching branches, a typecheck error naming a route that doesn't exist on your branch means a stale artifact, not a real failure — `rm -rf apps/web/.next apps/web/tsconfig.tsbuildinfo`.
+
+**There is a pnpm override on `@simplewebauthn/browser`, and it is load-bearing.** `pnpm-workspace.yaml` forces the whole tree to v14. `passkey-kit` 0.16.2 depends on `@simplewebauthn/browser` as a *regular* dependency, not a peer, so without the override the tree carries two copies that disagree about `RegistrationResponseJSON.response.transports` (`string[]` in 14, a narrow union in 13) — which breaks the `WebAuthn` seam `createPasskeyKit` uses to inject the server challenge, because the kit types that seam against its own copy. Drop the override only when passkey-kit itself depends on 14 (see issue #118).
 
 **Not actually server components.** Despite App Router, essentially everything interactive is `'use client'`.
 

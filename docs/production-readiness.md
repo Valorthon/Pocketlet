@@ -34,7 +34,7 @@ Fix: integrate a transactional email provider (Resend, SendGrid, SES) and remove
 
 Both now call `src/lib/config/production-guardrails.mjs`, which enforces the union: `SESSION_SECRET` (presence, not a placeholder, at least 32 characters), an HTTPS `WEBAUTHN_ORIGIN`, a non-`localhost` `WEBAUTHN_RP_ID`, `FEE_PAYER_SECRET_KEY` and `CLAIM_SECRET_ENCRYPTION_KEY`. Two latent bugs went with it: every guarded secret is now rejected if left at an `.env.example` placeholder (previously only `SESSION_SECRET` was), and an empty `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE` is treated as unset rather than as "not the public network", which used to switch all guardrails off silently.
 
-The module is plain ESM JavaScript, not TypeScript, because Next 14 loads `next.config.mjs` through Node's ESM loader with no transpilation and has no `next.config.ts` support. It keeps the passphrase as a literal rather than importing `Networks` from `@stellar/stellar-sdk`, so `next build` does not pay for the SDK at config-load time. Covered by `src/lib/config/production-guardrails.test.ts`.
+The module is plain ESM JavaScript, not TypeScript, because Next loads `next.config.mjs` through Node's ESM loader with no transpilation. It keeps the passphrase as a literal rather than importing `Networks` from `@stellar/stellar-sdk`, so `next build` does not pay for the SDK at config-load time. Covered by `src/lib/config/production-guardrails.test.ts`.
 
 ### Admin token comparison is not constant-time — Closed
 

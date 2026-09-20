@@ -1,6 +1,6 @@
 # Product Spec — V1
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-20
 
 What Pocketlet V1 is for and what it does. Implementation detail lives in [architecture.md](./architecture.md); current feature status lives in the [README table](../README.md#features); deferred work lives in [roadmap.md](./roadmap.md).
 
@@ -101,7 +101,7 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 ## 8. Technical Architecture (V1 Web App)
 
 ### Frontend
-* **Framework:** Next.js 14+ with App Router, mobile-optimized layout.
+* **Framework:** Next.js 15 with App Router, mobile-optimized layout.
 * **Language:** TypeScript only. No `any` or `@ts-ignore`.
 * **Styling:** Tailwind CSS.
 * **State Management:** UI state in React hooks/props or server-derived state; global client store only when multiple pages need shared, client-only data.
