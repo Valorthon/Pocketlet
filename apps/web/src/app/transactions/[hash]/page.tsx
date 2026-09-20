@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -13,17 +13,16 @@ import {
   formatTransactionType,
 } from '@/lib/wallet/transactions';
 
-interface Params {
-  hash: string;
-}
-
 function toCurrency(asset: string): 'USDC' | 'XLM' {
   return asset === 'XLM' ? 'XLM' : 'USDC';
 }
 
-export default function TransactionDetailsPage({ params }: { params: Params }) {
+export default function TransactionDetailsPage() {
   const router = useRouter();
-  const { hash } = params;
+  // Next 15 hands `params` to a page as a Promise. This page is a client
+  // component, so it reads the segment from the router instead and avoids
+  // unwrapping one.
+  const { hash } = useParams<{ hash: string }>();
   const [tx, setTx] = useState<TransactionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
