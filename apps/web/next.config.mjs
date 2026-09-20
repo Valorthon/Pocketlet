@@ -10,14 +10,10 @@ validateProductionConfig();
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
-  experimental: {
-    instrumentationHook: true,
-    serverComponentsExternalPackages: [
-      '@simplewebauthn/server',
-      'pg',
-      'drizzle-orm',
-    ],
-  },
+  // Next 15 loads src/instrumentation.ts on its own, so the former
+  // experimental.instrumentationHook flag is gone. The file still has to run —
+  // it is what applies the Drizzle migrations at boot.
+  serverExternalPackages: ['@simplewebauthn/server', 'pg', 'drizzle-orm'],
   webpack: (config, { isServer }) => {
     if (isServer) {
       config.externals.push(({ request }, callback) => {
