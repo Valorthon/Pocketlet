@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@simplewebauthn/browser': ^14.0.0
+
 importers:
 
   .:
@@ -953,9 +956,6 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
-
-  '@simplewebauthn/browser@13.3.0':
-    resolution: {integrity: sha512-BE/UWv6FOToAdVk0EokzkqQQDOWtNydYlY6+OrmiZ5SCNmb41VehttboTetUM3T/fr6EAFYVXjz4My2wg230rQ==}
 
   '@simplewebauthn/browser@14.0.0':
     resolution: {integrity: sha512-1odWVqeEBTl7lJ9zMKLEsmTlnyrDO5iRcTvfMKKk1WThUnp/i8JJdffdj2icP+tty159s4PgwE3BiMoEW9NFow==}
@@ -3099,8 +3099,6 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@simplewebauthn/browser@13.3.0': {}
-
   '@simplewebauthn/browser@14.0.0': {}
 
   '@simplewebauthn/server@14.0.2':
@@ -4110,7 +4108,7 @@ snapshots:
   passkey-kit@0.16.2(@stellar/stellar-sdk@16.0.1):
     dependencies:
       '@openzeppelin/relayer-plugin-channels': 0.20.0
-      '@simplewebauthn/browser': 13.3.0
+      '@simplewebauthn/browser': 14.0.0
       '@stellar/stellar-sdk': 16.0.1
       base64url: 3.0.1
       buffer: 6.0.3

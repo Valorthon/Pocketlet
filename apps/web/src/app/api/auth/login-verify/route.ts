@@ -1,7 +1,4 @@
-import {
-  verifyAuthenticationResponse,
-  type AuthenticatorTransportFuture,
-} from '@simplewebauthn/server';
+import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/browser';
 import { NextRequest, NextResponse } from 'next/server';
 import { ORIGIN, RP_ID } from '@/lib/auth/config';
@@ -60,7 +57,7 @@ export async function POST(request: NextRequest) {
       id: storedCredential.id,
       publicKey: Buffer.from(storedCredential.publicKey, 'base64url'),
       counter: storedCredential.counter,
-      transports: storedCredential.transports as AuthenticatorTransportFuture[] | undefined,
+      transports: storedCredential.transports,
     };
 
     const verification = await verifyAuthenticationResponse({
