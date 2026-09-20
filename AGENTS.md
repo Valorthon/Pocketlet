@@ -1,6 +1,6 @@
 # Agent & Developer Operating Manual
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-20
 
 Read this file first. It is the working manual for coding agents and new developers: what the system actually is, which commands work, what the conventions are, and which traps have already cost someone a day.
 

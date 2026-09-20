@@ -1,6 +1,6 @@
 # Production readiness
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-20
 
 Everything that stands between the current testnet build and something deployable to the Stellar public network. These are deliberate shortcuts and known defects, not surprises — [`SECURITY.md`](../SECURITY.md) points here so researchers don't re-report them.
 
@@ -20,7 +20,7 @@ The client side needed changing too: passkey-kit generates its own challenge ins
 
 Registration uses `users.passkey_challenge`, separate from the `pending_challenge` column that the Ed25519 and login flows share, so enrolling a backup passkey mid-session cannot clobber an in-flight login. `api/auth/login-verify` also never cleared its challenge after use — the same replay class — and now does.
 
-Covered by `src/lib/auth/passkey-challenge.test.ts` (single-use, expiry, concurrency, isolation) and route tests including an end-to-end replay rejection.
+Covered by `src/lib/auth/passkey-challenge.test.ts` (single-use, expiry, concurrency, isolation) and route tests including an end-to-end replay rejection. The injection wrapper itself is covered by `src/lib/wallet/passkey-kit.test.ts`, which asserts that registration receives the server nonce, that authentication passes through unrewritten, and that a kit built without a challenge does not override the kit's own WebAuthn implementation.
 
 ### Email verification codes are returned in API responses — Open
 

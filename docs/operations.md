@@ -1,6 +1,6 @@
 # Operations
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-20
 
 How Pocketlet gets deployed, and what to do when it misbehaves. Branch semantics are in [`CONTRIBUTING.md`](../CONTRIBUTING.md#branch-model).
 

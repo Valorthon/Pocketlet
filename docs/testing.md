@@ -1,6 +1,6 @@
 # Testing
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-20
 
 How to run the suites, and a manual end-to-end checklist for the testnet flows.
 
