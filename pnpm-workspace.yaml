@@ -6,3 +6,15 @@ onlyBuiltDependencies:
   - esbuild
 allowBuilds:
   esbuild: false
+
+# passkey-kit depends on @simplewebauthn/browser as a regular dependency, not a
+# peer, so without this the tree carries two copies once the app moves to 14 —
+# and the two disagree about RegistrationResponseJSON.response.transports
+# (string[] in 14, a narrow union in 13). That breaks the WebAuthn seam
+# src/lib/wallet/passkey-kit.ts uses to inject the server challenge, because the
+# kit types it against its own copy. The `startRegistration` and
+# `startAuthentication` signatures are identical across 13.3 and 14.0, so
+# passkey-kit's own calls are unaffected. Drop this once passkey-kit ships a
+# version that depends on 14 itself.
+overrides:
+  '@simplewebauthn/browser': ^14.0.0
