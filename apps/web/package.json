@@ -27,7 +27,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.12",
-    "lucide-react": "^1.46.0",
+    "lucide-react": "^1.47.0",
     "next": "15.5.25",
     "passkey-kit": "^0.16.2",
     "pg": "^8.23.0",
