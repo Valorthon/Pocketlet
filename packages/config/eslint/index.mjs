@@ -32,8 +32,11 @@ export default tseslint.config(
       // effects that call setState synchronously. Each one needs its own
       // behaviour-preserving restructure, there are no component tests behind
       // them yet (issue #63), and doing that here would bury the hook-rule
-      // change it is bundled with. Turn it back on in its own change.
+      // change it is bundled with. Tracked in issue #131.
       'react-hooks/set-state-in-effect': 'off',
+      // The preset also ships these two at 'warn'; raised for the same reason.
+      'react-hooks/incompatible-library': 'error',
+      'react-hooks/unsupported-syntax': 'error',
     },
   },
   {

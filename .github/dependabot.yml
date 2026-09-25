@@ -35,8 +35,12 @@ version: 2
 #   @next/eslint-plugin-next
 #                is pinned to an exact version that must equal the `next`
 #                version in apps/web/package.json — it is Next's own lint rules,
-#                shipped per Next release. It rides in the eslint group so the
-#                bump is visible, but reject one that moves it away from `next`.
+#                shipped per Next release. The coupling is MANUAL IN BOTH
+#                DIRECTIONS and nothing enforces it: this package rides in the
+#                eslint group while `next` itself lands in
+#                production-dependencies, so the two arrive in separate PRs.
+#                Whichever one Dependabot bumps, move the other to match in the
+#                same PR, or the lint rules drift from the framework they check.
 #   @types/node  must track the Node runtime major (22 — ci.yml, cd.yml and the
 #                Dockerfile), not the latest release. PR #100 offered 26 and
 #                passed, which would let code typecheck against APIs that do

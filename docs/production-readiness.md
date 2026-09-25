@@ -128,7 +128,7 @@ The dotenv call moved to `apps/web/vitest.env.ts`, listed ahead of `vitest.setup
 
 `packages/config/eslint/index.mjs` now adds `eslint-plugin-react-hooks` 7 (flat `recommended`, with `exhaustive-deps` raised from `warn` to `error`) and `@next/eslint-plugin-next` 15.5.25 (`recommended` + `core-web-vitals`). `eslint-config-next` is deliberately not used: the 15.x line excludes ESLint 10, which this repo already runs, and the 16.x line belongs to the Next 16 migration (#90). The plugins are registered directly instead, which is why the `next-env.d.ts` ignore stays in that file.
 
-No `rules-of-hooks` violations existed. The sweep fixed five `exhaustive-deps` findings and hoisted `StatCard` out of `admin/page.tsx`'s render body (`react-hooks/static-components`). One rule remains off: `react-hooks/set-state-in-effect` flags 12 pre-existing effects, each needing its own behaviour-preserving restructure with no component tests behind it (#63). That is tracked separately, not with this issue.
+No `rules-of-hooks` violations existed. The sweep fixed five `exhaustive-deps` findings and hoisted `StatCard` out of `admin/page.tsx`'s render body (`react-hooks/static-components`). One rule remains off: `react-hooks/set-state-in-effect` flags 12 pre-existing effects across 7 files, each needing its own behaviour-preserving restructure with no component tests behind it (#63). That remaining gap is tracked in **issue #131**.
 
 ### No observability — Open
 
