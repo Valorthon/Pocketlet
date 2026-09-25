@@ -150,6 +150,9 @@ describe('resetDatabase', () => {
     const link = await seedClaimLink(email);
     await seedNotification(link.id);
     await db.insert(schema.metrics).values({ key: 'test.key', value: 1 });
+    await db
+      .insert(schema.rateLimits)
+      .values({ bucket: 'test|user|a@b.com|60000', windowStart: Date.now(), count: 1 });
 
     await resetDatabase();
 
@@ -158,6 +161,9 @@ describe('resetDatabase', () => {
     expect(await db.select().from(schema.claimLinks)).toHaveLength(0);
     expect(await db.select().from(schema.notifications)).toHaveLength(0);
     expect(await db.select().from(schema.metrics)).toHaveLength(0);
+    // A leaked rate-limit row makes the suite order-dependent: the next test's
+    // first request would already be over the limit (issue #36).
+    expect(await db.select().from(schema.rateLimits)).toHaveLength(0);
   });
 
   it('succeeds despite the restrict constraint on claim_links', async () => {

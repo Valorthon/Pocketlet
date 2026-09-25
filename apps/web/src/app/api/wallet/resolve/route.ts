@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { verifySessionToken } from '@/lib/auth/session';
+import { requireSessionEmail } from '@/lib/auth/route-guard';
+import { enforceResolveRateLimit } from '@/lib/rate-limit';
 import { resolveRecipient } from '@/lib/wallet/recipient';
 import { validateRecipientFormat, isValidPhoneFormat, isValidEmailFormat } from '@/lib/wallet/recipient-format';
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const guard = await requireSessionEmail();
+  if (!guard.ok) {
+    return guard.response;
   }
-
-  const session = await verifySessionToken(token);
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const email = guard.value;
 
   let body: { recipient?: unknown };
   try {
@@ -32,6 +26,15 @@ export async function POST(request: NextRequest) {
   const formatError = validateRecipientFormat(recipient);
   if (formatError) {
     return NextResponse.json({ error: formatError }, { status: 400 });
+  }
+
+  // This route spends no fee-payer funds, so the limit is far looser than the
+  // submission routes'. It still needs one: a 200 here means the identifier
+  // belongs to a registered account and a 404 means it does not, which is a
+  // user-directory oracle for anyone with a session (#36, after #110).
+  const limited = await enforceResolveRateLimit(request, email);
+  if (limited) {
+    return limited;
   }
 
   const resolved = await resolveRecipient(recipient);

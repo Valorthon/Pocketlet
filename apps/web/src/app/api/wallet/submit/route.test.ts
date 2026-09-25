@@ -2,6 +2,7 @@ import {
   describe,
   it,
   expect,
+  afterEach,
   beforeEach,
   vi,
 } from 'vitest';
@@ -48,6 +49,11 @@ const OTHER_CONTRACT =
 
 beforeEach(() => {
   cookieJar = {};
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 function buildAddressAuthEntry(address: string): xdr.SorobanAuthorizationEntry {
@@ -130,25 +136,33 @@ function buildInvokeXdr(auth: xdr.SorobanAuthorizationEntry[]): string {
   return tx.toXDR();
 }
 
-function createSubmitRequest(body: unknown, token?: string) {
+function createSubmitRequest(
+  body: unknown,
+  token?: string,
+  headers?: Record<string, string>
+) {
   if (token) {
     cookieJar[SESSION_COOKIE_NAME] = token;
   }
   return new NextRequest('http://localhost/api/wallet/submit', {
     method: 'POST',
     body: JSON.stringify(body),
+    headers,
   });
 }
 
-async function createUserWithWallet(walletContractId: string) {
-  await createUser('alice@example.com', '000000');
-  await setEmailVerified('alice@example.com');
-  await setWallet('alice@example.com', {
+async function createUserWithWallet(
+  walletContractId: string,
+  email = 'alice@example.com'
+) {
+  await createUser(email, '000000');
+  await setEmailVerified(email);
+  await setWallet(email, {
     walletContractId,
     stellarAddress: walletContractId,
     primaryPasskeyKeyId: 'test-key-id',
   });
-  return createSessionToken({ email: 'alice@example.com' });
+  return createSessionToken({ email });
 }
 
 describe('POST /api/wallet/submit', () => {
@@ -218,5 +232,141 @@ describe('POST /api/wallet/submit', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { hash: string };
     expect(body.hash).toBe('submitted-tx-hash');
+  });
+});
+
+/**
+ * Rate limiting (issue #36).
+ *
+ * `api/wallet/submit` stands in for the nine routes that reach
+ * `submitSignedTransaction`; they all call the same
+ * `enforceFeePayerRateLimit` helper with their own route name. The generic
+ * behaviour of the limiter lives in `src/lib/rate-limit.test.ts`; what is
+ * tested here is that the route actually charges it, and charges it in the
+ * right place.
+ */
+describe('POST /api/wallet/submit rate limiting', () => {
+  /** A request the handler will accept all the way to the fee payer. */
+  function validSubmit(token: string, headers?: Record<string, string>) {
+    return createSubmitRequest(
+      { signedXdr: buildInvokeXdr([buildAddressAuthEntry(WALLET_CONTRACT)]) },
+      token,
+      headers
+    );
+  }
+
+  it('returns 429 once the per-user limit is exceeded', async () => {
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_MINUTE', '2');
+    const token = await createUserWithWallet(WALLET_CONTRACT);
+
+    expect((await POST(validSubmit(token))).status).toBe(200);
+    expect((await POST(validSubmit(token))).status).toBe(200);
+
+    const res = await POST(validSubmit(token));
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('Too many requests');
+  });
+
+  it('returns 429 once the per-IP limit is exceeded, across accounts', async () => {
+    // Loose per-user limits so it can only be the IP bucket that trips.
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_MINUTE', '50');
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_IP_PER_MINUTE', '2');
+    const alice = await createUserWithWallet(WALLET_CONTRACT);
+    const bob = await createUserWithWallet(WALLET_CONTRACT, 'bob@example.com');
+    const ip = { 'x-forwarded-for': '203.0.113.9' };
+
+    expect((await POST(validSubmit(alice, ip))).status).toBe(200);
+    expect((await POST(validSubmit(alice, ip))).status).toBe(200);
+
+    // A different account behind the same address, still refused.
+    expect((await POST(validSubmit(bob, ip))).status).toBe(429);
+
+    // ...and the same account from a different address is not.
+    expect(
+      (await POST(validSubmit(bob, { 'x-forwarded-for': '198.51.100.7' })))
+        .status
+    ).toBe(200);
+  });
+
+  it('keys the IP bucket on the rightmost X-Forwarded-For entry, so a spoofed prefix mints nothing', async () => {
+    // The one that matters. Railway appends the real peer address, so a client
+    // controls everything to the LEFT of it. Reading split(',')[0] would give
+    // this caller a fresh bucket on every request and no limit at all.
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_MINUTE', '50');
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_IP_PER_MINUTE', '1');
+    const token = await createUserWithWallet(WALLET_CONTRACT);
+
+    const first = await POST(
+      validSubmit(token, { 'x-forwarded-for': '203.0.113.9' })
+    );
+    expect(first.status).toBe(200);
+
+    const spoofed = await POST(
+      validSubmit(token, { 'x-forwarded-for': '1.2.3.4, 203.0.113.9' })
+    );
+    expect(spoofed.status).toBe(429);
+
+    const longerSpoof = await POST(
+      validSubmit(token, {
+        'x-forwarded-for': '9.9.9.9, 8.8.8.8, 7.7.7.7, 203.0.113.9',
+      })
+    );
+    expect(longerSpoof.status).toBe(429);
+
+    // A genuinely different peer address is a genuinely different bucket —
+    // otherwise the test above would pass against a limiter keyed on a
+    // constant.
+    const elsewhere = await POST(
+      validSubmit(token, { 'x-forwarded-for': '1.2.3.4, 198.51.100.7' })
+    );
+    expect(elsewhere.status).toBe(200);
+  });
+
+  it('does not charge the budget for requests rejected before the fee payer', async () => {
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_MINUTE', '1');
+    const token = await createUserWithWallet(WALLET_CONTRACT);
+
+    // Cheap failures: bad JSON body, bad XDR, wrong wallet, no auth entries.
+    expect((await POST(createSubmitRequest({}, token))).status).toBe(400);
+    expect(
+      (await POST(createSubmitRequest({ signedXdr: 'nope' }, token))).status
+    ).toBe(500);
+    expect(
+      (
+        await POST(
+          createSubmitRequest(
+            { signedXdr: buildInvokeXdr([buildAddressAuthEntry(OTHER_CONTRACT)]) },
+            token
+          )
+        )
+      ).status
+    ).toBe(403);
+    expect(
+      (await POST(createSubmitRequest({ signedXdr: buildInvokeXdr([]) }, token)))
+        .status
+    ).toBe(400);
+
+    // The single expensive request the user is entitled to still goes through.
+    expect((await POST(validSubmit(token))).status).toBe(200);
+  });
+
+  it('lets the caller through again once the window has passed', async () => {
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_MINUTE', '1');
+
+    // Only Date is faked: the limiter reads the clock through Date.now(), and
+    // faking the timer queue as well would stall the database driver.
+    const base = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(base);
+
+    const token = await createUserWithWallet(WALLET_CONTRACT);
+
+    expect((await POST(validSubmit(token))).status).toBe(200);
+    expect((await POST(validSubmit(token))).status).toBe(429);
+
+    vi.setSystemTime(base + 60_001);
+    expect((await POST(validSubmit(token))).status).toBe(200);
   });
 });

@@ -175,3 +175,35 @@ export const metrics = pgTable(
 
 export type Metric = typeof metrics.$inferSelect;
 export type NewMetric = typeof metrics.$inferInsert;
+
+// Fixed-window rate-limit counters, one row per bucket.
+//
+// Postgres rather than an in-memory Map on purpose: the app is a single
+// container and an in-memory counter resets on every deploy and every restart,
+// which is theatre for something whose job is stopping a fee-payer drain
+// (issue #36). One implementation, no dev/production divergence.
+//
+// `windowStart` is milliseconds since the epoch taken from JS `Date.now()`,
+// NOT SQL `now()`. Tests drive the clock with `vi.useFakeTimers`, which
+// controls the former and not the database clock — a SQL-clock version would
+// be untestable. Hence bigint-as-number rather than a timestamp column.
+//
+// The row is reused for the lifetime of the bucket: the upsert in
+// src/lib/rate-limit.ts either increments the count or, once the window has
+// elapsed, resets it to 1 and moves the window. The table therefore grows with
+// the number of distinct (route, subject) pairs seen, not with traffic.
+export const rateLimits = pgTable('rate_limits', {
+  // "<route>|<subject kind>|<subject>", e.g. "wallet.submit|user|a@b.com" or
+  // "wallet.submit|ip|203.0.113.7". The route and kind segments keep per-user,
+  // per-IP and per-route buckets from colliding; '|' cannot appear in an email,
+  // an IP, or any of the route literals.
+  bucket: text('bucket').primaryKey(),
+  windowStart: bigint('window_start', { mode: 'number' }).notNull(),
+  count: integer('count').notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export type RateLimit = typeof rateLimits.$inferSelect;
+export type NewRateLimit = typeof rateLimits.$inferInsert;

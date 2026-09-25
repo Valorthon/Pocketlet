@@ -25,9 +25,10 @@ The canonical description of how Pocketlet works. Other docs link here rather th
       │                              │
       ▼                              ▼
   PostgreSQL                    Fee payer (server-held account)
-  users, user_devices,          rebuilds the op with itself as source,
-  claim_links,                  re-simulates for current resource fees,
-  notifications, metrics        signs the envelope, submits
+  users, user_devices,          rate limit checked first (rate_limits),
+  claim_links, notifications,   then rebuilds the op with itself as source,
+  metrics, rate_limits          re-simulates for current resource fees,
+                                signs the envelope, submits
                                        │
                                        ▼
                             Soroban RPC  ──────────┐

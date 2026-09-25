@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST } from './route';
 import {
@@ -24,6 +24,10 @@ vi.mock('next/headers', () => ({
 
 beforeEach(() => {
   cookieJar = {};
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 async function createUserWithWallet(email: string, username?: string, phone?: string) {
@@ -64,13 +68,18 @@ async function createRecipient(email: string) {
   });
 }
 
-function createResolveRequest(body: unknown, token?: string) {
+function createResolveRequest(
+  body: unknown,
+  token?: string,
+  headers?: Record<string, string>
+) {
   if (token) {
     cookieJar[SESSION_COOKIE_NAME] = token;
   }
   return new NextRequest('http://localhost/api/wallet/resolve', {
     method: 'POST',
     body: JSON.stringify(body),
+    headers,
   });
 }
 
@@ -188,5 +197,72 @@ describe('POST /api/wallet/resolve', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe('Enter a valid username, phone number, email, or Stellar address.');
+  });
+});
+
+/**
+ * Rate limiting (issue #36).
+ *
+ * This route spends no fee-payer funds, so its limit is deliberately much
+ * looser than the submission routes'. It is limited at all because since #110
+ * it answers for emails, phones and usernames, so its 200-vs-404 tells a
+ * caller with a session whether an identifier belongs to a registered account.
+ */
+describe('POST /api/wallet/resolve rate limiting', () => {
+  it('returns 429 once the per-user resolve limit is exceeded', async () => {
+    vi.stubEnv('RATE_LIMIT_RESOLVE_PER_USER_PER_MINUTE', '2');
+    const token = await createUserWithWallet('alice@example.com', 'alice');
+
+    expect((await POST(createResolveRequest({ recipient: '@alice' }, token))).status).toBe(200);
+    expect((await POST(createResolveRequest({ recipient: '@alice' }, token))).status).toBe(200);
+
+    const res = await POST(createResolveRequest({ recipient: '@alice' }, token));
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('returns 429 once the per-IP resolve limit is exceeded', async () => {
+    vi.stubEnv('RATE_LIMIT_RESOLVE_PER_USER_PER_MINUTE', '50');
+    vi.stubEnv('RATE_LIMIT_RESOLVE_PER_IP_PER_MINUTE', '1');
+    const token = await createUserWithWallet('alice@example.com', 'alice');
+    const ip = { 'x-forwarded-for': '203.0.113.9' };
+
+    expect(
+      (await POST(createResolveRequest({ recipient: '@alice' }, token, ip))).status
+    ).toBe(200);
+    expect(
+      (
+        await POST(
+          createResolveRequest({ recipient: '@alice' }, token, {
+            'x-forwarded-for': '1.2.3.4, 203.0.113.9',
+          })
+        )
+      ).status
+    ).toBe(429);
+  });
+
+  it('is looser than the fee-payer routes at the default settings', async () => {
+    // A tight fee-payer budget must not make the send screen's recipient
+    // lookup stop working.
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_MINUTE', '1');
+    const token = await createUserWithWallet('alice@example.com', 'alice');
+
+    for (let i = 0; i < 12; i += 1) {
+      const res = await POST(createResolveRequest({ recipient: '@alice' }, token));
+      expect(res.status, `lookup ${i + 1}`).toBe(200);
+    }
+  });
+
+  it('does not charge a lookup that never happened', async () => {
+    vi.stubEnv('RATE_LIMIT_RESOLVE_PER_USER_PER_MINUTE', '1');
+    const token = await createUserWithWallet('alice@example.com', 'alice');
+
+    // Rejected by format validation before any directory read.
+    expect(
+      (await POST(createResolveRequest({ recipient: 'hello world' }, token))).status
+    ).toBe(400);
+    expect((await POST(createResolveRequest({}, token))).status).toBe(400);
+
+    expect((await POST(createResolveRequest({ recipient: '@alice' }, token))).status).toBe(200);
   });
 });

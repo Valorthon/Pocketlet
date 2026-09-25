@@ -1,9 +1,8 @@
 import { Keypair, xdr } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { verifySessionToken } from '@/lib/auth/session';
-import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { getUserByEmail, setRecoveryPublicKey } from '@/lib/auth/store';
+import { requireWalletUser } from '@/lib/auth/route-guard';
+import { setRecoveryPublicKey } from '@/lib/auth/store';
+import { enforceFeePayerRateLimit } from '@/lib/rate-limit';
 import {
   getInvokeContractArgs,
   getInvokeContractDetails,
@@ -86,21 +85,11 @@ function argsMatchRecoveryPublicKey(
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const guard = await requireWalletUser();
+  if (!guard.ok) {
+    return guard.response;
   }
-
-  const session = await verifySessionToken(token);
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const user = await getUserByEmail(session.email);
-  if (!user || !user.walletContractId) {
-    return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
-  }
+  const user = guard.value;
 
   let body: RecoverySignerRequest;
   try {
@@ -170,6 +159,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { error: 'Signer public key does not match recoveryPublicKey' },
       { status: 400 }
     );
+  }
+
+  const limited = await enforceFeePayerRateLimit(
+    request,
+    'wallet.recovery-signer',
+    user.email
+  );
+  if (limited) {
+    return limited;
   }
 
   let result;
