@@ -27,9 +27,20 @@ import { VERIFICATION_CODE_MAX_ATTEMPTS } from './verification-code';
  * destroyed the code on the fifth, which is why the sequential tests elsewhere
  * were all green.
  *
- * The fix is one statement per increment — `set x = coalesce(x, 0) + 1 ...
- * returning x` — with the cap decided on the returned value. Each block below
- * therefore asserts the same thing twice over: parallel and sequential agree.
+ * An atomic increment — `set x = coalesce(x, 0) + 1 ... returning x`, deciding
+ * the cap on the returned value — is NOT the fix, and was tried first: the
+ * counter came out right but 10 of 20 parallel guesses were still answered
+ * `invalid`, because the comparison happens in JavaScript (constant-time
+ * cannot be spelled as SQL `=`), so every request that read the row before the
+ * cap landed still had its guess checked against a live code. The cap of five
+ * silently became "however many requests you can have in flight".
+ *
+ * The fix is therefore the whole read/compare/write inside one transaction
+ * behind `SELECT … FOR UPDATE` (`verifyOneTimeCode`, `verifyRecoveryCode`).
+ * The row lock is load-bearing — do not "simplify" it back to a bare atomic
+ * increment. That form is only sufficient for `recordRecoveryAttemptOn`, which
+ * does no comparison. Each block below asserts the same thing twice over:
+ * parallel and sequential agree.
  *
  * A concurrency test cannot prove the absence of a race, only catch a large
  * one. `GUESSES` is deliberately several times the cap so that a

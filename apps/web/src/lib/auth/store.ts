@@ -391,7 +391,11 @@ async function verifyOneTimeCode(
       })
       .from(users)
       .where(eq(users.email, normalized))
-      .for('update');
+      // 'no key update', not 'update': neither transaction touches
+      // users.email, and the weaker mode does not conflict with the
+      // FOR KEY SHARE that an insert into claim_links or user_devices takes
+      // on its parent row. Still exclusive against another verifier.
+      .for('no key update');
 
     // A missing row answers exactly as a missing code does. Callers map both
     // to the same 401, so looking the user up separately only added a query
@@ -1022,17 +1026,6 @@ function recordRecoveryAttemptOn(
     .returning();
 }
 
-/** {@link recordRecoveryAttemptOn} against the pool. */
-export async function recordRecoveryAttempt(email: string): Promise<User> {
-  const [updated] = await recordRecoveryAttemptOn(db, normalizeEmail(email));
-
-  if (!updated) {
-    throw new Error('User not found');
-  }
-
-  return mapUser(updated);
-}
-
 export async function isRecoveryLocked(email: string): Promise<boolean> {
   const user = await getUserByEmail(email);
   if (!user?.recoveryLockedUntil) {
@@ -1071,7 +1064,11 @@ export async function verifyRecoveryCode(
       .select()
       .from(users)
       .where(eq(users.email, normalized))
-      .for('update');
+      // 'no key update', not 'update': neither transaction touches
+      // users.email, and the weaker mode does not conflict with the
+      // FOR KEY SHARE that an insert into claim_links or user_devices takes
+      // on its parent row. Still exclusive against another verifier.
+      .for('no key update');
 
     if (!row) {
       return { ok: false, error: 'User not found' };

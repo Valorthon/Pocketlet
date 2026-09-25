@@ -214,17 +214,17 @@ describe('POST /api/auth/email-challenge rate limiting', () => {
 });
 
 describe('POST /api/auth/email-challenge signup metric', () => {
-  it('counts a signup once the code has actually been delivered', async () => {
+  it('counts a signup once, when the account row is created', async () => {
     expect(await getMetric('auth.signup.completed')).toBe(0);
 
     await POST(createRequest({ email: 'alice@example.com' }));
     expect(await getMetric('auth.signup.completed')).toBe(1);
   });
 
-  it('does not count a signup whose code was never sent', async () => {
-    // The metric used to be incremented next to `createUser`, before the mail
-    // attempt, so a 502 counted a completed signup that the user could not
-    // complete.
+  it('still counts a created account whose first code failed to send', async () => {
+    // Counting on delivery instead looks tidier and loses the account for
+    // good: the retry finds the row already there, takes the re-issue branch,
+    // and never counts it. The row exists either way, so count it once, here.
     mailer = {
       name: 'broken',
       send: async () => ({ ok: false, provider: 'broken', error: 'nope' }),
@@ -232,10 +232,30 @@ describe('POST /api/auth/email-challenge signup metric', () => {
 
     const res = await POST(createRequest({ email: 'alice@example.com' }));
     expect(res.status).toBe(502);
-    expect(await getMetric('auth.signup.completed')).toBe(0);
+    expect(await getMetric('auth.signup.completed')).toBe(1);
   });
 
-  it('counts a re-issued code once, on the first delivery only', async () => {
+  it('does not count again when a failed signup is retried', async () => {
+    mailer = {
+      name: 'broken',
+      send: async () => ({ ok: false, provider: 'broken', error: 'nope' }),
+    };
+    expect((await POST(createRequest({ email: 'alice@example.com' }))).status).toBe(502);
+
+    mailer = {
+      name: 'log',
+      send: async (message) => {
+        sent.push(message);
+        return { ok: true, provider: 'log' };
+      },
+    };
+    expect((await POST(createRequest({ email: 'alice@example.com' }))).status).toBe(200);
+
+    // One account, one count — the re-issue branch must not add a second.
+    expect(await getMetric('auth.signup.completed')).toBe(1);
+  });
+
+  it('counts a re-issued code once, not per request', async () => {
     await POST(createRequest({ email: 'alice@example.com' }));
     await POST(createRequest({ email: 'alice@example.com' }));
 

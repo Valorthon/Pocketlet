@@ -71,6 +71,12 @@ export async function POST(request: NextRequest) {
     await setVerificationCode(email, code);
   } else {
     await createUser(email, code);
+    // Counted for a row this request created, before the mail is attempted.
+    // Gating it on delivery loses the count permanently: the retry after a
+    // 502 finds the row already there, takes the re-issue branch, and never
+    // counts. The name is a pre-existing misnomer — this measures accounts
+    // created, not signups completed; verification is what completes one.
+    await incrementMetric('auth.signup.completed');
   }
 
   // Mail after the write, never before: the code has to be readable by
@@ -93,12 +99,6 @@ export async function POST(request: NextRequest) {
       },
       { status: 502 }
     );
-  }
-
-  // Counted here, not next to `createUser`. A signup whose code never arrived
-  // is not a completed signup, and this route answers 502 for exactly that.
-  if (!existing) {
-    await incrementMetric('auth.signup.completed');
   }
 
   return NextResponse.json({
