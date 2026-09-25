@@ -3,7 +3,7 @@ members = ["escrow"]
 resolver = "2"
 
 [workspace.dependencies]
-soroban-sdk = "27.0.6"
+soroban-sdk = "28.0.0"
 
 [patch.crates-io]
 ed25519-dalek = { git = "https://github.com/dalek-cryptography/curve25519-dalek", tag = "ed25519-2.2.0" }
