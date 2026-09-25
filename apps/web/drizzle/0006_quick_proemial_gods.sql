@@ -1,0 +1,1 @@
+CREATE INDEX "rate_limits_updated_at_idx" ON "rate_limits" USING btree ("updated_at");

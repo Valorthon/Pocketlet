@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { Account, Contract, TransactionBuilder } from '@stellar/stellar-sdk';
 import { POST } from './route';
+import { exhaustFeePayerBudget } from '@/lib/rate-limit.test-support';
 import {
   createUser,
   setEmailVerified,
@@ -79,6 +80,10 @@ function buildTransferXdr(
 
 beforeEach(() => {
   cookieJar = {};
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 async function createSender(email: string) {
@@ -428,5 +433,38 @@ describe('POST /api/wallet/transfer', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe('Insufficient USDC balance');
+  });
+});
+
+/**
+ * Rate-limit wiring (issue #36).
+ *
+ * The limiter itself is tested in `src/lib/rate-limit.test.ts`. This asserts
+ * only that this handler charges it — the call is per route, so without this
+ * it could be deleted with CI green.
+ */
+describe('POST /api/wallet/transfer rate limiting', () => {
+  it('returns 429 once the fee-payer budget is spent', async () => {
+    const token = await createSender('alice@example.com');
+    await exhaustFeePayerBudget('wallet.transfer', 'alice@example.com');
+
+    const req = createTransferRequest(
+      {
+        signedXdr: buildTransferXdr(
+          getUsdcContractId(),
+          SENDER_CONTRACT,
+          RECIPIENT_ADDRESS,
+          '1'
+        ),
+        asset: 'USDC',
+        amount: '1',
+        recipient: RECIPIENT_ADDRESS,
+      },
+      token
+    );
+
+    const res = await POST(req);
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
   });
 });

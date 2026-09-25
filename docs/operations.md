@@ -61,6 +61,8 @@ Add a required reviewer on the `prod-test` environment if public deploys should 
 
 Runtime secrets (`SESSION_SECRET`, `FEE_PAYER_SECRET_KEY`, `CLAIM_SECRET_ENCRYPTION_KEY`, `ADMIN_SECRET_TOKEN`) are set in the Railway environment, not in GitHub, and each service needs its own distinct set — never share a `SESSION_SECRET` or `FEE_PAYER_SECRET_KEY` between internal and public. Generate each with `openssl rand -hex 32`, and store them in a secrets manager rather than an env file. Rotating `FEE_PAYER_SECRET_KEY` needs no user action — drain and retire the old account; rotating `SESSION_SECRET` signs everyone out and invalidates outstanding recovery tokens. Every variable is described in `apps/web/.env.example`.
 
+Non-secret runtime variables worth setting explicitly per Railway service: the six `RATE_LIMIT_*` limits, and **`TRUSTED_PROXY_HOP_COUNT`**, which must stay at `0` on Railway — its edge appends the socket peer address to `X-Forwarded-For`, so the rightmost entry is the real client. Raise it by one for each additional reverse proxy you put in front; setting it too high reads an attacker-supplied entry and lets one client mint a fresh rate-limit bucket per request. See [ADR 0008](./decisions/0008-fee-payer-rate-limiting.md).
+
 ## Deploying manually
 
 ```bash
@@ -81,6 +83,8 @@ pnpm run deploy:web          # railway up (needs @railway/cli)
 `/admin` shows counters from the `metrics` table (`api/admin/stats`), gated by a bearer token.
 
 > While `ADMIN_SECRET_TOKEN` is unset or still the `.env.example` default, admin auth fails closed: `api/admin/stats` returns **503** with "Admin API is not configured", which `/admin` shows on the login card, and logs the same to the server. A wrong token returns an undifferentiated **401**.
+
+The `rate_limits` table grows with the number of distinct (route, subject, window) buckets seen and nothing prunes it; **issue #141** tracks reclaiming the expired rows.
 
 `src/lib/metrics.ts` increments counters with `incrementMetric()`. There is no external monitoring, alerting, or log aggregation; the app writes ~23 raw `console.*` calls with no logging abstraction. Railway's log view is the only observability today.
 

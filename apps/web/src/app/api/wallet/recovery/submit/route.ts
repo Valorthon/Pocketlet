@@ -18,6 +18,7 @@ import {
   verifyRecoveryToken,
 } from '@/lib/auth/recovery-token';
 import { incrementMetric } from '@/lib/metrics';
+import { enforceFeePayerRateLimit } from '@/lib/rate-limit';
 import {
   getAuthEntryAddresses,
   getInvokeContractArgs,
@@ -148,6 +149,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { error: 'Transaction authorization is not for this wallet' },
       { status: 403 }
     );
+  }
+
+  // Charged here, not at the top of the handler: every check above is
+  // validation and must stay free, and this is the last point before the
+  // request starts mutating state — `takePasskeyChallenge` clears the nonce as
+  // it reads it, so a throttled attempt must not get that far (issue #36).
+  // This route authenticates with the recovery cookie rather than a session,
+  // but that still yields an email to key the per-user bucket on.
+  const limited = await enforceFeePayerRateLimit(
+    request,
+    'wallet.recovery.submit',
+    user.email
+  );
+  if (limited) {
+    return limited;
   }
 
   // The challenge is issued by api/wallet/passkey-challenge and cleared as it

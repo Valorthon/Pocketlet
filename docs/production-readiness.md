@@ -104,7 +104,7 @@ Still open: the testnet `fee_payer_secret` remains on local disk under `POCKETLE
 
 All three are now foreign keys (migration `0002_fuzzy_shaman.sql`). Delete behaviour differs by intent: `user_devices` and `notifications` cascade, because a device signer or a queued notification is meaningless without its parent; `claim_links.sender_email` **restricts**, because a claim link records an escrow deposit that may still hold funds on-chain and must not disappear with its sender. `claim_links.recipient_email` is deliberately not a reference — an unregistered recipient is the whole point of a claim link.
 
-`resetDatabase()` now issues a single `TRUNCATE ... RESTART IDENTITY CASCADE` over all five tables instead of deleting from two, which is order-independent (so the restrict constraint cannot trip it) and faster. Covered by `src/lib/db/schema.test.ts`.
+`resetDatabase()` now issues a single `TRUNCATE ... RESTART IDENTITY CASCADE` over all six tables instead of deleting from two, which is order-independent (so the restrict constraint cannot trip it) and faster. Covered by `src/lib/db/schema.test.ts`.
 
 The migration begins with three hand-added `DELETE` statements that sweep pre-existing orphans. Migrations run at boot and at test import, so without them a single leftover row would abort startup — and any database that ran the old `resetDatabase()` is likely to hold some.
 
@@ -126,9 +126,52 @@ Fix: rebuild around a real Stellar DEX/AMM using SAC or Soroban DEX flows, with 
 
 Always set to the same value at `api/wallet/deploy/route.ts:121-124`, but load-bearing: `resolveRecipient` reads one while transfers use the other. Collapsing them is safe only if both call sites change together.
 
-### Rate limiting — Open
+### Rate limiting — Closed
 
-**Issue #36.** The fee-payer submission endpoints have no rate limiting. On a public network this is a direct cost-drain vector.
+**Issue #36.** The fee-payer submission endpoints had no rate limiting, so any
+authenticated user could post signed XDRs in a loop — valid ones or deliberate
+on-chain failures — and drain `FEE_PAYER_SECRET_KEY` at the platform's expense.
+
+It was nine routes, not the three the issue named: every path that reaches
+`submitSignedTransaction`, namely `api/wallet/{submit,transfer,deploy}`,
+`api/wallet/device-key/submit`, `api/wallet/recovery-signer`,
+`api/wallet/recovery/submit` and all three of
+`api/wallet/claim-links/{create,claim-submit,refund}`. `api/wallet/resolve` is
+limited too, on much looser numbers: it spends nothing, but since #110 its
+200-vs-404 confirms whether an email, phone or username belongs to a registered
+account, so the concern there is enumeration rather than cost.
+
+Counters live in the `rate_limits` table (`src/lib/rate-limit.ts`), one row per
+bucket, keyed `"<route>|<kind>|<subject>|<windowMs>"` so per-user, per-IP,
+per-route and per-window budgets cannot collide. Each subject gets two fixed
+windows: a per-minute one that stops a tight loop and a per-day one that is what
+actually bounds the spend. All six limits and the proxy hop count are
+environment variables, documented in
+[`apps/web/.env.example`](../apps/web/.env.example). Exceeding one returns 429
+with a `Retry-After` header.
+
+The four load-bearing decisions — Postgres over an in-memory `Map`, JS
+`Date.now()` over SQL `now()`, explicit `enforce()` calls over Edge middleware,
+and the rightmost `X-Forwarded-For` entry normalised to a /64 — are recorded
+once in [ADR 0008](./decisions/0008-fee-payer-rate-limiting.md). Every limited
+route carries its own enforcement test, because the wiring is per route and
+deleting one call is otherwise invisible to CI.
+
+Still open, and deliberately out of scope: nothing prunes `rate_limits`, so
+expired buckets accumulate. `rate_limits_updated_at_idx` makes a cleanup a cheap
+ranged scan; the cleanup itself is **issue #141**.
+
+The session preamble those routes duplicated moved to
+`src/lib/auth/route-guard.ts` in the same change — 9 route files were migrated,
+15 others still hand-roll it. The differing 404 bodies (`Wallet not deployed` /
+`Wallet not found` / `User not found or email not verified`) are passed per
+route and unchanged.
+
+`isRecoveryInitiationRateLimited` in `src/lib/auth/recovery.ts` stays as it was.
+It is a pure function over a user row with no store behind it, encoding
+recovery-specific semantics (a 60-second minimum retry and the initiation
+history column) that a generic limiter does not replace; the new limit layers on
+top of it rather than replacing it.
 
 ## Engineering
 

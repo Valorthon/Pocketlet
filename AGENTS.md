@@ -8,7 +8,7 @@ For product intent read [`docs/product-spec.md`](./docs/product-spec.md); for th
 
 ## What this is
 
-A deployed passkey-based USDC/XLM wallet on Stellar Testnet. Not a scaffold: ~37 API routes, 5 database tables, a custom Soroban contract, and a live deployment. Feature status lives in the [README table](./README.md#features) — check there before assuming something exists.
+A deployed passkey-based USDC/XLM wallet on Stellar Testnet. Not a scaffold: ~37 API routes, 6 database tables, a custom Soroban contract, and a live deployment. Feature status lives in the [README table](./README.md#features) — check there before assuming something exists.
 
 ## Stack
 
@@ -30,9 +30,11 @@ A deployed passkey-based USDC/XLM wallet on Stellar Testnet. Not a scaffold: ~37
 ```
 apps/web/src/app/          17 pages + ~37 API routes
 apps/web/src/lib/
-  auth/                    sessions, PIN, recovery, config guardrails
+  auth/                    sessions, PIN, recovery, config guardrails, route-guard
   wallet/                  passkey-kit, fee payer, balances, transfers, device keys
   db/                      Drizzle schema, client, test reset helper
+  rate-limit.ts            fee-payer / resolve rate limiting (Postgres-backed)
+  client-ip.ts             X-Forwarded-For handling behind Railway's proxy
   contracts/escrow.ts      TypeScript mirror of the Soroban contract
 apps/web/drizzle/          SQL migrations (applied at boot by instrumentation.ts)
 packages/config/           shared tsconfig / eslint / tailwind
@@ -76,11 +78,15 @@ Verified against the code on 2026-09-25. These are the things that look wrong, a
 
 **Tests need a live database.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and clears tables in `beforeEach`, so without Postgres the whole suite fails at import rather than with a useful message. `DATABASE_URL` is honoured from `apps/web/.env.local` — `apps/web/vitest.env.ts` is listed first in `setupFiles` so dotenv runs before `./src/lib/db` constructs the `pg` Pool at module scope. Keep it first; putting the dotenv call inside `vitest.setup.ts` is always too late, because ES module imports are evaluated before any statement body. (That was issue #58.) `drizzle.config.ts` loads `.env.local` for the same reason.
 
-**Deleting a user can fail, on purpose.** `claim_links.sender_email` references `users.email` with `on delete restrict`, so a user with outstanding claim links cannot be deleted — a claim link is an escrow deposit that may still hold funds on-chain. `user_devices` and `notifications` cascade instead. `src/lib/db/test-setup.ts` truncates all five tables in one statement, so tests no longer leak rows. (That was issue #62.)
+**Deleting a user can fail, on purpose.** `claim_links.sender_email` references `users.email` with `on delete restrict`, so a user with outstanding claim links cannot be deleted — a claim link is an escrow deposit that may still hold funds on-chain. `user_devices` and `notifications` cascade instead. `src/lib/db/test-setup.ts` truncates all six tables in one statement, so tests no longer leak rows. (That was issue #62.) Any table you add joins that list — `rate_limits` especially, since a leaked counter makes the suite order-dependent.
 
 **`stellarAddress` is a duplicate column.** `api/wallet/deploy/route.ts:121-124` always sets it equal to `walletContractId`. It is a leftover from the classic-account era, but it is *load-bearing*: `resolveRecipient` reads `stellarAddress` while transfers use `walletContractId`. Don't drop it without changing both.
 
 **The production guardrails live in one `.mjs` file, on purpose.** `next.config.mjs` (build time) and `src/lib/auth/config.ts` (runtime) both call `src/lib/config/production-guardrails.mjs`. It is plain ESM JavaScript rather than TypeScript because Next loads `next.config.mjs` through Node's ESM loader with no transpilation — don't convert it to `.ts`, and don't import `@stellar/stellar-sdk` from it. Add a new check there, not in either caller. (That was issue #57.)
+
+**Rate limiting: four things not to break.** `src/lib/rate-limit.ts` guards the nine routes that reach `submitSignedTransaction` plus `api/wallet/resolve` (issue #36). Don't move the counters out of the `rate_limits` table, don't switch the window clock from JS `Date.now()` to SQL `now()`, don't hoist `enforceFeePayerRateLimit` to the top of a handler or into middleware, and don't read `X-Forwarded-For` from the left. Why each: [ADR 0008](./docs/decisions/0008-fee-payer-rate-limiting.md). Every limited route has its own enforcement test — the wiring is per route, so deleting one call is otherwise invisible. `isRecoveryInitiationRateLimited` in `src/lib/auth/recovery.ts` is unrelated and stays.
+
+**The session preamble lives in `src/lib/auth/route-guard.ts` — but most routes don't use it yet.** `requireSessionEmail` / `requireWalletUser` / `requireVerifiedUser` were extracted while wiring the rate limits, and **9** route files were migrated. **15 others still hand-roll the same cookie-verify-load block** — use the guards in new routes, and migrate one when you touch it. The 404 bodies differ per route on purpose (`Wallet not deployed` vs `Wallet not found` vs `User not found or email not verified`), so each caller passes its own — don't unify them, existing route tests assert the text. `api/wallet/recovery/submit` keeps its own preamble because it authenticates with `RECOVERY_COOKIE_NAME`, not a session.
 
 **The escrow expiry unit changes across the boundary.** The contract takes `expiry` as a **ledger sequence**; `claim_links.expiry` in Postgres is a **timestamp**. The conversion is done ad hoc in `api/wallet/claim-links/create/route.ts`.
 

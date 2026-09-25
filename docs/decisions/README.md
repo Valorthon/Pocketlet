@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-25
 
 Short records of decisions that are expensive to reverse or non-obvious in hindsight. Write one when a choice would otherwise leave a future reader asking "why on earth is it like this?"
 
@@ -15,6 +15,7 @@ ADRs are immutable once merged. If a decision changes, add a new ADR and mark th
 | [0005](./0005-migrate-on-boot.md) | Apply database migrations at application startup | Accepted |
 | [0006](./0006-escrow-claim-link-design.md) | Hash-based escrow for claimable links | Accepted |
 | [0007](./0007-testnet-branch-model.md) | Two testnet release branches, no `main` | Accepted |
+| [0008](./0008-fee-payer-rate-limiting.md) | Postgres-backed, explicitly-called rate limiting for the fee-payer routes | Accepted |
 
 0001–0006 were written retrospectively on 2026-09-17, reconstructed from the code and git history. They record *what* was decided and what follows from it; where the original reasoning is uncertain, they say so.
 

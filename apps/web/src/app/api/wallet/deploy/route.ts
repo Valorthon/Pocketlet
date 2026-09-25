@@ -1,15 +1,14 @@
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { verifySessionToken } from '@/lib/auth/session';
-import { SESSION_COOKIE_NAME, ORIGIN, RP_ID } from '@/lib/auth/config';
+import { ORIGIN, RP_ID } from '@/lib/auth/config';
+import { requireVerifiedUser } from '@/lib/auth/route-guard';
 import {
-  getUserByEmail,
   setCredential,
   setWallet,
   takePasskeyChallenge,
 } from '@/lib/auth/store';
 import { incrementMetric } from '@/lib/metrics';
+import { enforceFeePayerRateLimit } from '@/lib/rate-limit';
 import { submitSignedTransaction } from '@/lib/wallet/submit';
 
 export interface DeployRequest {
@@ -45,24 +44,11 @@ async function verifyPasskeyRegistrationResponse(
 }
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const guard = await requireVerifiedUser();
+  if (!guard.ok) {
+    return guard.response;
   }
-
-  const session = await verifySessionToken(token);
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const user = await getUserByEmail(session.email);
-  if (!user || !user.emailVerified) {
-    return NextResponse.json(
-      { error: 'User not found or email not verified' },
-      { status: 404 }
-    );
-  }
+  const user = guard.value;
 
   if (user.walletContractId) {
     return NextResponse.json({
@@ -88,6 +74,21 @@ export async function POST(request: NextRequest) {
       },
       { status: 400 }
     );
+  }
+
+  // Charged here, not at the top of the handler and not further down: every
+  // check above is validation and must stay free, and this is the last point
+  // before the request starts consuming state — `takePasskeyChallenge` clears
+  // the single-use nonce as it reads it, so a throttled attempt must not get
+  // that far or the caller has to restart the ceremony. Same ordering as
+  // `api/wallet/recovery/submit` (issue #36).
+  const limited = await enforceFeePayerRateLimit(
+    request,
+    'wallet.deploy',
+    user.email
+  );
+  if (limited) {
+    return limited;
   }
 
   const expectedChallenge = await takePasskeyChallenge(user.email);

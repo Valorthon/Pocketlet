@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { xdr } from '@stellar/stellar-sdk';
 import { POST } from './route';
+import { exhaustFeePayerBudget } from '@/lib/rate-limit.test-support';
 import {
   createUser,
   setEmailVerified,
@@ -228,5 +229,52 @@ describe('POST /api/wallet/recovery/submit', () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+/**
+ * Rate-limit wiring (issue #36). The limiter itself is tested in
+ * `src/lib/rate-limit.test.ts`; this only proves the handler charges it, and
+ * that it does so before `takePasskeyChallenge` burns the single-use nonce.
+ */
+describe('POST /api/wallet/recovery/submit rate limiting', () => {
+  async function readyToSubmit(email: string) {
+    await makeRecoverableUser(email);
+    await setRecoveryInitiated(
+      email,
+      '123456',
+      new Date(Date.now() + 60000).toISOString()
+    );
+    await verifyRecoveryCode(email, '123456');
+    await setRecoverySession(email);
+  }
+
+  const body = {
+    signedXdr: 'AAAA...',
+    response: { id: 'new-key-id' },
+    keyIdBase64: 'new-key-id',
+  };
+
+  it('returns 429 once the fee-payer budget is spent', async () => {
+    await readyToSubmit('alice@example.com');
+    await exhaustFeePayerBudget('wallet.recovery.submit', 'alice@example.com');
+
+    const res = await POST(createRequest(body));
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('does not burn the passkey challenge on a throttled attempt', async () => {
+    await readyToSubmit('alice@example.com');
+    await exhaustFeePayerBudget('wallet.recovery.submit', 'alice@example.com');
+
+    expect((await POST(createRequest(body))).status).toBe(429);
+
+    vi.unstubAllEnvs();
+    expect((await POST(createRequest(body))).status).toBe(200);
   });
 });

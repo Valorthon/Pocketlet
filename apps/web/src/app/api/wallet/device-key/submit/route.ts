@@ -1,9 +1,8 @@
 import { TransactionBuilder, Keypair, Address, xdr } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { verifySessionToken } from '@/lib/auth/session';
-import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { getUserByEmail, createDevice } from '@/lib/auth/store';
+import { requireWalletUser } from '@/lib/auth/route-guard';
+import { createDevice } from '@/lib/auth/store';
+import { enforceFeePayerRateLimit } from '@/lib/rate-limit';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import {
   getInvokeContractDetails,
@@ -184,21 +183,11 @@ function validateAddSignerXdr(
 }
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const guard = await requireWalletUser('Wallet not found');
+  if (!guard.ok) {
+    return guard.response;
   }
-
-  const session = await verifySessionToken(token);
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const user = await getUserByEmail(session.email);
-  if (!user || !user.walletContractId) {
-    return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
-  }
+  const user = guard.value;
 
   let body: DeviceKeySubmitRequest;
   try {
@@ -219,6 +208,16 @@ export async function POST(request: NextRequest) {
 
   try {
     validateAddSignerXdr(signedXdr, user.walletContractId, publicKey);
+
+    const limited = await enforceFeePayerRateLimit(
+      request,
+      'wallet.device-key.submit',
+      user.email
+    );
+    if (limited) {
+      return limited;
+    }
+
     const result = await submitSignedTransaction(signedXdr);
 
     // Record the device on the server so it can be used for PIN-only login.

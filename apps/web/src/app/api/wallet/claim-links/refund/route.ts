@@ -1,9 +1,7 @@
 import { TransactionBuilder } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { verifySessionToken } from '@/lib/auth/session';
-import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { getUserByEmail } from '@/lib/auth/store';
+import { requireWalletUser } from '@/lib/auth/route-guard';
+import { enforceFeePayerRateLimit } from '@/lib/rate-limit';
 import {
   submitSignedTransaction,
   getInvokeContractDetails,
@@ -55,21 +53,11 @@ function validateSignedRefund(signedXdr: string, expectedClaimHash: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const guard = await requireWalletUser();
+  if (!guard.ok) {
+    return guard.response;
   }
-
-  const session = await verifySessionToken(token);
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const user = await getUserByEmail(session.email);
-  if (!user || !user.walletContractId) {
-    return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
-  }
+  const user = guard.value;
 
   let body: { claimLinkId?: string; signedXdr?: string };
   try {
@@ -113,6 +101,16 @@ export async function POST(request: NextRequest) {
 
   try {
     validateSignedRefund(signedXdr, link.claimHash);
+
+    const limited = await enforceFeePayerRateLimit(
+      request,
+      'wallet.claim-links.refund',
+      user.email
+    );
+    if (limited) {
+      return limited;
+    }
+
     const result = await submitSignedTransaction(signedXdr);
 
     await db

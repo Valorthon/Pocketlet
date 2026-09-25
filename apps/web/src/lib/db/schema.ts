@@ -8,6 +8,7 @@ import {
   bigint,
   primaryKey,
   uuid,
+  index,
 } from 'drizzle-orm/pg-core';
 
 // Referential integrity: userDevices.email and claimLinks.senderEmail
@@ -175,3 +176,40 @@ export const metrics = pgTable(
 
 export type Metric = typeof metrics.$inferSelect;
 export type NewMetric = typeof metrics.$inferInsert;
+
+// Fixed-window rate-limit counters, one row per bucket (issue #36).
+//
+// Postgres rather than an in-memory Map, and `windowStart` in epoch
+// milliseconds from JS `Date.now()` rather than a `timestamp` column driven by
+// SQL `now()` — hence bigint-as-number. Both choices are load-bearing and the
+// reasoning is in docs/decisions/0008-fee-payer-rate-limiting.md.
+//
+// The row is reused for the lifetime of the bucket: the upsert in
+// src/lib/rate-limit.ts either increments the count or, once the window has
+// elapsed, resets it to 1 and moves the window. The table therefore grows with
+// the number of distinct (route, subject, window) triples seen, not with
+// traffic — but nothing prunes it, so expired buckets accumulate. Issue #141
+// tracks reclaiming them; `rate_limits_updated_at_idx` is what makes that
+// cleanup a cheap ranged scan rather than a full table scan.
+export const rateLimits = pgTable(
+  'rate_limits',
+  {
+    // Four '|'-joined segments: "<route>|<subject kind>|<subject>|<windowMs>",
+    // e.g. "wallet.submit|user|a@b.com|60000" or
+    // "wallet.submit|ip|203.0.113.7|86400000". Route and kind keep per-route,
+    // per-user and per-IP buckets apart; the trailing window length keeps the
+    // per-minute and per-day budgets of one subject apart. '|' cannot appear in
+    // an email, an IP bucket key, or any of the route literals. Built only by
+    // `rateLimitBucket` in src/lib/rate-limit.ts — do not hand-assemble one.
+    bucket: text('bucket').primaryKey(),
+    windowStart: bigint('window_start', { mode: 'number' }).notNull(),
+    count: integer('count').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index('rate_limits_updated_at_idx').on(table.updatedAt)]
+);
+
+export type RateLimit = typeof rateLimits.$inferSelect;
+export type NewRateLimit = typeof rateLimits.$inferInsert;

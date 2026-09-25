@@ -1,9 +1,7 @@
 import { TransactionBuilder } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { verifySessionToken } from '@/lib/auth/session';
-import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
-import { getUserByEmail } from '@/lib/auth/store';
+import { requireWalletUser } from '@/lib/auth/route-guard';
+import { enforceFeePayerRateLimit } from '@/lib/rate-limit';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import {
   getInvokeContractDetails,
@@ -127,21 +125,11 @@ function validateSignedTransfer(
 }
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const guard = await requireWalletUser();
+  if (!guard.ok) {
+    return guard.response;
   }
-
-  const session = await verifySessionToken(token);
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const user = await getUserByEmail(session.email);
-  if (!user || !user.walletContractId) {
-    return NextResponse.json({ error: 'Wallet not deployed' }, { status: 404 });
-  }
+  const user = guard.value;
 
   let body: TransferRequest;
   try {
@@ -196,6 +184,15 @@ export async function POST(request: NextRequest) {
       resolved.address,
       baseAmount
     );
+
+    const limited = await enforceFeePayerRateLimit(
+      request,
+      'wallet.transfer',
+      user.email
+    );
+    if (limited) {
+      return limited;
+    }
 
     const result = await submitSignedTransaction(signedXdr);
     await incrementMetric('wallet.transfer.success');
