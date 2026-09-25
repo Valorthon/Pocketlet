@@ -9,6 +9,8 @@ const originalEnv = {
   WEBAUTHN_ORIGIN: process.env.WEBAUTHN_ORIGIN,
   FEE_PAYER_SECRET_KEY: process.env.FEE_PAYER_SECRET_KEY,
   CLAIM_SECRET_ENCRYPTION_KEY: process.env.CLAIM_SECRET_ENCRYPTION_KEY,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  MAIL_FROM: process.env.MAIL_FROM,
 };
 
 function clearFeePayerEnv(): void {
@@ -18,6 +20,12 @@ function clearFeePayerEnv(): void {
 function setValidFeePayerEnv(): void {
   process.env.FEE_PAYER_SECRET_KEY =
     'SBI2ATXEXZNK7L53NN4AWQMVCZB2HVULL3LKM7FYVZWL25IUHJOE65YS';
+}
+
+/** Production also requires a mail provider — see issue #60. */
+function setValidMailEnv(): void {
+  process.env.RESEND_API_KEY = 're_test_key';
+  process.env.MAIL_FROM = 'Pocketlet <no-reply@example.com>';
 }
 
 function setValidClaimSecretEnv(): void {
@@ -33,6 +41,8 @@ beforeAll(() => {
   delete process.env.WEBAUTHN_ORIGIN;
   clearFeePayerEnv();
   delete process.env.CLAIM_SECRET_ENCRYPTION_KEY;
+  delete process.env.RESEND_API_KEY;
+  delete process.env.MAIL_FROM;
 });
 
 afterAll(() => {
@@ -45,6 +55,10 @@ afterAll(() => {
   process.env.FEE_PAYER_SECRET_KEY = originalEnv.FEE_PAYER_SECRET_KEY;
   process.env.CLAIM_SECRET_ENCRYPTION_KEY =
     originalEnv.CLAIM_SECRET_ENCRYPTION_KEY;
+  if (originalEnv.RESEND_API_KEY === undefined) delete process.env.RESEND_API_KEY;
+  else process.env.RESEND_API_KEY = originalEnv.RESEND_API_KEY;
+  if (originalEnv.MAIL_FROM === undefined) delete process.env.MAIL_FROM;
+  else process.env.MAIL_FROM = originalEnv.MAIL_FROM;
 });
 
 async function importConfig() {
@@ -155,6 +169,7 @@ describe('auth config', () => {
     process.env.WEBAUTHN_ORIGIN = 'https://example.com';
     setValidFeePayerEnv();
     setValidClaimSecretEnv();
+    setValidMailEnv();
     const mod = await importConfig();
     expect(mod.SESSION_SECRET).toBe('strong-production-secret-32-characters');
     expect(mod.RP_ID).toBe('example.com');

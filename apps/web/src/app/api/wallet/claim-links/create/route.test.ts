@@ -21,6 +21,7 @@ import { addressScVal, amountToBaseUnits, i128ScVal } from '@/lib/wallet/amount'
 import { decryptSecret } from '@/lib/wallet/claim-secrets';
 import { submitSignedTransaction } from '@/lib/wallet/submit';
 import { db, schema } from '@/lib/db';
+import type { Mailer } from '@/lib/mail/mailer';
 
 let cookieJar: Record<string, string> = {};
 
@@ -32,6 +33,20 @@ vi.mock('next/headers', () => ({
     },
   })),
 }));
+
+/**
+ * The mailer the route's notification step will use, swapped per test.
+ *
+ * Stubbing the seam rather than `deliverClaimLinkNotification` is deliberate:
+ * the #120 guard is only worth anything if a *provider* blowing up cannot
+ * reach the response, and stubbing the wrapper would test past the bug.
+ */
+let mailer: Mailer;
+
+vi.mock('@/lib/mail/mailer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/mail/mailer')>();
+  return { ...actual, getMailer: () => mailer };
+});
 
 vi.mock('@/lib/wallet/submit', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/wallet/submit')>();
@@ -82,6 +97,10 @@ function u64ScVal(value: number): xdr.ScVal {
 
 beforeEach(() => {
   cookieJar = {};
+  mailer = { name: 'log', send: async () => ({ ok: true, provider: 'log' }) };
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
   process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID = ESCROW_CONTRACT;
   process.env.CLAIM_SECRET_ENCRYPTION_KEY = ENCRYPTION_KEY;
   // Only `sequence` is read by the route; the ledger header and close meta
@@ -561,6 +580,9 @@ describe('POST /api/wallet/claim-links/create — success', () => {
     expect(notifications[0].claimLinkId).toBe(link.id);
     expect(notifications[0].channel).toBe('email');
     expect(notifications[0].recipient).toBe(RECIPIENT_EMAIL);
+    expect(notifications[0].status).toBe('sent');
+    expect(notifications[0].attempts).toBe(1);
+    expect(notifications[0].error).toBeNull();
   });
 
   it('normalizes an email recipient to lower case', async () => {
@@ -595,6 +617,9 @@ describe('POST /api/wallet/claim-links/create — success', () => {
     const notifications = await db.select().from(schema.notifications);
     expect(notifications[0].channel).toBe('sms');
     expect(notifications[0].recipient).toBe(RECIPIENT_PHONE);
+    // There is no SMS provider; recording 'sent' would be a lie (issue #60).
+    expect(notifications[0].status).toBe('unsupported');
+    expect(notifications[0].attempts).toBe(0);
   });
 
   it('records an XLM claim link', async () => {
@@ -627,5 +652,105 @@ describe('POST /api/wallet/claim-links/create — success', () => {
     // The costly half of #120: the second deposit was submitted to the network
     // before the insert failed, so the funds are in escrow with no row to claim.
     expect(vi.mocked(submitSignedTransaction)).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * Issue #120 — notification delivery must not be able to fail the request.
+ *
+ * `submitSignedTransaction` has already put the escrow deposit on chain and
+ * the claim_links row is committed by the time the notification is attempted.
+ * A 500 here sends `send/page.tsx` back to the `claim-link-review` step, from
+ * which the user can authorize a SECOND deposit for the same payment. So a
+ * mail provider that times out, 4xxs or simply explodes has to leave the
+ * response alone.
+ */
+describe('POST /api/wallet/claim-links/create — notification failures never fail the request', () => {
+  async function createAndExpectSuccess(): Promise<string> {
+    const token = await seedSender();
+    const res = await POST(createCreateRequest(validBody(), token));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { hash: string; claimLinkId: string };
+    expect(body.hash).toBe('deposit-tx-hash');
+    return body.claimLinkId;
+  }
+
+  // The single most important test in this change.
+  it('returns 200 with the tx hash when the mailer THROWS', async () => {
+    mailer = {
+      name: 'exploding',
+      send: () => Promise.reject(new Error('mail provider exploded')),
+    };
+
+    const claimLinkId = await createAndExpectSuccess();
+
+    // The deposit is on chain and the link is claimable; only the telling-them
+    // part failed, and it says so on the row.
+    const [link] = await db.select().from(schema.claimLinks);
+    expect(link.id).toBe(claimLinkId);
+    expect(link.status).toBe('pending');
+    expect(link.txHash).toBe('deposit-tx-hash');
+
+    const [notification] = await db.select().from(schema.notifications);
+    expect(notification.status).toBe('failed');
+    expect(notification.error).toContain('mail provider exploded');
+    expect(notification.attempts).toBe(1);
+    expect(notification.sentAt).toBeNull();
+  });
+
+  it('returns 200 and records failed when the mailer returns a failure result', async () => {
+    mailer = {
+      name: 'resend',
+      send: async () => ({
+        ok: false as const,
+        provider: 'resend',
+        error: 'Resend responded 429: rate limited',
+      }),
+    };
+
+    await createAndExpectSuccess();
+
+    const [notification] = await db.select().from(schema.notifications);
+    expect(notification.status).toBe('failed');
+    expect(notification.error).toContain('Resend responded 429');
+    expect(notification.attempts).toBe(1);
+    expect(notification.lastAttemptAt).not.toBeNull();
+  });
+
+  it('submits the deposit exactly once when delivery fails', async () => {
+    // The costly half of #120 is the retry the 500 invites. One request, one
+    // deposit, whatever the mailer does.
+    vi.mocked(submitSignedTransaction).mockClear();
+    mailer = {
+      name: 'exploding',
+      send: () => Promise.reject(new Error('mail provider exploded')),
+    };
+
+    await createAndExpectSuccess();
+    expect(vi.mocked(submitSignedTransaction)).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not attempt delivery for an SMS recipient, and still returns 200', async () => {
+    let attempts = 0;
+    mailer = {
+      name: 'counting',
+      send: async () => {
+        attempts += 1;
+        return { ok: true as const, provider: 'counting' };
+      },
+    };
+
+    const token = await seedSender();
+    const signedXdr = buildDepositXdr({
+      recipientIdHash: hashRecipientId(RECIPIENT_PHONE),
+    });
+    const res = await POST(
+      createCreateRequest(validBody({ recipient: RECIPIENT_PHONE, signedXdr }), token)
+    );
+
+    expect(res.status).toBe(200);
+    expect(attempts).toBe(0);
+    const [notification] = await db.select().from(schema.notifications);
+    expect(notification.status).toBe('unsupported');
   });
 });

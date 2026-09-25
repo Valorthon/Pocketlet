@@ -14,6 +14,8 @@ const GUARDED = [
   'WEBAUTHN_RP_ID',
   'FEE_PAYER_SECRET_KEY',
   'CLAIM_SECRET_ENCRYPTION_KEY',
+  'RESEND_API_KEY',
+  'MAIL_FROM',
 ] as const;
 
 const originalEnv = Object.fromEntries(
@@ -30,6 +32,8 @@ function setValidProductionEnv(): void {
     'SBI2ATXEXZNK7L53NN4AWQMVCZB2HVULL3LKM7FYVZWL25IUHJOE65YS';
   process.env.CLAIM_SECRET_ENCRYPTION_KEY =
     '9f2c7a1e5b3d80460fae1c9d7b25380e46af1c9d7b25380e46af1c9d7b25380e';
+  process.env.RESEND_API_KEY = 're_test_key';
+  process.env.MAIL_FROM = 'Pocketlet <no-reply@example.com>';
 }
 
 beforeEach(() => {
@@ -91,6 +95,10 @@ describe('validateProductionConfig', () => {
       'CLAIM_SECRET_ENCRYPTION_KEY',
       'CLAIM_SECRET_ENCRYPTION_KEY is required in production',
     ],
+    // Issue #60: without these the app falls back to the log mailer, which
+    // reports success while telling the recipient nothing.
+    ['RESEND_API_KEY', 'RESEND_API_KEY is required in production'],
+    ['MAIL_FROM', 'MAIL_FROM must be a sender address'],
   ])('requires %s on the public network', (name, message) => {
     setValidProductionEnv();
     delete process.env[name];
@@ -121,6 +129,14 @@ describe('validateProductionConfig', () => {
     process.env.WEBAUTHN_ORIGIN = 'http://example.com';
     expect(() => validateProductionConfig()).toThrow(
       'WEBAUTHN_ORIGIN must be a valid HTTPS URL'
+    );
+  });
+
+  it('rejects a MAIL_FROM that is not an address', () => {
+    setValidProductionEnv();
+    process.env.MAIL_FROM = 'Pocketlet';
+    expect(() => validateProductionConfig()).toThrow(
+      'MAIL_FROM must be a sender address'
     );
   });
 

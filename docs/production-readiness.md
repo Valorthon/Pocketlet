@@ -66,11 +66,31 @@ Remaining judgement call before launch: decide a policy on platform-synced versu
 
 ## Data and delivery
 
-### Notifications are never delivered — Open
+### Email notifications are never delivered — Closed
 
-**Issue #60.** `src/lib/notifications.ts` writes a `notifications` row with `status: 'sent'` and only `console.log`s. Claim-link recipients are never actually told a link exists, which makes the feature depend on the sender passing the URL along manually.
+**Issue #60.** `src/lib/notifications.ts` wrote a `notifications` row with `status: 'sent'` and only `console.log`d, so claim-link recipients were never told a link existed and the feature depended on the sender passing the message along by hand.
 
-Fix: wire a real email/SMS provider and set `status` from the delivery result.
+Delivery now goes through a `Mailer` seam in `src/lib/mail/`: `resendMailer` posts to Resend's REST endpoint with plain `fetch` (no new dependency — the vendor is meant to be cheap to swap, so the interface carries the weight, not a client library), and `logMailer` writes to stdout and is the default when `RESEND_API_KEY` is unset, which keeps testnet development and the test suite working with no API key. `status` is set from the delivery result: `queued` on insert, then `sent`, `failed` (with `error` and `attempts`) or `unsupported`. The new `attempts`, `error` and `last_attempt_at` columns came with migration `0004_cuddly_alex_power.sql`.
+
+Two properties are load-bearing rather than incidental. `Mailer.send` never throws — every failure, including an unexpected one, is returned as `{ ok: false }` — and `deliverClaimLinkNotification` wraps its whole body, so not even a database error escapes. Together they close the scope **#120** actually specified — its "Fix" section asks for exactly these two things. `api/wallet/claim-links/create` used to attempt the notification inside the same `try` as `submitSignedTransaction`, so a failure there returned 500 on a request whose escrow deposit was already on chain, and `send/page.tsx` dropped the user back on the review step where they could authorize a second deposit for the same payment. Delivery now happens after the response object is built and outside that `try`. Both halves are covered by the route tests, which assert 200 plus a `failed` row with the mailer stubbed to throw.
+
+The notification call was not the only way that route could 500 after submitting, and the rest of that class is **not** fixed here — see the next entry (**#139**).
+
+On the public network a mailer is no longer optional: `production-guardrails.mjs` requires `RESEND_API_KEY` and an `@`-shaped `MAIL_FROM`, because shipping notifications to a console log in production is exactly what that file exists to prevent. Both deploys run the testnet passphrase, so the check does not fire on them.
+
+There is no claim URL, and the email says so. Claiming works by *matching* — `api/wallet/claim-links/pending` selects pending links whose `recipient_email` or `recipient_phone` equals the logged-in user's — so the mail tells the recipient to sign up **with that exact address** rather than to click anything, and it never contains the claim secret.
+
+### A claim link can 500 after its deposit is on chain — Open
+
+**Issue #139.** Narrower than #120 but the same shape, and still live. In `api/wallet/claim-links/create` the `db.insert(schema.claimLinks)` that records the link runs *after* `submitSignedTransaction` and is still inside the `try` whose `catch` returns 500. If that insert fails — the `UNIQUE` constraint on `claim_hash`, a Postgres outage, `.returning()` coming back empty — the escrow deposit exists on chain with no row naming its recipient, its secret or its expiry, and the caller sees a failure. The funds are not lost, but nothing in the app can reach them: `pending` has no row to match, and refund needs the sender to come back through a link record that was never written. The branch's own test *"returns 500 for a duplicate claim hash, after the deposit has been submitted"* pins this behaviour deliberately rather than certifying it.
+
+Fix: out of scope for #60. Ordering a database write against a chain write is a design decision with its own failure modes — insert first and a submit failure leaves a phantom link; write-ahead-then-confirm needs a reconciliation path — so it gets its own PR.
+
+### SMS notifications are never delivered — Open
+
+**Issue #60.** `claim_links.recipient_phone` is real and `pending` matches on it, so a phone recipient gets a claim link and a `notifications` row, but there is no SMS provider behind it. The row is written with `status: 'unsupported'` and `attempts: 0` — deliberately neither `sent` (a lie) nor `failed` (implies a retry would help) — and nothing is attempted. Today the sender has to pass the message along by hand for phone recipients.
+
+Fix: a Twilio (or equivalent) implementation of the `Mailer`-style seam. Out of scope for #60 because it is a new dependency plus 10DLC/A2P brand and campaign registration, which is a procurement task, not a coding one.
 
 ### Storage — mostly Closed
 
@@ -120,7 +140,7 @@ The dotenv call moved to `apps/web/vitest.env.ts`, listed ahead of `vitest.setup
 
 ### Test coverage gaps — Open
 
-**Issue #63.** All five `api/wallet/claim-links/*` routes and `src/lib/wallet/claim-secrets.ts` now have colocated tests, and the eight bare `#[should_panic]` attributes in `contracts/escrow` carry `expected =` strings (#123 tracks replacing the asserts with typed errors). Still open: no component or page tests exist at all — `vitest.config.ts` runs in the `node` environment, so `@vitejs/plugin-react` only supplies the JSX transform and nothing can render; standing them up needs jsdom or happy-dom plus a testing library. No coverage tooling is configured either. Also untested: `notifications.ts` (being rewritten by #60), `auth/session.ts`, `instrumentation.ts`, `db/{index,test-setup}.ts` and `wallet/{assets,network,token,recipient,device-key,claim-link-client}.ts`. Full inventory in [testing.md](./testing.md).
+**Issue #63.** All five `api/wallet/claim-links/*` routes and `src/lib/wallet/claim-secrets.ts` now have colocated tests, and the eight bare `#[should_panic]` attributes in `contracts/escrow` carry `expected =` strings (#123 tracks replacing the asserts with typed errors). Still open: no component or page tests exist at all — `vitest.config.ts` runs in the `node` environment, so `@vitejs/plugin-react` only supplies the JSX transform and nothing can render; standing them up needs jsdom or happy-dom plus a testing library. No coverage tooling is configured either. Also untested: `auth/session.ts`, `instrumentation.ts`, `db/{index,test-setup}.ts` and `wallet/{assets,network,token,recipient,device-key,claim-link-client}.ts`. Full inventory in [testing.md](./testing.md).
 
 ### Lint cannot catch React bugs — Closed
 
