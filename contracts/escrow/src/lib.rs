@@ -188,19 +188,6 @@ mod test {
         env.crypto().sha256(&bytes).into()
     }
 
-    fn default_ledger_info() -> soroban_sdk::testutils::LedgerInfo {
-        soroban_sdk::testutils::LedgerInfo {
-            protocol_version: 20,
-            sequence_number: 100,
-            timestamp: 0,
-            network_id: [0; 32],
-            base_reserve: 10,
-            min_temp_entry_ttl: 16,
-            min_persistent_entry_ttl: 16,
-            max_entry_ttl: 6312000,
-        }
-    }
-
     #[test]
     fn test_deposit_and_get_deposit() {
         let env = setup_env();

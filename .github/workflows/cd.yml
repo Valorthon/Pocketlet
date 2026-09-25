@@ -60,36 +60,16 @@ jobs:
       - name: Install Stellar CLI
         uses: stellar/stellar-cli@v28.0.0
 
-      - name: Build contract
-        run: stellar contract build
-
-      - name: Verify WASM artifact
-        run: test -f target/wasm32v1-none/release/pocketlet_escrow.wasm
-
-      - name: Setup deployer key
-        env:
-          STELLAR_DEPLOYER_SECRET: ${{ secrets.STELLAR_DEPLOYER_SECRET }}
-        run: |
-          if [ -n "$STELLAR_DEPLOYER_SECRET" ]; then
-            stellar keys add deployer --secret-key "$STELLAR_DEPLOYER_SECRET"
-            echo "Using provided STELLAR_DEPLOYER_SECRET"
-          else
-            stellar keys generate deployer
-            stellar keys fund deployer --network testnet
-            echo "Generated and funded new deployer key"
-          fi
-
-      - name: Deploy to testnet
+      # Build, key setup, and deploy all live in contracts/deploy.sh so the
+      # workflow and a manual `pnpm run deploy:contract` cannot drift. The
+      # script writes the deployed address to $GITHUB_OUTPUT and the job
+      # summary when it detects GitHub Actions.
+      - name: Build and deploy contract
         id: deploy
-        run: |
-          CONTRACT_ID=$(stellar contract deploy \
-            --wasm target/wasm32v1-none/release/pocketlet_escrow.wasm \
-            --source-account deployer \
-            --network testnet)
-          echo "contract_id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
-          echo "### Contract deployed" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Address:** \`$CONTRACT_ID\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Network:** Testnet" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          STELLAR_NETWORK: testnet
+          STELLAR_DEPLOYER_SECRET: ${{ secrets.STELLAR_DEPLOYER_SECRET }}
+        run: bash ./deploy.sh
 
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v7

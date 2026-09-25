@@ -41,3 +41,17 @@ echo "    Address: $CONTRACT_ID"
 echo ""
 echo "    Add this to your .env file:"
 echo "    NEXT_PUBLIC_ESCROW_CONTRACT_ID=$CONTRACT_ID"
+
+# Under GitHub Actions, also expose the address as a step output and in the job
+# summary. Both variables are unset outside CI, so a local run is unaffected.
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+  echo "contract_id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
+fi
+
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  {
+    echo "### Contract deployed"
+    echo "- **Address:** \`$CONTRACT_ID\`"
+    echo "- **Network:** $NETWORK"
+  } >> "$GITHUB_STEP_SUMMARY"
+fi

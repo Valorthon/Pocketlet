@@ -1,6 +1,6 @@
 # Production readiness
 
-Last reviewed: 2026-09-20
+Last reviewed: 2026-09-25
 
 Everything that stands between the current testnet build and something deployable to the Stellar public network. These are deliberate shortcuts and known defects, not surprises — [`SECURITY.md`](../SECURITY.md) points here so researchers don't re-report them.
 
@@ -92,9 +92,9 @@ The migration begins with three hand-added `DELETE` statements that sweep pre-ex
 
 ### DEX swaps are disabled — Open
 
-**Issue #20.** USDC ↔ XLM swaps are off: the API returns HTTP 410 and `/swap` is a placeholder still present in the nav. The passkey-kit smart account cannot authorize classic `PathPayment` operations, and the previous implementation depended on a deleted `mock_dex` contract.
+**Issue #20, closed as deferred.** USDC ↔ XLM swaps are off. The passkey-kit smart account cannot authorize classic `PathPayment` operations, and the previous implementation depended on a deleted `mock_dex` contract. The placeholder `/swap` page and the `410` `api/wallet/swap` route were deleted in issue #106 — they were never reachable from the nav, which lists only `/home`, `/receive`, `/transactions`, and `/profile`.
 
-Fix: rebuild around a real Stellar DEX/AMM using SAC or Soroban DEX flows, with quotes, slippage protection, and price-impact display. Until then, remove the dead nav entry.
+Fix: rebuild around a real Stellar DEX/AMM using SAC or Soroban DEX flows, with quotes, slippage protection, and price-impact display. Scheduled as [Cross-Asset Swaps in V3](./roadmap.md#cross-asset-swaps).
 
 ### Email is not a recipient resolution path — Closed
 
@@ -130,13 +130,13 @@ The shared ESLint config is base + `typescript-eslint` only: no `eslint-config-n
 
 Around 23 raw `console.*` calls with no logging abstraction, no alerting, and no log aggregation. The `metrics` table and `/admin` are the only instrumentation. See [operations.md](./operations.md#monitoring).
 
-### Dead code — Open
+### Dead code — Closed
 
-The `/swap` route, page, and nav entry, and `default_ledger_info()` in `contracts/escrow/src/lib.rs:191` (never called; the compiler warns on it). The two one-off scripts under `apps/web/scripts/` were deleted in issue #104.
+**Issue #106.** Swept: the `/swap` page and its `410` `api/wallet/swap` route (with the test that asserted the 410), `default_ledger_info()` in `contracts/escrow/src/lib.rs` (never called, and pinned to a stale `protocol_version: 20`), `submitSignedTransactionFast` in `src/lib/wallet/submit.ts` (zero callers, and it spent the fee payer — an unguarded tenth spending path) with the `pollTransactionFast` helper only it used, and the unreferenced `fake-indexeddb` devDependency. The two one-off scripts under `apps/web/scripts/` were deleted in issue #104.
 
-### Deploy logic is duplicated — Open
+### Deploy logic is duplicated — Closed
 
-`contracts/deploy.sh` and the inlined steps in `.github/workflows/cd.yml` do the same thing in two places and can drift.
+**Issue #106.** `.github/workflows/cd.yml` now runs `bash ./deploy.sh` instead of re-implementing build, key setup, and deploy inline. The script is the only copy; it writes the deployed address to `$GITHUB_OUTPUT` and the job summary when those variables are set, so the CI log is unchanged.
 
 ---
 
