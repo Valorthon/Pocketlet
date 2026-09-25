@@ -1,6 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 import { db, schema } from '@/lib/db';
+import { constantTimeEquals } from '@/lib/constant-time';
 import { hashPin, verifyPin } from './pin';
+import {
+  VERIFICATION_CODE_MAX_ATTEMPTS,
+  createVerificationCodeExpiry,
+  isVerificationCodeExpired,
+} from './verification-code';
 
 const { users } = schema;
 
@@ -15,6 +21,8 @@ export interface User {
   email: string;
   emailVerified: boolean;
   verificationCode?: string;
+  verificationCodeExpiresAt?: string;
+  verificationCodeAttempts?: number;
   pendingChallenge?: string;
   passkeyChallenge?: string;
   passkeyChallengeExpiresAt?: Date;
@@ -28,6 +36,8 @@ export interface User {
   backupCredential?: Credential;
   pinHash?: string;
   pinResetCode?: string;
+  pinResetCodeExpiresAt?: string;
+  pinResetCodeAttempts?: number;
   recoveryInitiatedAt?: string;
   recoveryInitiationHistory?: string[];
   recoveryCode?: string;
@@ -69,6 +79,8 @@ function mapUser(row: typeof schema.users.$inferSelect): User {
     email: row.email,
     emailVerified: row.emailVerified,
     verificationCode: row.verificationCode ?? undefined,
+    verificationCodeExpiresAt: row.verificationCodeExpiresAt?.toISOString(),
+    verificationCodeAttempts: row.verificationCodeAttempts ?? undefined,
     pendingChallenge: row.pendingChallenge ?? undefined,
     passkeyChallenge: row.passkeyChallenge ?? undefined,
     passkeyChallengeExpiresAt: row.passkeyChallengeExpiresAt ?? undefined,
@@ -82,6 +94,8 @@ function mapUser(row: typeof schema.users.$inferSelect): User {
     backupCredential: toCredential(row.backupCredential),
     pinHash: row.pinHash ?? undefined,
     pinResetCode: row.pinResetCode ?? undefined,
+    pinResetCodeExpiresAt: row.pinResetCodeExpiresAt?.toISOString(),
+    pinResetCodeAttempts: row.pinResetCodeAttempts ?? undefined,
     recoveryInitiatedAt: row.recoveryInitiatedAt?.toISOString(),
     recoveryInitiationHistory: row.recoveryInitiationHistory ?? undefined,
     recoveryCode: row.recoveryCode ?? undefined,
@@ -226,6 +240,17 @@ export async function setProfile(
   return mapUser(updated);
 }
 
+/**
+ * The outcome of checking a one-time code.
+ *
+ * Not a boolean, because the callers need to tell an expired code from a wrong
+ * one from a spent attempt budget, and answering all three with 401 "invalid"
+ * leaves a user who waited 20 minutes retyping a code that can never work.
+ */
+export type CodeCheck =
+  | { ok: true }
+  | { ok: false; reason: 'no-code' | 'expired' | 'invalid' | 'too-many-attempts' };
+
 export async function createUser(
   email: string,
   verificationCode: string
@@ -244,17 +269,113 @@ export async function createUser(
       email: normalized,
       emailVerified: false,
       verificationCode,
+      verificationCodeExpiresAt: createVerificationCodeExpiry(),
+      verificationCodeAttempts: 0,
     })
     .returning();
 
   return mapUser(row);
 }
 
+/**
+ * Issue a fresh signup verification code for an existing, unverified user.
+ *
+ * The resend path. It exists because of issue #18: while the code came back in
+ * the response there was nothing to resend, but now that it is emailed and
+ * expires in 15 minutes, a user whose mail is slow, filtered or simply never
+ * arrives has no other way forward — and once the attempt cap destroys a code,
+ * no way at all. Resets the attempt counter along with the code, so a new code
+ * always gets a full budget.
+ */
+export async function setVerificationCode(
+  email: string,
+  verificationCode: string
+): Promise<User> {
+  const normalized = normalizeEmail(email);
+  const [updated] = await db
+    .update(users)
+    .set({
+      verificationCode,
+      verificationCodeExpiresAt: createVerificationCodeExpiry(),
+      verificationCodeAttempts: 0,
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
+    throw new Error('User not found');
+  }
+
+  return mapUser(updated);
+}
+
+/** Forget the signup code entirely: used up, expired, or guessed at too often. */
+async function clearVerificationCode(email: string): Promise<void> {
+  await db
+    .update(users)
+    .set({
+      verificationCode: null,
+      verificationCodeExpiresAt: null,
+      verificationCodeAttempts: null,
+    })
+    .where(eq(users.email, normalizeEmail(email)));
+}
+
+/**
+ * Check a signup verification code: expiry, attempt cap, constant-time compare.
+ *
+ * Modelled on `verifyRecoveryCode` below — recovery was the only flow that got
+ * all three right — but it destroys the code instead of setting a lockout
+ * timestamp. See `VERIFICATION_CODE_MAX_ATTEMPTS`.
+ *
+ * A success does NOT clear the code; `setEmailVerified` does that, so the two
+ * writes stay in one place and a caller cannot verify without clearing.
+ */
+export async function verifyEmailVerificationCode(
+  email: string,
+  code: string
+): Promise<CodeCheck> {
+  const normalized = normalizeEmail(email);
+  const user = await getUserByEmail(normalized);
+
+  if (!user?.verificationCode || !user.verificationCodeExpiresAt) {
+    return { ok: false, reason: 'no-code' };
+  }
+
+  if (isVerificationCodeExpired(user.verificationCodeExpiresAt)) {
+    await clearVerificationCode(normalized);
+    return { ok: false, reason: 'expired' };
+  }
+
+  if (constantTimeEquals(user.verificationCode, code)) {
+    return { ok: true };
+  }
+
+  const attempts = (user.verificationCodeAttempts ?? 0) + 1;
+  if (attempts >= VERIFICATION_CODE_MAX_ATTEMPTS) {
+    // The budget is spent: the code stops working even for whoever knows it.
+    await clearVerificationCode(normalized);
+    return { ok: false, reason: 'too-many-attempts' };
+  }
+
+  await db
+    .update(users)
+    .set({ verificationCodeAttempts: attempts })
+    .where(eq(users.email, normalized));
+
+  return { ok: false, reason: 'invalid' };
+}
+
 export async function setEmailVerified(email: string): Promise<User> {
   const normalized = normalizeEmail(email);
   const [updated] = await db
     .update(users)
-    .set({ emailVerified: true, verificationCode: null })
+    .set({
+      emailVerified: true,
+      verificationCode: null,
+      verificationCodeExpiresAt: null,
+      verificationCodeAttempts: null,
+    })
     .where(eq(users.email, normalized))
     .returning();
 
@@ -659,7 +780,11 @@ export async function setPinResetCode(
   const normalized = normalizeEmail(email);
   const [updated] = await db
     .update(users)
-    .set({ pinResetCode: code })
+    .set({
+      pinResetCode: code,
+      pinResetCodeExpiresAt: createVerificationCodeExpiry(),
+      pinResetCodeAttempts: 0,
+    })
     .where(eq(users.email, normalized))
     .returning();
 
@@ -670,19 +795,59 @@ export async function setPinResetCode(
   return mapUser(updated);
 }
 
+/**
+ * Check a PIN reset code. The signup code's rules exactly — expiry, a capped
+ * attempt budget, constant-time comparison — see
+ * {@link verifyEmailVerificationCode}.
+ *
+ * Returned as a {@link CodeCheck} rather than the boolean this used to be: the
+ * boolean could not distinguish "wrong" from "expired" from "you are out of
+ * attempts", and the last of those has to be a 429 rather than another 401 or
+ * the client loops forever on a code that can no longer work.
+ */
 export async function verifyPinResetCode(
   email: string,
   code: string
-): Promise<boolean> {
-  const user = await getUserByEmail(email);
-  return user?.pinResetCode === code;
+): Promise<CodeCheck> {
+  const normalized = normalizeEmail(email);
+  const user = await getUserByEmail(normalized);
+
+  if (!user?.pinResetCode || !user.pinResetCodeExpiresAt) {
+    return { ok: false, reason: 'no-code' };
+  }
+
+  if (isVerificationCodeExpired(user.pinResetCodeExpiresAt)) {
+    await clearPinResetCode(normalized);
+    return { ok: false, reason: 'expired' };
+  }
+
+  if (constantTimeEquals(user.pinResetCode, code)) {
+    return { ok: true };
+  }
+
+  const attempts = (user.pinResetCodeAttempts ?? 0) + 1;
+  if (attempts >= VERIFICATION_CODE_MAX_ATTEMPTS) {
+    await clearPinResetCode(normalized);
+    return { ok: false, reason: 'too-many-attempts' };
+  }
+
+  await db
+    .update(users)
+    .set({ pinResetCodeAttempts: attempts })
+    .where(eq(users.email, normalized));
+
+  return { ok: false, reason: 'invalid' };
 }
 
 export async function clearPinResetCode(email: string): Promise<User> {
   const normalized = normalizeEmail(email);
   const [updated] = await db
     .update(users)
-    .set({ pinResetCode: null })
+    .set({
+      pinResetCode: null,
+      pinResetCodeExpiresAt: null,
+      pinResetCodeAttempts: null,
+    })
     .where(eq(users.email, normalized))
     .returning();
 

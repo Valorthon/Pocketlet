@@ -6,7 +6,11 @@ import { getClientIp } from '@/lib/client-ip';
 const { rateLimits } = schema;
 
 /**
- * Fixed-window rate limiting for the endpoints that spend fee-payer funds.
+ * Fixed-window rate limiting.
+ *
+ * Three families of route use it: the ones that spend fee-payer funds, the
+ * recipient-resolution endpoint, and — since issues #18 and #121 — the three
+ * that email a one-time code.
  *
  * Every route that reaches `submitSignedTransaction` has the platform pay the
  * Stellar fee, so an authenticated user who posts signed XDRs in a loop — valid
@@ -37,7 +41,18 @@ export type FeePayerRoute =
 /** Routes that are cheap to serve but worth limiting for other reasons. */
 export type LooseRoute = 'wallet.resolve';
 
-export type RateLimitedRoute = FeePayerRoute | LooseRoute;
+/**
+ * The three routes that email a one-time code (issues #18, #121).
+ *
+ * `auth.email-challenge` and `auth.recovery-initiate` are the only genuinely
+ * unauthenticated endpoints in the app, so there is no session to key on.
+ */
+export type AuthCodeRoute =
+  | 'auth.email-challenge'
+  | 'auth.pin-reset-request'
+  | 'auth.recovery-initiate';
+
+export type RateLimitedRoute = FeePayerRoute | LooseRoute | AuthCodeRoute;
 
 export type SubjectKind = 'user' | 'ip';
 
@@ -55,6 +70,7 @@ export interface RateLimitDecision {
 }
 
 const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -182,6 +198,64 @@ export function resolvePolicies(): Array<{
 }
 
 /**
+ * Policies for the three routes that email a one-time code.
+ *
+ * These send mail rather than spend Stellar fees, and since issue #18 the code
+ * is *only* in that mail — so an unlimited endpoint is both a way to flood a
+ * third party's inbox at our expense and, for `auth.email-challenge` and
+ * `auth.recovery-initiate`, an unauthenticated one.
+ *
+ * The window is an hour, not a minute: nobody legitimately needs six signup
+ * codes in an hour, and a per-minute cap alone would still permit hundreds of
+ * messages a day to one address. The per-day IP window is what bounds the mail
+ * bill for an attacker who is patient.
+ *
+ * The 'user' subject is the **submitted** email on the unauthenticated routes
+ * — the address that would be mailed — rather than a session identity, which
+ * is the thing that actually needs protecting. The per-IP windows are the
+ * backstop for an attacker cycling addresses, and the reason the per-email cap
+ * can stay tight: an attacker who changes the address every request gets a
+ * fresh email bucket but the same IP bucket.
+ */
+export function authCodePolicies(): Array<{
+  kind: SubjectKind;
+  policy: RateLimitPolicy;
+}> {
+  return [
+    {
+      kind: 'user',
+      policy: {
+        limit: positiveIntFromEnv(
+          process.env.RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR,
+          5
+        ),
+        windowMs: HOUR_MS,
+      },
+    },
+    {
+      kind: 'ip',
+      policy: {
+        limit: positiveIntFromEnv(
+          process.env.RATE_LIMIT_AUTH_CODE_PER_IP_PER_HOUR,
+          20
+        ),
+        windowMs: HOUR_MS,
+      },
+    },
+    {
+      kind: 'ip',
+      policy: {
+        limit: positiveIntFromEnv(
+          process.env.RATE_LIMIT_AUTH_CODE_PER_IP_PER_DAY,
+          100
+        ),
+        windowMs: DAY_MS,
+      },
+    },
+  ];
+}
+
+/**
  * Build a bucket key.
  *
  * Four segments joined by '|': the route, the subject kind, the subject itself
@@ -269,7 +343,11 @@ function tooManyRequests(retryAfterSeconds: number): NextResponse {
 interface EnforceInput {
   request: { headers: Headers };
   route: RateLimitedRoute;
-  /** Identifies the account. Normalised to lower case so casing cannot split a bucket. */
+  /**
+   * Identifies the subject: the session's account on the authenticated routes,
+   * the submitted address on the unauthenticated code-email ones. Normalised
+   * to lower case so casing cannot split a bucket.
+   */
   email: string;
   policies: Array<{ kind: SubjectKind; policy: RateLimitPolicy }>;
 }
@@ -323,6 +401,23 @@ export async function enforceFeePayerRateLimit(
   email: string
 ): Promise<NextResponse | null> {
   return enforce({ request, route, email, policies: feePayerPolicies() });
+}
+
+/**
+ * Charge one one-time-code email against the submitted address's and the
+ * caller's budgets. See {@link authCodePolicies}.
+ *
+ * Call it immediately before the code is generated and mailed, after every
+ * validation the route does — a malformed address, an already-registered one
+ * or an ineligible account costs nothing and must stay free, exactly as for
+ * the fee-payer routes.
+ */
+export async function enforceAuthCodeRateLimit(
+  request: { headers: Headers },
+  route: AuthCodeRoute,
+  email: string
+): Promise<NextResponse | null> {
+  return enforce({ request, route, email, policies: authCodePolicies() });
 }
 
 /** The looser limit for `api/wallet/resolve`. See {@link resolvePolicies}. */

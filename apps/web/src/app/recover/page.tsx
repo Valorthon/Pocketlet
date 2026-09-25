@@ -114,7 +114,7 @@ export default function RecoverPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      const body = (await res.json()) as { error?: string; code?: string };
+      const body = (await res.json()) as { error?: string };
       if (!res.ok) {
         if (res.status === 404) {
           setStep('unrecoverable');
@@ -123,7 +123,8 @@ export default function RecoverPage() {
         setError(body.error ?? 'Failed to initiate recovery');
         return;
       }
-      setCode(body.code ?? '');
+      // Emailed only (issue #18); the user types it in on the next step.
+      setCode('');
       setStep('verify');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to initiate recovery');

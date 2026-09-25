@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { db, schema } from '@/lib/db';
 import {
+  authCodePolicies,
   consumeRateLimit,
+  enforceAuthCodeRateLimit,
   enforceFeePayerRateLimit,
   enforceResolveRateLimit,
   feePayerPolicies,
@@ -10,6 +12,8 @@ import {
 } from './rate-limit';
 
 const MINUTE = 60_000;
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 
 function req(headers: Record<string, string> = {}) {
   return { headers: new Headers(headers) };
@@ -265,5 +269,135 @@ describe('enforceResolveRateLimit', () => {
 
     await enforceFeePayerRateLimit(req(), 'wallet.submit', 'a@b.com');
     expect(await enforceResolveRateLimit(req(), 'a@b.com')).toBeNull();
+  });
+});
+
+/**
+ * The one-time-code endpoints (issue #121).
+ *
+ * These spend mail rather than Stellar fees, and two of the three are
+ * unauthenticated, so the 'user' subject is the *submitted* address rather
+ * than a session identity.
+ */
+describe('authCodePolicies', () => {
+  it('defaults to an hourly per-address budget and two per-IP backstops', () => {
+    expect(authCodePolicies()).toEqual([
+      { kind: 'user', policy: { limit: 5, windowMs: HOUR } },
+      { kind: 'ip', policy: { limit: 20, windowMs: HOUR } },
+      { kind: 'ip', policy: { limit: 100, windowMs: DAY } },
+    ]);
+  });
+
+  it('reads the limits from the environment', () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR', '2');
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_IP_PER_HOUR', '3');
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_IP_PER_DAY', '4');
+    expect(authCodePolicies().map((entry) => entry.policy.limit)).toEqual([2, 3, 4]);
+  });
+
+  it.each(['0', '-1', 'lots'])(
+    'ignores %o rather than making signup impossible',
+    (raw) => {
+      vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR', raw);
+      expect(authCodePolicies()[0].policy.limit).toBe(5);
+    }
+  );
+
+  it('keeps every window at least an hour, so a per-minute burst is not the bound', () => {
+    for (const { policy } of authCodePolicies()) {
+      expect(policy.windowMs).toBeGreaterThanOrEqual(HOUR);
+    }
+  });
+});
+
+describe('enforceAuthCodeRateLimit', () => {
+  it('keys on the submitted address, not only the IP', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR', '1');
+
+    expect(
+      await enforceAuthCodeRateLimit(req(), 'auth.email-challenge', 'a@example.com')
+    ).toBeNull();
+
+    // A different address from the same (unknown) IP is still fine: only the
+    // per-address budget is exhausted.
+    expect(
+      await enforceAuthCodeRateLimit(req(), 'auth.email-challenge', 'b@example.com')
+    ).toBeNull();
+
+    const over = await enforceAuthCodeRateLimit(
+      req(),
+      'auth.email-challenge',
+      'a@example.com'
+    );
+    expect(over?.status).toBe(429);
+  });
+
+  it('keys on the IP as well, so cycling addresses does not help', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_IP_PER_HOUR', '2');
+    const headers = { 'x-forwarded-for': '203.0.113.7' };
+
+    expect(
+      await enforceAuthCodeRateLimit(
+        req(headers),
+        'auth.email-challenge',
+        'a@example.com'
+      )
+    ).toBeNull();
+    expect(
+      await enforceAuthCodeRateLimit(
+        req(headers),
+        'auth.email-challenge',
+        'b@example.com'
+      )
+    ).toBeNull();
+
+    const over = await enforceAuthCodeRateLimit(
+      req(headers),
+      'auth.email-challenge',
+      'c@example.com'
+    );
+    expect(over?.status).toBe(429);
+  });
+
+  it('is case-insensitive about the address, so casing cannot split a bucket', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR', '1');
+
+    expect(
+      await enforceAuthCodeRateLimit(req(), 'auth.email-challenge', 'a@example.com')
+    ).toBeNull();
+
+    const over = await enforceAuthCodeRateLimit(
+      req(),
+      'auth.email-challenge',
+      '  A@Example.COM '
+    );
+    expect(over?.status).toBe(429);
+  });
+
+  it('keeps the three code routes on separate budgets', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR', '1');
+
+    expect(
+      await enforceAuthCodeRateLimit(req(), 'auth.email-challenge', 'a@example.com')
+    ).toBeNull();
+    expect(
+      await enforceAuthCodeRateLimit(req(), 'auth.pin-reset-request', 'a@example.com')
+    ).toBeNull();
+    expect(
+      await enforceAuthCodeRateLimit(req(), 'auth.recovery-initiate', 'a@example.com')
+    ).toBeNull();
+  });
+
+  it('sets Retry-After on the 429', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR', '1');
+    await enforceAuthCodeRateLimit(req(), 'auth.recovery-initiate', 'a@example.com');
+
+    const over = await enforceAuthCodeRateLimit(
+      req(),
+      'auth.recovery-initiate',
+      'a@example.com'
+    );
+    expect(over?.status).toBe(429);
+    expect(Number(over?.headers.get('Retry-After'))).toBeGreaterThan(0);
   });
 });

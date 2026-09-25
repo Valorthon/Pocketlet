@@ -10,11 +10,19 @@ import {
   verifyPinResetCode,
 } from '@/lib/auth/store';
 import { isPinWellFormed } from '@/lib/auth/pin';
+import { generateVerificationCode } from '@/lib/auth/verification-code';
+import { sendAuthCodeEmail } from '@/lib/mail/auth-codes';
+import { enforceAuthCodeRateLimit } from '@/lib/rate-limit';
 
-function generateCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
+/**
+ * Request (`action: 'request'`) or spend (`action: 'reset'`) a PIN reset code.
+ *
+ * The code is emailed and never returned (issue #18), it expires, wrong
+ * guesses are capped and the comparison is constant-time (issue #121). Unlike
+ * the other two code-emailing routes this one has a session, so the rate limit
+ * keys on the session's own address — but it still keys on the IP too, because
+ * one actor with several accounts is exactly what the per-IP window is for.
+ */
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -39,13 +47,39 @@ export async function POST(request: NextRequest) {
   };
 
   if (body.action === 'request') {
-    const code = generateCode();
+    const limited = await enforceAuthCodeRateLimit(
+      request,
+      'auth.pin-reset-request',
+      user.email
+    );
+    if (limited) {
+      return limited;
+    }
+
+    const code = generateVerificationCode();
     await setPinResetCode(user.email, code);
-    // Testnet only: return the code so the user can reset without a mail server.
-    // In production, send this via email and do not return it in the response.
+
+    const delivery = await sendAuthCodeEmail(user.email, code, 'pin-reset');
+    if (!delivery.ok) {
+      // As in `api/auth/email-challenge`: the user cannot continue without the
+      // code, so this reports the failure instead of claiming it was sent.
+      // Nothing is left inconsistent — the stored code is simply unused, and
+      // asking again overwrites it — so there is no committed write being
+      // hidden behind the error.
+      console.error(
+        `[AUTH] PIN reset code to ${user.email} not delivered: ${delivery.provider}: ${delivery.error}`
+      );
+      return NextResponse.json(
+        {
+          error:
+            'We could not send your reset code right now. Please try again in a moment.',
+        },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json({
-      code,
-      message: 'Reset code generated. In production this will be sent via email.',
+      message: 'Reset code sent. Check your email.',
     });
   }
 
@@ -58,7 +92,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!(await verifyPinResetCode(user.email, code))) {
+    const check = await verifyPinResetCode(user.email, code);
+    if (!check.ok) {
+      if (check.reason === 'too-many-attempts') {
+        return NextResponse.json(
+          {
+            error:
+              'Too many incorrect codes. That code is no longer valid — request a new one.',
+          },
+          { status: 429 }
+        );
+      }
+      if (check.reason === 'expired') {
+        return NextResponse.json(
+          { error: 'Reset code expired. Request a new one.' },
+          { status: 401 }
+        );
+      }
       return NextResponse.json({ error: 'Invalid reset code' }, { status: 401 });
     }
 

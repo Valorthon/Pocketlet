@@ -31,12 +31,14 @@ export default function SignupPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      const data = (await res.json()) as { error?: string; code?: string; message?: string };
+      const data = (await res.json()) as { error?: string; message?: string };
       if (!res.ok) {
         setError(data.error ?? 'Failed to send code');
         return;
       }
-      setCode(data.code ?? '');
+      // The code is in the email and nowhere else (issue #18) — there is
+      // nothing here to prefill the input with.
+      setCode('');
       setStep('code');
     } finally {
       setLoading(false);
@@ -171,14 +173,8 @@ export default function SignupPage() {
         {step === 'code' && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              Enter the verification code sent to <strong>{email}</strong>.
+              Enter the 6-digit verification code sent to <strong>{email}</strong>.
             </p>
-            <p className="text-xs text-amber-700">
-              Testnet mode: the code is also shown below for easy testing.
-            </p>
-            <div className="rounded-lg bg-slate-100 p-3 text-center font-mono text-lg tracking-widest text-slate-900">
-              {code}
-            </div>
             <input
               type="text"
               inputMode="numeric"

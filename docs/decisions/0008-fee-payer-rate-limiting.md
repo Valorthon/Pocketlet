@@ -53,6 +53,8 @@ Nothing prunes `rate_limits`, so expired buckets accumulate. `rate_limits_update
 
 A limit of 0 would lock users out of their own wallets, so an unset, non-integer or non-positive environment value falls back to the default rather than being honoured.
 
+Since this was written the same mechanism has been extended to the three routes that email a one-time code — `api/auth/email-challenge`, `api/auth/pin/reset` (action `request`) and `api/auth/recovery/initiate` — by issue #121, which needed it once issue #18 stopped returning those codes in the response. Nothing above changes: the counters, the clock, the per-handler call site and the `X-Forwarded-For` reading are all the same. The one thing worth naming is that two of those routes are unauthenticated, so the `'user'` subject is the **submitted** email address rather than a session identity; the per-IP windows are what stop an attacker cycling addresses, and they are the reason the per-address budget can stay as tight as five an hour.
+
 `isRecoveryInitiationRateLimited` in `src/lib/auth/recovery.ts` is untouched and stays. It is a pure function over a user row encoding recovery-specific semantics (a 60-second minimum retry, and the initiation-history column), not a general limiter; the new limit layers on top of it.
 
 ## Alternatives considered

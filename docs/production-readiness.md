@@ -22,11 +22,26 @@ Registration uses `users.passkey_challenge`, separate from the `pending_challeng
 
 Covered by `src/lib/auth/passkey-challenge.test.ts` (single-use, expiry, concurrency, isolation) and route tests including an end-to-end replay rejection. The injection wrapper itself is covered by `src/lib/wallet/passkey-kit.test.ts`, which asserts that registration receives the server nonce, that authentication passes through unrewritten, and that a kit built without a challenge does not override the kit's own WebAuthn implementation.
 
-### Email verification codes are returned in API responses — Open
+### Email verification codes are returned in API responses — Closed
 
-**Issue #18.** Signup and recovery return the verification code in the JSON response so the flows work without a mail server. Anyone who can call the endpoint can verify any address.
+**Issues #18 and #121.** `api/auth/email-challenge`, `api/auth/pin/reset` and `api/auth/recovery/initiate` all returned the one-time code in the JSON response so the flows worked without a mail server. Anyone who could call an endpoint could verify any address, reset any PIN they had a session for, or complete the first step of recovery for someone else's account.
 
-Fix: integrate a transactional email provider (Resend, SendGrid, SES) and remove the code from responses.
+The code is now emailed and nothing else, on every network, through the `Mailer` seam from #60 — so testnet still works with no API key, because `logMailer` prints the message to stdout. There is deliberately **no** development-only endpoint that reveals a code: that is the same leak wearing a hat. `docs/testing.md` says where to read one instead.
+
+#18 could not ship on its own. Removing the code from the response makes it the only secret protecting email verification and PIN reset, and it was a six-digit code that never expired, counted no wrong guesses, and in two of the three routes came from `Math.random()`. #121 is the rest of the fix:
+
+- **One CSPRNG.** `generateVerificationCode` in `src/lib/auth/verification-code.ts` uses `randomInt` from `node:crypto`. It replaced the two hand-rolled `Math.random()` copies, and `generateRecoveryCode` now delegates to it, so there is exactly one generator for every one-time code in the app.
+- **Expiry.** `users.verification_code_expires_at` and `users.pin_reset_code_expires_at`, 15 minutes, matching `RECOVERY_CODE_EXPIRY_MS`. Enforced on verify, not merely recorded.
+- **An attempt cap.** Five wrong guesses per issued code, counted in `users.verification_code_attempts` / `users.pin_reset_code_attempts`. Exceeding it **destroys the code**, so the correct code stops working too and the verifier answers 429. Deliberately not the lockout timestamp `recovery_locked_until` gives the recovery flow: a timed lockout would let anyone who knows a victim's address freeze that victim's signup or PIN reset for an hour by guessing wrong on purpose, whereas the remedy here — ask for another code — is itself rate limited.
+- **Constant-time comparison.** The SHA-256-then-`timingSafeEqual` shape from #61 moved out of `src/lib/admin.ts` into `src/lib/constant-time.ts`; the admin token, the signup code and the PIN reset code all call the same `constantTimeEquals`. No second implementation.
+- **Rate limits on issuing a code.** `enforceAuthCodeRateLimit` (#36's mechanism, see [ADR 0008](./decisions/0008-fee-payer-rate-limiting.md)) guards all three routes. `email-challenge` and `recovery/initiate` are the app's only genuinely unauthenticated endpoints, so there is no session to key on: the buckets are the **submitted address** and the **client IP**. Defaults are 5 per address per hour, 20 per IP per hour and 100 per IP per day, all overridable — see `RATE_LIMIT_AUTH_CODE_*` in `apps/web/.env.example`.
+- **A resend path.** `email-challenge` now re-issues for an existing *unverified* row instead of answering 409. Without it, the expiry and the attempt cap would strand a user whose mail was slow, filtered or never arrived with an account they could neither verify nor re-create. A verified address still gets 409.
+
+When mail delivery fails all three routes answer **502** with a message saying so, rather than 200. The user cannot proceed without the code, so "check your email" would send them to a step that can never succeed; and because the stored code is simply unused and asking again overwrites it, nothing inconsistent is left behind. This is the opposite of the claim-link rule in #120 — there the caller has already moved funds on chain, so a mail failure must not surface as an error; here nothing irreversible has happened.
+
+`isRecoveryInitiationRateLimited` is untouched: it encodes recovery-specific semantics (a 60-second minimum retry and the initiation-history column) that the general limiter does not replace.
+
+Covered by `src/lib/auth/verification-code.test.ts`, `src/lib/constant-time.test.ts`, `src/lib/mail/auth-codes.test.ts`, the `authCodePolicies` block in `src/lib/rate-limit.test.ts`, and route tests for all four of `email-challenge`, `verify-email`, `pin/reset` and `recovery/initiate`.
 
 ### Production guardrails are duplicated and drifting — Closed
 

@@ -34,7 +34,18 @@ export const users = pgTable('users', {
   // Identity
   email: text('email').primaryKey(),
   emailVerified: boolean('email_verified').notNull().default(false),
+  // The signup verification code, plus the two columns that make it a secret
+  // rather than a formality (issue #121). Before issue #18 the code was
+  // returned in the API response, so it neither expired nor counted wrong
+  // guesses; it is now emailed and nothing else, so both are enforced in
+  // `verifyEmailVerificationCode`. Exceeding the cap clears all three columns,
+  // which is why there is no `verification_code_locked_until` to match
+  // `recovery_locked_until` — see src/lib/auth/verification-code.ts.
   verificationCode: text('verification_code'),
+  verificationCodeExpiresAt: timestamp('verification_code_expires_at', {
+    withTimezone: true,
+  }),
+  verificationCodeAttempts: integer('verification_code_attempts'),
   // pendingChallenge serves the Ed25519 device/seedphrase flows and WebAuthn
   // login. Passkey *registration* uses its own pair of columns so that
   // enrolling a backup passkey during an active login cannot clobber the
@@ -61,7 +72,13 @@ export const users = pgTable('users', {
   backupCredential: jsonb('backup_credential').$type<Credential>(),
   // PIN (bcrypt hash)
   pinHash: text('pin_hash'),
+  // The PIN reset code, with the same expiry and attempt-cap columns as the
+  // signup code above and for the same reason (issues #18 and #121).
   pinResetCode: text('pin_reset_code'),
+  pinResetCodeExpiresAt: timestamp('pin_reset_code_expires_at', {
+    withTimezone: true,
+  }),
+  pinResetCodeAttempts: integer('pin_reset_code_attempts'),
   // Recovery flow state. After 3 failed attempts recoveryLockedUntil is set
   // an hour ahead; clear it manually to unlock in testing.
   recoveryInitiatedAt: timestamp('recovery_initiated_at', {
