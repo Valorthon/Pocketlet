@@ -21,7 +21,7 @@ export default function PinResetPage() {
           router.push('/login');
         }
       });
-  }, []);
+  }, [router]);
 
   const requestCode = async () => {
     setLoading(true);

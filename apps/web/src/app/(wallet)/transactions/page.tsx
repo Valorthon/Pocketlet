@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TransactionListItem } from '@/components/ui/TransactionListItem';
 import { WalletTransaction } from '@/lib/wallet/transactions';
@@ -11,7 +11,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
     const res = await fetch('/api/wallet/transactions');
     if (res.status === 401) {
       router.push('/login');
@@ -26,11 +26,11 @@ export default function TransactionsPage() {
     const data = (await res.json()) as { transactions: WalletTransaction[] };
     setTransactions(data.transactions);
     setLoading(false);
-  };
+  }, [router]);
 
   useEffect(() => {
     fetchTransactions();
-  }, []);
+  }, [fetchTransactions]);
 
   if (loading) {
     return (

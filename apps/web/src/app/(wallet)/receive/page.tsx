@@ -29,7 +29,7 @@ export default function ReceivePage() {
         }
       })
       .catch(() => setError('Failed to load wallet address'));
-  }, []);
+  }, [router]);
 
   const copy = () => {
     if (address) {
