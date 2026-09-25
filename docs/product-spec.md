@@ -1,6 +1,6 @@
 # Product Spec — V1
 
-Last reviewed: 2026-09-20
+Last reviewed: 2026-09-25
 
 What Pocketlet V1 is for and what it does. Implementation detail lives in [architecture.md](./architecture.md); current feature status lives in the [README table](../README.md#features); deferred work lives in [roadmap.md](./roadmap.md).
 
@@ -44,7 +44,7 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 * **Claiming:** The recipient opens the link, creates an account and wallet, and submits the secret to release the funds.
 * **Refund:** If nobody claims before expiry, the sender can refund the deposit.
 * **Privacy:** The contract only ever sees hashes — never the secret, never a phone number or email.
-* **Note:** Notification delivery is not yet implemented; the sender shares the link manually today.
+* **Note:** An email recipient is notified automatically (issue #60) — the mail asks them to sign up with that exact address, since there is nothing to click. A phone recipient is not: there is no SMS provider, so the sender still passes the message along by hand.
 
 ### 3.5. Device-Key Login
 * **What:** After the first passkey login, a short-lived Ed25519 device signer is registered so routine sends need only a PIN rather than a biometric prompt each time.

@@ -136,6 +136,11 @@ export const claimLinks = pgTable('claim_links', {
 export type ClaimLink = typeof claimLinks.$inferSelect;
 export type NewClaimLink = typeof claimLinks.$inferInsert;
 
+// Delivery record for one claim-link notification. The row is inserted as
+// 'queued' and then settled by src/lib/notifications.ts to one of 'sent',
+// 'failed' (with `error` populated) or 'unsupported' — the last being the SMS
+// channel, which is matched on by the pending-links route but has no provider
+// behind it. `attempts` is 0 for a channel that was never tried.
 export const notifications = pgTable('notifications', {
   id: uuid('id').primaryKey().defaultRandom(),
   claimLinkId: uuid('claim_link_id')
@@ -144,6 +149,10 @@ export const notifications = pgTable('notifications', {
   channel: text('channel').notNull(),
   recipient: text('recipient').notNull(),
   status: text('status').notNull().default('queued'),
+  attempts: integer('attempts').notNull().default(0),
+  // Provider-reported failure, truncated. Never holds credentials.
+  error: text('error'),
+  lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
   sentAt: timestamp('sent_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

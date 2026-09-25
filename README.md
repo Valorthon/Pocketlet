@@ -17,6 +17,8 @@ Pocketlet is a web wallet for holding and sending digital dollars globally. It f
 | Receive USDC/XLM via address or QR code | Shipped |
 | P2P transfers by username, phone, or raw Stellar address | Shipped |
 | Claimable links — send to someone who has no wallet yet, via an escrow contract | Shipped |
+| Email notification to a claim-link recipient | Shipped |
+| SMS notification to a claim-link recipient | **Not shipped** — the row is recorded as `unsupported` and nothing is sent; needs an SMS provider ([production-readiness](./docs/production-readiness.md)) |
 | PIN confirmation on all payments | Shipped |
 | Device-key login (a short-lived Ed25519 signer, so routine sends need only a PIN) | Shipped |
 | Lost-passkey recovery via recovery phrase or backup passkey | Shipped |

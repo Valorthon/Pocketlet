@@ -18,7 +18,8 @@ import {
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
 import { encryptSecret } from '@/lib/wallet/claim-secrets';
 import { db, schema } from '@/lib/db';
-import { queueNotification } from '@/lib/notifications';
+import { deliverClaimLinkNotification } from '@/lib/notifications';
+import type { ClaimLinkNotificationInput } from '@/lib/notifications';
 import { createHash } from 'node:crypto';
 import { rpc } from '@stellar/stellar-sdk';
 import { RPC_URL } from '@/lib/wallet/network';
@@ -221,6 +222,11 @@ export async function POST(request: NextRequest) {
     : recipient.trim().toLowerCase();
   const recipientIdHash = hashRecipientId(normalizedRecipient);
 
+  // Declared out here so the notification can be delivered AFTER the try
+  // block has decided the response. See the comment below the catch.
+  let response: NextResponse;
+  let notification: ClaimLinkNotificationInput;
+
   try {
     const currentLedger = await getCurrentLedger();
     const minExpected = currentLedger + Math.floor((expiryDays - 1) * 24 * 60 * 60 / 5);
@@ -264,15 +270,14 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
-    await queueNotification(
-      link.id,
-      isPhone ? 'sms' : 'email',
-      normalizedRecipient,
+    response = NextResponse.json({ hash: result.hash, claimLinkId: link.id });
+    notification = {
+      claimLinkId: link.id,
+      channel: isPhone ? 'sms' : 'email',
+      recipient: normalizedRecipient,
       amount,
-      asset
-    );
-
-    return NextResponse.json({ hash: result.hash, claimLinkId: link.id });
+      asset,
+    };
   } catch (err) {
     const message =
       err instanceof ClaimLinkValidationError
@@ -286,4 +291,14 @@ export async function POST(request: NextRequest) {
       { status: err instanceof ClaimLinkValidationError ? 400 : 500 }
     );
   }
+
+  // Past this point the escrow deposit is on chain and the claim link row is
+  // committed, so the caller has succeeded whatever happens next. Notification
+  // delivery therefore happens outside the try, against an already-built
+  // response, and `deliverClaimLinkNotification` additionally never throws.
+  // Either guard alone would be enough; both are here because getting this
+  // wrong means the user is shown an error and can authorize a SECOND deposit
+  // for the same payment (issue #120).
+  await deliverClaimLinkNotification(notification);
+  return response;
 }

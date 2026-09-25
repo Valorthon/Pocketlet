@@ -114,4 +114,24 @@ export function validateProductionConfig() {
     process.env.CLAIM_SECRET_ENCRYPTION_KEY,
     'Generate a strong 32-byte hex secret and store it in a secrets manager.'
   );
+
+  // Without a provider, src/lib/mail/mailer.ts falls back to the log mailer,
+  // which writes claim-link notifications to stdout and reports success. That
+  // is the right default on testnet and completely wrong in production: the
+  // recipient is never told the money exists, and the notification row says
+  // 'sent'. Both variables are required because either one alone cannot send.
+  requireSecret(
+    'RESEND_API_KEY',
+    process.env.RESEND_API_KEY,
+    'Set the transactional email provider API key via a secrets manager, or ' +
+      'claim-link notifications will only be written to the server log.'
+  );
+
+  const mailFrom = process.env.MAIL_FROM?.trim();
+  if (!mailFrom || !mailFrom.includes('@')) {
+    throw new Error(
+      'MAIL_FROM must be a sender address on a domain verified with the mail ' +
+        'provider in production. Unverified senders are silently dropped.'
+    );
+  }
 }
