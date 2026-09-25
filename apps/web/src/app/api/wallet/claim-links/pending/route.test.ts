@@ -60,6 +60,7 @@ async function seedClaimLink(overrides: {
   status?: string;
   senderEmail?: string;
   amount?: string;
+  expiry?: Date;
 }) {
   const [row] = await db
     .insert(schema.claimLinks)
@@ -71,7 +72,7 @@ async function seedClaimLink(overrides: {
       amount: overrides.amount ?? '10000000',
       claimHash: overrides.claimHash,
       secretCiphertext: 'iv:tag:ciphertext',
-      expiry: new Date(Date.now() + 86_400_000),
+      expiry: overrides.expiry ?? new Date(Date.now() + 86_400_000),
       status: overrides.status ?? 'pending',
     })
     .returning();
@@ -185,6 +186,26 @@ describe('GET /api/wallet/claim-links/pending', () => {
     const res = await GET();
     const body = (await res.json()) as { claims: PendingClaim[] };
     expect(body.claims).toEqual([]);
+  });
+
+  it('still lists a pending link whose expiry has already passed (documented bug)', async () => {
+    // Documents current behaviour, not desired behaviour: the query filters on
+    // `status = 'pending'` and the recipient only, never on `expiry`. So an
+    // expired link is offered to the recipient here and then rejected with 410
+    // by claim-submit. The fix belongs in a separate PR; when it lands, this
+    // test should expect an empty list.
+    await seedSender();
+    await seedRecipient(RECIPIENT_EMAIL);
+    const expired = await seedClaimLink({
+      claimHash: 'hash-expired',
+      recipientEmail: RECIPIENT_EMAIL,
+      expiry: new Date(Date.now() - 86_400_000),
+    });
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { claims: PendingClaim[] };
+    expect(body.claims.map((c) => c.id)).toEqual([expired.id]);
   });
 
   it('excludes links addressed to somebody else', async () => {

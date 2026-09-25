@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { createHash } from 'node:crypto';
 import {
   Account,
   Contract,
@@ -53,6 +54,16 @@ const RECIPIENT_EMAIL = 'bob@example.com';
 const RECIPIENT_PHONE = '+639123456789';
 const CLAIM_HASH = '11223344'.repeat(8);
 const OTHER_HASH = '99887766'.repeat(8);
+/**
+ * A genuine secret/hash pair, built the way `claim-link-client.ts` builds one:
+ * `claimHash = sha256(<32 raw secret bytes>)`. Used by the bug-documenting test
+ * below, which needs a link whose `claimHash` really is the hash of the secret
+ * the client would put into the transaction.
+ */
+const REAL_SECRET = 'a1b2c3d4'.repeat(8);
+const REAL_CLAIM_HASH = createHash('sha256')
+  .update(Buffer.from(REAL_SECRET, 'hex'))
+  .digest('hex');
 const UNKNOWN_UUID = '00000000-0000-4000-8000-000000000000';
 
 beforeEach(() => {
@@ -154,6 +165,28 @@ async function seedClaimLink(overrides?: {
   return row;
 }
 
+/**
+ * READ THIS BEFORE TREATING THESE TESTS AS A SPECIFICATION.
+ *
+ * `buildClaimXdr` puts the claim **hash** into `args[0]`, because that is what
+ * the route's `validateSignedClaim` compares against `link.claimHash`
+ * (`route.ts` — `scValToBytes(args[0]).toString('hex') !== expectedClaimHash`).
+ * No real client ever sends that shape:
+ *
+ *   - the contract is `claim(secret: BytesN<32>, recipient_wallet: Address)`
+ *     (`contracts/escrow/src/lib.rs`) and hashes `args[0]` itself to look the
+ *     deposit up;
+ *   - `prepareEscrowClaimTx(options, secretHex, recipientWallet)`
+ *     (`src/lib/contracts/escrow.ts`) therefore puts the **secret** in `args[0]`,
+ *     and `home/page.tsx` calls it with `body.secret`;
+ *   - `claimHash = sha256(secret)` (`src/lib/wallet/claim-link-client.ts`), so
+ *     `args[0]` can never equal `claimHash`.
+ *
+ * So every genuine claim is rejected with 500 'Claim hash does not match'. That
+ * is a route bug, not a requirement — see the test named
+ * 'rejects the transaction shape the real client actually sends' below. The
+ * hash-shaped tests here pin current behaviour only.
+ */
 describe('POST /api/wallet/claim-links/claim-submit', () => {
   it('returns 401 without a session cookie', async () => {
     const res = await POST(
@@ -281,7 +314,7 @@ describe('POST /api/wallet/claim-links/claim-submit', () => {
     expect(body.error).toBe('Claim link has expired');
   });
 
-  it('submits the claim, marks the link claimed and counts a success', async () => {
+  it('accepts a transaction whose first argument is the claim hash (NOT what the real client sends — see the bug note above), marks the link claimed and counts a success', async () => {
     await seedSender();
     const token = await seedRecipient();
     const link = await seedClaimLink();
@@ -303,7 +336,7 @@ describe('POST /api/wallet/claim-links/claim-submit', () => {
     expect(await getMetric('wallet.claim.failure')).toBe(0);
   });
 
-  it('matches a link addressed to the user phone', async () => {
+  it('matches a link addressed to the user phone (same hash-shaped transaction as above)', async () => {
     await seedSender();
     const token = await seedRecipient({ phone: RECIPIENT_PHONE });
     const link = await seedClaimLink({
@@ -344,6 +377,40 @@ describe('POST /api/wallet/claim-links/claim-submit — validateSignedClaim', ()
 
     const [after] = await db.select().from(schema.claimLinks);
     expect(after.status).toBe('pending');
+    expect(await getMetric('wallet.claim.failure')).toBe(1);
+    expect(await getMetric('wallet.claim.success')).toBe(0);
+  });
+
+  it('rejects the transaction shape the real client actually sends (BUG: every genuine claim fails)', async () => {
+    // Builds the transaction exactly as `prepareEscrowClaimTx` does: args[0] is
+    // the 32 raw *secret* bytes, args[1] is the recipient wallet. The contract
+    // hashes args[0] itself, but the route compares args[0]'s hex to
+    // `link.claimHash`, so the two can never agree and the claim is refused.
+    //
+    // This asserts the bug, not the requirement. When the route is fixed to
+    // compare `sha256(args[0])` against `link.claimHash`, invert this test to
+    // expect 200 and a 'claimed' link. Tracked in #135.
+    await seedSender();
+    const token = await seedRecipient();
+    const link = await seedClaimLink({ claimHash: REAL_CLAIM_HASH });
+    const signedXdr = buildXdr([
+      {
+        contractId: ESCROW_CONTRACT,
+        functionName: 'claim',
+        args: [bytesScVal(REAL_SECRET), addressScVal(RECIPIENT_CONTRACT)],
+      },
+    ]);
+
+    const res = await POST(
+      createClaimSubmitRequest({ claimLinkId: link.id, signedXdr }, token)
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('Claim hash does not match');
+
+    const [after] = await db.select().from(schema.claimLinks);
+    expect(after.status).toBe('pending');
+    expect(after.claimedAt).toBeNull();
     expect(await getMetric('wallet.claim.failure')).toBe(1);
     expect(await getMetric('wallet.claim.success')).toBe(0);
   });

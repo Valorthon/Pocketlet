@@ -272,7 +272,10 @@ describe('POST /api/wallet/claim-links/claim', () => {
     const token = await seedRecipient();
     const link = await seedClaimLink();
 
-    await POST(createClaimRequest({ claimLinkId: link.id }, token));
+    const res = await POST(createClaimRequest({ claimLinkId: link.id }, token));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { secret: string };
+    expect(body.secret).toBe(SECRET);
 
     const [after] = await db.select().from(schema.claimLinks);
     expect(after.id).toBe(link.id);

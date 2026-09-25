@@ -19,6 +19,7 @@ import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import { addressScVal, amountToBaseUnits, i128ScVal } from '@/lib/wallet/amount';
 import { decryptSecret } from '@/lib/wallet/claim-secrets';
+import { submitSignedTransaction } from '@/lib/wallet/submit';
 import { db, schema } from '@/lib/db';
 
 let cookieJar: Record<string, string> = {};
@@ -53,6 +54,11 @@ const SENDER_EMAIL = 'alice@example.com';
 const RECIPIENT_EMAIL = 'bob@example.com';
 const RECIPIENT_PHONE = '+639123456789';
 const SECRET = 'deadbeef'.repeat(8);
+// NOTE: this is sha256 of the ASCII *hex string*, not of the 32 raw secret
+// bytes, so it is not the pairing a real client produces —
+// `claim-link-client.ts` hashes the raw bytes. It is harmless here only
+// because `create` never checks that the `claimHash` and `secret` it is handed
+// actually correspond; do not copy this pairing into a test that does.
 const CLAIM_HASH = createHash('sha256').update(SECRET).digest('hex');
 const CURRENT_LEDGER = 1_000_000;
 const LEDGERS_PER_DAY = (24 * 60 * 60) / 5;
@@ -609,6 +615,8 @@ describe('POST /api/wallet/claim-links/create — success', () => {
     // validation — and it raises *after* submitSignedTransaction has already
     // put the escrow deposit on chain (issue #120).
     const token = await seedSender();
+    // Counted per test: the shared mock is never auto-cleared between tests.
+    vi.mocked(submitSignedTransaction).mockClear();
     expect((await POST(createCreateRequest(validBody(), token))).status).toBe(200);
 
     const res = await POST(createCreateRequest(validBody(), token));
@@ -616,5 +624,8 @@ describe('POST /api/wallet/claim-links/create — success', () => {
 
     const links = await db.select().from(schema.claimLinks);
     expect(links).toHaveLength(1);
+    // The costly half of #120: the second deposit was submitted to the network
+    // before the insert failed, so the funds are in escrow with no row to claim.
+    expect(vi.mocked(submitSignedTransaction)).toHaveBeenCalledTimes(2);
   });
 });
