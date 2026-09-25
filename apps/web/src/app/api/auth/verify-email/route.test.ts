@@ -10,12 +10,14 @@ import {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
-function createVerifyRequest(body: unknown) {
+function createVerifyRequest(body: unknown, headers?: Record<string, string>) {
   return new NextRequest('http://localhost/api/auth/verify-email', {
     method: 'POST',
     body: JSON.stringify(body),
+    headers,
   });
 }
 
@@ -51,11 +53,38 @@ describe('POST /api/auth/verify-email', () => {
     expect(body.error).toContain('Email and code are required');
   });
 
-  it('returns 404 if user is not found', async () => {
-    const res = await POST(
+  it('answers an unknown address exactly as a wrong code, with no 404', async () => {
+    // The route used to look the user up and answer 404, which told an
+    // unauthenticated caller whether an address was registered — for free,
+    // since there was no limiter in front of it. `verifyEmailVerificationCode`
+    // already returns 'no-code' for a missing row and the route already maps
+    // that to this same 401, so the lookup only ever bought the oracle.
+    const missing = await POST(
       createVerifyRequest({ email: 'missing@example.com', code: '123456' })
     );
-    expect(res.status).toBe(404);
+    expect(missing.status).toBe(401);
+
+    await createUser('alice@example.com', '123456');
+    const wrong = await POST(
+      createVerifyRequest({ email: 'alice@example.com', code: '000000' })
+    );
+
+    expect(wrong.status).toBe(missing.status);
+    expect(await wrong.json()).toEqual(await missing.json());
+  });
+
+  it('returns 400 rather than 500 for a non-string code', async () => {
+    // `body.code?.trim()` threw on a JSON number, which escaped as an
+    // unhandled rejection. The same class as the PIN reset route's crash.
+    await createUser('alice@example.com', '123456');
+
+    for (const code of [123456, null, { code: '123456' }, ['123456']]) {
+      const res = await POST(createVerifyRequest({ email: 'alice@example.com', code }));
+      expect(res.status, JSON.stringify(code)).toBe(400);
+    }
+
+    const res = await POST(createVerifyRequest({ email: 42, code: '123456' }));
+    expect(res.status).toBe(400);
   });
 
   it('returns 401 if verification code is invalid', async () => {
@@ -70,6 +99,65 @@ describe('POST /api/auth/verify-email', () => {
 
     const cookie = res.cookies.get(SESSION_COOKIE_NAME);
     expect(cookie).toBeUndefined();
+  });
+});
+
+/**
+ * Rate limiting the *guessing* surface.
+ *
+ * The issuing routes were limited when the code stopped coming back in the
+ * response; this one was not, so an attacker could pipeline guesses at it
+ * without bound. The per-code attempt cap is the real defence and it is now
+ * atomic, but a six-digit code is exactly the thing worth brute-forcing, so
+ * the endpoint carries a limit of its own. It is unauthenticated: the buckets
+ * are the submitted address and the client IP.
+ */
+describe('POST /api/auth/verify-email rate limiting', () => {
+  it('returns 429 once the per-address guess budget is spent', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_VERIFY_PER_EMAIL_PER_HOUR', '2');
+    await createUser('alice@example.com', '123456');
+
+    for (let i = 0; i < 2; i += 1) {
+      const res = await POST(
+        createVerifyRequest({ email: 'alice@example.com', code: '000000' })
+      );
+      expect(res.status, `guess ${i + 1}`).toBe(401);
+    }
+
+    const res = await POST(
+      createVerifyRequest({ email: 'alice@example.com', code: '123456' })
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBeTruthy();
+    expect((await getUserByEmail('alice@example.com'))?.emailVerified).toBe(false);
+  });
+
+  it('returns 429 on the per-IP budget even as the address changes', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_VERIFY_PER_IP_PER_HOUR', '2');
+    const headers = { 'x-forwarded-for': '198.51.100.9' };
+
+    for (const email of ['a@example.com', 'b@example.com']) {
+      const res = await POST(createVerifyRequest({ email, code: '000000' }, headers));
+      expect(res.status).toBe(401);
+    }
+
+    const res = await POST(
+      createVerifyRequest({ email: 'c@example.com', code: '000000' }, headers)
+    );
+    expect(res.status).toBe(429);
+  });
+
+  it('does not charge the limiter for a malformed request', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_VERIFY_PER_IP_PER_HOUR', '1');
+    const headers = { 'x-forwarded-for': '198.51.100.9' };
+    await createUser('alice@example.com', '123456');
+
+    expect((await POST(createVerifyRequest({ email: 'alice@example.com' }, headers))).status).toBe(400);
+
+    const res = await POST(
+      createVerifyRequest({ email: 'alice@example.com', code: '123456' }, headers)
+    );
+    expect(res.status).toBe(200);
   });
 });
 

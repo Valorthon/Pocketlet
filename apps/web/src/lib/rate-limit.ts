@@ -8,9 +8,9 @@ const { rateLimits } = schema;
 /**
  * Fixed-window rate limiting.
  *
- * Three families of route use it: the ones that spend fee-payer funds, the
+ * Four families of route use it: the ones that spend fee-payer funds, the
  * recipient-resolution endpoint, and — since issues #18 and #121 — the three
- * that email a one-time code.
+ * that email a one-time code and the three that accept one back.
  *
  * Every route that reaches `submitSignedTransaction` has the platform pay the
  * Stellar fee, so an authenticated user who posts signed XDRs in a loop — valid
@@ -52,7 +52,26 @@ export type AuthCodeRoute =
   | 'auth.pin-reset-request'
   | 'auth.recovery-initiate';
 
-export type RateLimitedRoute = FeePayerRoute | LooseRoute | AuthCodeRoute;
+/**
+ * The three routes that take a one-time code *back*.
+ *
+ * The issuing routes above bound how many codes exist; these bound how many
+ * guesses a code can be given. The per-code attempt cap in
+ * `src/lib/auth/store.ts` is the real defence and it is now atomic, so these
+ * limits are depth rather than the load-bearing control — but a six-digit code
+ * is exactly the thing worth brute-forcing, and until this existed
+ * `auth.verify-email` had no limit of any kind on an unauthenticated endpoint.
+ */
+export type AuthVerifyRoute =
+  | 'auth.verify-email'
+  | 'auth.pin-reset'
+  | 'auth.recovery-verify';
+
+export type RateLimitedRoute =
+  | FeePayerRoute
+  | LooseRoute
+  | AuthCodeRoute
+  | AuthVerifyRoute;
 
 export type SubjectKind = 'user' | 'ip';
 
@@ -256,6 +275,60 @@ export function authCodePolicies(): Array<{
 }
 
 /**
+ * Policies for the three routes that accept a one-time code back.
+ *
+ * Looser than the issuing budgets, because a guess costs nothing to serve and
+ * an honest user can legitimately make several: five wrong guesses are allowed
+ * per code and five codes can be issued in an hour, so 20 an hour leaves room
+ * for a fat-fingered user who asked for a fresh code twice without leaving
+ * room for a meaningful dent in 10^6. Even the per-day IP budget is under
+ * 0.03% of the space.
+ *
+ * Keyed on the **submitted** address as well as the IP, because
+ * `auth.verify-email` and `auth.recovery-verify` are unauthenticated: there is
+ * no session identity to key on, and the address is what is under attack. The
+ * per-address window has the same accepted flip side as the issuing one — see
+ * [ADR 0008](../../../../docs/decisions/0008-fee-payer-rate-limiting.md).
+ */
+export function authVerifyPolicies(): Array<{
+  kind: SubjectKind;
+  policy: RateLimitPolicy;
+}> {
+  return [
+    {
+      kind: 'user',
+      policy: {
+        limit: positiveIntFromEnv(
+          process.env.RATE_LIMIT_AUTH_VERIFY_PER_EMAIL_PER_HOUR,
+          20
+        ),
+        windowMs: HOUR_MS,
+      },
+    },
+    {
+      kind: 'ip',
+      policy: {
+        limit: positiveIntFromEnv(
+          process.env.RATE_LIMIT_AUTH_VERIFY_PER_IP_PER_HOUR,
+          60
+        ),
+        windowMs: HOUR_MS,
+      },
+    },
+    {
+      kind: 'ip',
+      policy: {
+        limit: positiveIntFromEnv(
+          process.env.RATE_LIMIT_AUTH_VERIFY_PER_IP_PER_DAY,
+          300
+        ),
+        windowMs: DAY_MS,
+      },
+    },
+  ];
+}
+
+/**
  * Build a bucket key.
  *
  * Four segments joined by '|': the route, the subject kind, the subject itself
@@ -403,6 +476,14 @@ export async function enforceFeePayerRateLimit(
   return enforce({ request, route, email, policies: feePayerPolicies() });
 }
 
+/** The subset of `policies` charged against one kind of subject. */
+function policiesFor(
+  kind: SubjectKind,
+  policies: Array<{ kind: SubjectKind; policy: RateLimitPolicy }>
+): Array<{ kind: SubjectKind; policy: RateLimitPolicy }> {
+  return policies.filter((entry) => entry.kind === kind);
+}
+
 /**
  * Charge one one-time-code email against the submitted address's and the
  * caller's budgets. See {@link authCodePolicies}.
@@ -411,6 +492,12 @@ export async function enforceFeePayerRateLimit(
  * validation the route does — a malformed address, an already-registered one
  * or an ineligible account costs nothing and must stay free, exactly as for
  * the fee-payer routes.
+ *
+ * Only for routes whose validation says nothing about whether an account
+ * exists. Where it does — `auth.email-challenge`'s 409 for an address that is
+ * already registered, `auth.recovery-initiate`'s 404 for one that is not — use
+ * the split pair below instead, or that answer is a free, unbounded
+ * enumeration oracle sitting in front of the limiter.
  */
 export async function enforceAuthCodeRateLimit(
   request: { headers: Headers },
@@ -418,6 +505,67 @@ export async function enforceAuthCodeRateLimit(
   email: string
 ): Promise<NextResponse | null> {
   return enforce({ request, route, email, policies: authCodePolicies() });
+}
+
+/**
+ * The per-IP half of {@link enforceAuthCodeRateLimit}, charged **before** the
+ * route's existence check.
+ *
+ * `auth.email-challenge` answers 409 for a verified address and
+ * `auth.recovery-initiate` answers 404 for an address with no recoverable
+ * account: both are "does this person have a Pocketlet wallet?", and with the
+ * whole limiter behind them the question was free to ask as often as you
+ * liked. Charging the IP windows first bounds the scrape.
+ *
+ * The per-address window stays behind the check, via
+ * {@link enforceAuthCodeAddressRateLimit}. Charging that first instead would
+ * mean a legitimate user's own typo — or a stranger's probe at their address —
+ * spends the budget they need for their real signup or recovery.
+ *
+ * The two calls together charge exactly what {@link enforceAuthCodeRateLimit}
+ * would; use one pair or the other, never both.
+ */
+export async function enforceAuthCodeIpRateLimit(
+  request: { headers: Headers },
+  route: AuthCodeRoute,
+  email: string
+): Promise<NextResponse | null> {
+  return enforce({
+    request,
+    route,
+    email,
+    policies: policiesFor('ip', authCodePolicies()),
+  });
+}
+
+/** The per-address half of {@link enforceAuthCodeIpRateLimit}'s pair. */
+export async function enforceAuthCodeAddressRateLimit(
+  request: { headers: Headers },
+  route: AuthCodeRoute,
+  email: string
+): Promise<NextResponse | null> {
+  return enforce({
+    request,
+    route,
+    email,
+    policies: policiesFor('user', authCodePolicies()),
+  });
+}
+
+/**
+ * Charge one guess at a one-time code. See {@link authVerifyPolicies}.
+ *
+ * Call it before the code is checked and before any lookup that reveals
+ * whether the address exists, so both the guessing and the 404 are bounded.
+ * Unlike the issuing routes there is nothing here to keep free: every request
+ * to these endpoints is an attempt to spend a code.
+ */
+export async function enforceAuthVerifyRateLimit(
+  request: { headers: Headers },
+  route: AuthVerifyRoute,
+  email: string
+): Promise<NextResponse | null> {
+  return enforce({ request, route, email, policies: authVerifyPolicies() });
 }
 
 /** The looser limit for `api/wallet/resolve`. See {@link resolvePolicies}. */

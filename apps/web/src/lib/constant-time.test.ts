@@ -28,6 +28,32 @@ describe('constantTimeEquals', () => {
     expect(constantTimeEquals('abc', ' abc')).toBe(false);
   });
 
+  /**
+   * The primitive must not be the thing that throws.
+   *
+   * Route handlers cast a parsed JSON body (`body as { code?: string }`) and
+   * hand a field straight to this function. The cast is a claim, not a check:
+   * `{"code": 654321}` satisfied it, reached `createHash().update(value)` and
+   * raised `ERR_INVALID_ARG_TYPE`, turning what should have been a 401 into an
+   * unhandled rejection and a 500. Anything that is not a string is simply not
+   * equal — it fails closed.
+   */
+  it('is false, not an exception, for a non-string', () => {
+    expect(constantTimeEquals(654321, '654321')).toBe(false);
+    expect(constantTimeEquals('654321', 654321)).toBe(false);
+    expect(constantTimeEquals(undefined, '123456')).toBe(false);
+    expect(constantTimeEquals(null, '123456')).toBe(false);
+    expect(constantTimeEquals('123456', { toString: () => '123456' })).toBe(false);
+    expect(constantTimeEquals(['123456'], '123456')).toBe(false);
+  });
+
+  it('never says two non-strings are equal', () => {
+    // Otherwise a missing stored secret would match a missing submitted one.
+    expect(constantTimeEquals(undefined, undefined)).toBe(false);
+    expect(constantTimeEquals(null, null)).toBe(false);
+    expect(constantTimeEquals(654321, 654321)).toBe(false);
+  });
+
   it('compares by code point, not by UTF-8 byte accident', () => {
     expect(constantTimeEquals('é', 'é')).toBe(true);
     expect(constantTimeEquals('é', 'e')).toBe(false);

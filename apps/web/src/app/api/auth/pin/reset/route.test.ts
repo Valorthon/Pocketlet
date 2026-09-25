@@ -275,12 +275,104 @@ describe('POST /api/auth/pin/reset rate limiting', () => {
     expect(sent).toHaveLength(2);
   });
 
-  it('does not charge the limiter for spending a code, only for sending one', async () => {
+  it('does not charge the issuing limiter for spending a code', async () => {
     vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR', '1');
     await signIn();
     const code = await requestCode();
 
     const res = await POST(createRequest({ action: 'reset', code, pin: '246810' }));
     expect(res.status).toBe(200);
+  });
+
+  /**
+   * `reset` is the guessing surface and had no limit of its own. It gets the
+   * verifier budget, which is separate from the issuing one above: asking for
+   * a code must not cost you the guesses at it, or the other way round.
+   */
+  it('returns 429 once the guess budget is spent', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_VERIFY_PER_EMAIL_PER_HOUR', '2');
+    await signIn();
+    const code = await requestCode();
+
+    for (let i = 0; i < 2; i += 1) {
+      const res = await POST(
+        createRequest({ action: 'reset', code: '000000', pin: '246810' })
+      );
+      expect(res.status, `guess ${i + 1}`).toBe(401);
+    }
+
+    const res = await POST(createRequest({ action: 'reset', code, pin: '246810' }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBeTruthy();
+    expect(verifyPin('246810', (await getUserByEmail(EMAIL))?.pinHash ?? '')).toBe(
+      false
+    );
+  });
+
+  it('does not charge the guess budget for requesting a code', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_VERIFY_PER_EMAIL_PER_HOUR', '1');
+    await signIn();
+    const code = await requestCode();
+
+    const res = await POST(createRequest({ action: 'reset', code, pin: '246810' }));
+    expect(res.status).toBe(200);
+  });
+
+  it('does not charge the guess budget for a malformed body', async () => {
+    vi.stubEnv('RATE_LIMIT_AUTH_VERIFY_PER_EMAIL_PER_HOUR', '1');
+    await signIn();
+    const code = await requestCode();
+
+    expect(
+      (await POST(createRequest({ action: 'reset', code, pin: 'nope' }))).status
+    ).toBe(400);
+
+    const res = await POST(createRequest({ action: 'reset', code, pin: '246810' }));
+    expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * A cast is not a check (issue found in review of #18).
+ *
+ * `body` is cast `as { code?: string }`, so `{"code": 654321}` satisfied the
+ * compiler, was truthy, passed the `!code` guard and reached
+ * `createHash().update(code, 'utf8')` — which throws `ERR_INVALID_ARG_TYPE`.
+ * The handler died with an unhandled rejection and a 500 where the answer had
+ * been a 401.
+ */
+describe('POST /api/auth/pin/reset (reset) with a non-string body', () => {
+  it.each([
+    ['a number', 654321],
+    ['null', null],
+    ['an object', { code: '654321' }],
+    ['an array', ['654321']],
+    ['a boolean', true],
+  ])('answers 400 for %s code, not 500', async (_label, code) => {
+    await signIn();
+    await requestCode();
+
+    const res = await POST(createRequest({ action: 'reset', code, pin: '222222' }));
+    expect(res.status).toBe(400);
+    expect(verifyPin('222222', (await getUserByEmail(EMAIL))?.pinHash ?? '')).toBe(
+      false
+    );
+  });
+
+  it('answers 400 for a non-string PIN', async () => {
+    await signIn();
+    const code = await requestCode();
+
+    const res = await POST(createRequest({ action: 'reset', code, pin: 222222 }));
+    expect(res.status).toBe(400);
+  });
+
+  it('does not spend an attempt on a request it never evaluated', async () => {
+    await signIn();
+    await requestCode();
+
+    await POST(createRequest({ action: 'reset', code: 654321, pin: '222222' }));
+
+    expect((await getUserByEmail(EMAIL))?.pinResetCodeAttempts).toBe(0);
   });
 });

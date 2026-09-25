@@ -132,6 +132,66 @@ describe('POST /api/auth/recovery/initiate', () => {
     expect(body.error).toContain('could not send');
   });
 
+  /**
+   * A 502 must not charge the hourly initiation budget.
+   *
+   * The initiation is recorded before the mail is attempted — it has to be,
+   * because the code must be readable by the time it can be in an inbox — so
+   * without the rollback a five-minute provider outage spent all five of the
+   * user's hourly initiations on codes that never arrived, locking them out of
+   * recovery for an hour after five "try again in a minute" responses. The
+   * route's own justification for answering 502 rather than 500 is that
+   * nothing irreversible has happened; this is what makes that true.
+   */
+  it('gives the hourly initiation back when delivery fails', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mailer = {
+      name: 'broken',
+      send: async () => ({ ok: false, provider: 'broken', error: 'nope' }),
+    };
+    await makeRecoverableUser('alice@example.com');
+
+    // Four, not six: the general per-address limiter (5 an hour) is a separate
+    // budget and is deliberately not refunded — it counts requests that
+    // reached the mailer, which is the thing it exists to bound. What is
+    // refunded is the recovery-specific hourly initiation history.
+    for (let i = 0; i < 4; i += 1) {
+      const res = await POST(createRequest({ email: 'alice@example.com' }));
+      expect(res.status, `outage attempt ${i + 1}`).toBe(502);
+      expect(
+        (await getUserByEmail('alice@example.com'))?.recoveryInitiationHistory ?? []
+      ).toHaveLength(0);
+      vi.advanceTimersByTime(2 * 60 * 1000);
+    }
+
+    // The provider comes back, and the user still has their full budget.
+    mailer = {
+      name: 'log',
+      send: async (message) => {
+        sent.push(message);
+        return { ok: true, provider: 'log' };
+      },
+    };
+    const res = await POST(createRequest({ email: 'alice@example.com' }));
+    expect(res.status).toBe(200);
+
+    vi.useRealTimers();
+  });
+
+  it('keeps the 60-second retry floor across a delivery failure', async () => {
+    // Only the hourly budget is refunded. The floor is what the 502's "try
+    // again in a minute" refers to, and dropping it would let a client loop on
+    // a failing provider.
+    mailer = {
+      name: 'broken',
+      send: async () => ({ ok: false, provider: 'broken', error: 'nope' }),
+    };
+    await makeRecoverableUser('alice@example.com');
+
+    expect((await POST(createRequest({ email: 'alice@example.com' }))).status).toBe(502);
+    expect((await POST(createRequest({ email: 'alice@example.com' }))).status).toBe(429);
+  });
+
   it('does not let a throwing mailer escape as a 500', async () => {
     mailer = {
       name: 'exploding',
@@ -212,5 +272,38 @@ describe('POST /api/auth/recovery/initiate rate limiting', () => {
 
     const res = await POST(createRequest({ email: 'bob@example.com' }, headers));
     expect(res.status).toBe(429);
+  });
+
+  it('charges the IP budget before the 404, so enumeration is not free', async () => {
+    // The 404 means "no recoverable account at this address", which is a
+    // yes/no about whether somebody has a Pocketlet wallet. With the whole
+    // limiter behind it, the question cost nothing to ask.
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_IP_PER_HOUR', '2');
+    const headers = { 'x-forwarded-for': '198.51.100.9' };
+
+    for (const email of ['a@example.com', 'b@example.com']) {
+      expect((await POST(createRequest({ email }, headers))).status).toBe(404);
+    }
+
+    const res = await POST(createRequest({ email: 'c@example.com' }, headers));
+    expect(res.status).toBe(429);
+  });
+
+  it('does not spend the address budget on somebody else probing it', async () => {
+    // The per-address window stays behind the existence check: a stranger
+    // probing a victim's address must not consume the initiations that victim
+    // needs to recover their own wallet.
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR', '1');
+
+    for (let i = 0; i < 3; i += 1) {
+      expect(
+        (await POST(createRequest({ email: 'alice@example.com' }))).status,
+        `probe ${i + 1}`
+      ).toBe(404);
+    }
+
+    await makeRecoverableUser('alice@example.com');
+    const res = await POST(createRequest({ email: 'alice@example.com' }));
+    expect(res.status).toBe(200);
   });
 });

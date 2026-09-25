@@ -8,7 +8,10 @@ import { incrementMetric } from '@/lib/metrics';
 import { RP_ID } from '@/lib/auth/config';
 import { generateVerificationCode } from '@/lib/auth/verification-code';
 import { sendAuthCodeEmail } from '@/lib/mail/auth-codes';
-import { enforceAuthCodeRateLimit } from '@/lib/rate-limit';
+import {
+  enforceAuthCodeAddressRateLimit,
+  enforceAuthCodeIpRateLimit,
+} from '@/lib/rate-limit';
 
 /**
  * Start (or restart) signup by emailing a verification code.
@@ -18,8 +21,13 @@ import { enforceAuthCodeRateLimit } from '@/lib/rate-limit';
  * `logMailer` — see docs/testing.md.
  *
  * Unauthenticated, so the rate limit is keyed on the submitted address and the
- * client IP (issue #121). It is charged only once every validation has passed,
- * immediately before a code is generated and mailed.
+ * client IP (issue #121), and it is charged in two halves. The per-IP windows
+ * go **before** the 409 for an already-registered address, because that answer
+ * is "this address has a verified Pocketlet wallet" and behind the limiter it
+ * was free to ask without bound. The per-address window stays after every
+ * validation, immediately before a code is generated and mailed, so a
+ * malformed address or somebody else's probe never spends the budget a real
+ * user needs for their own signup.
  */
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as { email?: string };
@@ -29,12 +37,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'A valid email is required' }, { status: 400 });
   }
 
+  const ipLimited = await enforceAuthCodeIpRateLimit(
+    request,
+    'auth.email-challenge',
+    email
+  );
+  if (ipLimited) {
+    return ipLimited;
+  }
+
   const existing = await getUserByEmail(email);
   if (existing?.emailVerified) {
     return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
   }
 
-  const limited = await enforceAuthCodeRateLimit(
+  const limited = await enforceAuthCodeAddressRateLimit(
     request,
     'auth.email-challenge',
     email
@@ -54,7 +71,6 @@ export async function POST(request: NextRequest) {
     await setVerificationCode(email, code);
   } else {
     await createUser(email, code);
-    await incrementMetric('auth.signup.completed');
   }
 
   // Mail after the write, never before: the code has to be readable by
@@ -77,6 +93,12 @@ export async function POST(request: NextRequest) {
       },
       { status: 502 }
     );
+  }
+
+  // Counted here, not next to `createUser`. A signup whose code never arrived
+  // is not a completed signup, and this route answers 502 for exactly that.
+  if (!existing) {
+    await incrementMetric('auth.signup.completed');
   }
 
   return NextResponse.json({

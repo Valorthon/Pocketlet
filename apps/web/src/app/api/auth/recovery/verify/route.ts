@@ -9,13 +9,28 @@ import {
   createRecoveryToken,
   recoveryCookieOptions,
 } from '@/lib/auth/recovery-token';
+import { enforceAuthVerifyRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Spend a recovery code.
+ *
+ * Unauthenticated and the highest-stakes code in the app: it opens the flow
+ * that re-keys the wallet. `verifyRecoveryCode` compares in constant time and
+ * counts wrong guesses atomically against a 3-attempt cap with an hour-long
+ * lockout, and this route adds the general per-address and per-IP limit on top
+ * of it. The limit is charged before the user lookup, so the 404 below is
+ * bounded too.
+ */
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const body = (await req.json()) as { email?: string; code?: string };
-    const { email, code } = body;
+    const body = (await req.json()) as { email?: unknown; code?: unknown };
+    // Narrowed rather than cast: a JSON number for `code` satisfies a cast and
+    // nothing else, and the 400 belongs here rather than deeper in.
+    const email = typeof body.email === 'string' ? body.email : undefined;
+    const code = typeof body.code === 'string' ? body.code : undefined;
 
     if (!email || !code) {
       return NextResponse.json(
@@ -25,6 +40,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+
+    const limited = await enforceAuthVerifyRateLimit(
+      req,
+      'auth.recovery-verify',
+      normalizedEmail
+    );
+    if (limited) {
+      return limited;
+    }
+
     const user = await getUserByEmail(normalizedEmail);
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });

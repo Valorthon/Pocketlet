@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST, GET } from './route';
 import { createUser, getUserByEmail, setEmailVerified } from '@/lib/auth/store';
+import { getMetric } from '@/lib/metrics';
 import { VERIFICATION_CODE_EXPIRY_MS } from '@/lib/auth/verification-code';
 import type { Mailer, MailMessage } from '@/lib/mail/mailer';
 
@@ -209,5 +210,73 @@ describe('POST /api/auth/email-challenge rate limiting', () => {
 
     const res = await POST(createRequest({ email: 'a@example.com' }, headers));
     expect(res.status).toBe(200);
+  });
+});
+
+describe('POST /api/auth/email-challenge signup metric', () => {
+  it('counts a signup once the code has actually been delivered', async () => {
+    expect(await getMetric('auth.signup.completed')).toBe(0);
+
+    await POST(createRequest({ email: 'alice@example.com' }));
+    expect(await getMetric('auth.signup.completed')).toBe(1);
+  });
+
+  it('does not count a signup whose code was never sent', async () => {
+    // The metric used to be incremented next to `createUser`, before the mail
+    // attempt, so a 502 counted a completed signup that the user could not
+    // complete.
+    mailer = {
+      name: 'broken',
+      send: async () => ({ ok: false, provider: 'broken', error: 'nope' }),
+    };
+
+    const res = await POST(createRequest({ email: 'alice@example.com' }));
+    expect(res.status).toBe(502);
+    expect(await getMetric('auth.signup.completed')).toBe(0);
+  });
+
+  it('counts a re-issued code once, on the first delivery only', async () => {
+    await POST(createRequest({ email: 'alice@example.com' }));
+    await POST(createRequest({ email: 'alice@example.com' }));
+
+    expect(await getMetric('auth.signup.completed')).toBe(1);
+  });
+});
+
+describe('POST /api/auth/email-challenge enumeration', () => {
+  it('charges the IP budget before the 409, so probing is not free', async () => {
+    // A 409 means "this address has a verified Pocketlet wallet". With the
+    // whole limiter behind it, asking was free and unbounded.
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_IP_PER_HOUR', '2');
+    const headers = { 'x-forwarded-for': '198.51.100.9' };
+
+    for (const email of ['a@example.com', 'b@example.com']) {
+      await createUser(email, '000000');
+      await setEmailVerified(email);
+      expect((await POST(createRequest({ email }, headers))).status).toBe(409);
+    }
+
+    const res = await POST(createRequest({ email: 'c@example.com' }, headers));
+    expect(res.status).toBe(429);
+    expect(sent).toHaveLength(0);
+  });
+
+  it('does not spend the address budget on a probe at a registered address', async () => {
+    // The per-address window stays behind the existence check, so a stranger
+    // probing an address cannot deny its owner their own signup codes.
+    vi.stubEnv('RATE_LIMIT_AUTH_CODE_PER_EMAIL_PER_HOUR', '1');
+
+    await createUser('alice@example.com', '000000');
+    await setEmailVerified('alice@example.com');
+
+    for (let i = 0; i < 3; i += 1) {
+      expect(
+        (await POST(createRequest({ email: 'alice@example.com' }))).status,
+        `probe ${i + 1}`
+      ).toBe(409);
+    }
+
+    // An unrelated, unregistered address still has its full budget.
+    expect((await POST(createRequest({ email: 'bob@example.com' }))).status).toBe(200);
   });
 });
