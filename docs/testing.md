@@ -1,6 +1,6 @@
 # Testing
 
-Last reviewed: 2026-09-20
+Last reviewed: 2026-09-25
 
 How to run the suites, and a manual end-to-end checklist for the testnet flows.
 
@@ -150,10 +150,6 @@ Log out and back in on the same device. A `user_devices` row should exist with a
 ### 10. Transaction details
 
 `/transactions` → open any entry. Verify type, amount, counterparty, network fee, and the on-chain hash linking to Stellar Expert.
-
-### 11. Swaps
-
-Expected to be inert — see the [feature table](../README.md#features).
 
 ### Troubleshooting
 

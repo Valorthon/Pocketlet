@@ -1,6 +1,6 @@
 # Operations
 
-Last reviewed: 2026-09-20
+Last reviewed: 2026-09-25
 
 How Pocketlet gets deployed, and what to do when it misbehaves. Branch semantics are in [`CONTRIBUTING.md`](../CONTRIBUTING.md#branch-model).
 
@@ -68,9 +68,7 @@ pnpm run deploy:contract     # build + deploy escrow to testnet
 pnpm run deploy:web          # railway up (needs @railway/cli)
 ```
 
-`contracts/deploy.sh` honours `STELLAR_NETWORK` and `STELLAR_DEPLOYER_KEY_NAME`.
-
-> The deploy steps exist twice — in `contracts/deploy.sh` and inlined in `cd.yml`. They can drift. Change both.
+`contracts/deploy.sh` honours `STELLAR_NETWORK`, `STELLAR_DEPLOYER_KEY_NAME`, and `STELLAR_DEPLOYER_SECRET`. `cd.yml` runs the same script rather than re-implementing it, so the contract deploy has exactly one definition — change it there.
 
 ## Rolling back
 

@@ -1,6 +1,6 @@
 # Agent & Developer Operating Manual
 
-Last reviewed: 2026-09-20
+Last reviewed: 2026-09-25
 
 Read this file first. It is the working manual for coding agents and new developers: what the system actually is, which commands work, what the conventions are, and which traps have already cost someone a day.
 
@@ -8,19 +8,19 @@ For product intent read [`docs/product-spec.md`](./docs/product-spec.md); for th
 
 ## What this is
 
-A deployed passkey-based USDC/XLM wallet on Stellar Testnet. Not a scaffold: ~40 API routes, 5 database tables, a custom Soroban contract, and a live deployment. Feature status lives in the [README table](./README.md#features) — check there before assuming something exists.
+A deployed passkey-based USDC/XLM wallet on Stellar Testnet. Not a scaffold: ~37 API routes, 5 database tables, a custom Soroban contract, and a live deployment. Feature status lives in the [README table](./README.md#features) — check there before assuming something exists.
 
 ## Stack
 
 | Layer | Choice |
 | --- | --- |
 | Monorepo | pnpm workspaces (`apps/*`, `packages/*`), `pnpm@11.13.1`, Node 22+ |
-| Frontend + API | Next.js 15.5.25 App Router, React 18, TypeScript 5.7 |
+| Frontend + API | Next.js 15.5.25 App Router, React 18, TypeScript 5.9 |
 | Styling | Tailwind 3.4 |
 | Database | PostgreSQL + Drizzle ORM (`drizzle-orm`, `drizzle-kit`, `pg`) |
 | Stellar | `@stellar/stellar-sdk` 16.3, `passkey-kit` 0.16, `sac-sdk` 0.4 |
 | Auth | `@simplewebauthn` 14, `jose` (JWT sessions), `bcryptjs` (PIN), `bip39` |
-| Tests | Vitest 4 (TypeScript), `cargo test` (Rust) |
+| Tests | Vitest 5 (TypeScript), `cargo test` (Rust) |
 | Contract | Rust, `soroban-sdk` 27, target `wasm32v1-none`, Stellar CLI 28 |
 
 **Use `pnpm` only** — never `npm`, `yarn`, or `bun`. Target a workspace with `pnpm --filter web <script>`.
@@ -28,7 +28,7 @@ A deployed passkey-based USDC/XLM wallet on Stellar Testnet. Not a scaffold: ~40
 ## Layout
 
 ```
-apps/web/src/app/          18 pages + ~40 API routes
+apps/web/src/app/          17 pages + ~37 API routes
 apps/web/src/lib/
   auth/                    sessions, PIN, recovery, config guardrails
   wallet/                  passkey-kit, fee payer, balances, transfers, device keys
@@ -72,7 +72,7 @@ Before opening a PR: `pnpm run lint && pnpm run typecheck && pnpm --filter web t
 
 ## Landmines
 
-Verified against the code on 2026-09-20. These are the things that look wrong, are wrong, or will waste your time.
+Verified against the code on 2026-09-25. These are the things that look wrong, are wrong, or will waste your time.
 
 **Tests need a live database.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and clears tables in `beforeEach`, so without Postgres the whole suite fails at import rather than with a useful message. `DATABASE_URL` is honoured from `apps/web/.env.local` — `apps/web/vitest.env.ts` is listed first in `setupFiles` so dotenv runs before `./src/lib/db` constructs the `pg` Pool at module scope. Keep it first; putting the dotenv call inside `vitest.setup.ts` is always too late, because ES module imports are evaluated before any statement body. (That was issue #58.) `drizzle.config.ts` loads `.env.local` for the same reason.
 
@@ -87,8 +87,9 @@ Verified against the code on 2026-09-20. These are the things that look wrong, a
 **Passkey registration needs a server challenge, and the client must ask for one first.** `createPasskeyKit()` with no argument cannot register a passkey — `api/wallet/deploy`, `api/wallet/backup-passkey` and `api/wallet/recovery/submit` reject a response whose challenge they did not issue. Call `fetchPasskeyChallenge()` and pass the result to `createPasskeyKit(challenge)`; it injects the nonce through passkey-kit's `WebAuthn` config point, because `createWallet`/`createKey` otherwise generate their own. Challenges are single-use and expire in five minutes. Registration uses `users.passkey_challenge`, deliberately separate from the `pending_challenge` column the login and Ed25519 flows share. (That was issue #56.)
 
 **Dead code that still looks alive:**
-- `/swap` page and `api/wallet/swap` — the route returns HTTP 410, the page is a placeholder, and it's still in the nav.
 - `POCKETLET_DATA_DIR` now holds only `fee_payer_secret`, not user data.
+
+The `/swap` page, `api/wallet/swap`, and `submitSignedTransactionFast` were deleted in issue #106. Swaps are a V3 item — see [`docs/roadmap.md`](./docs/roadmap.md).
 
 **Notifications don't notify.** `src/lib/notifications.ts` `console.log`s and writes the row with `status: 'sent'` without sending anything.
 

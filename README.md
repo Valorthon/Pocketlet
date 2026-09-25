@@ -22,7 +22,7 @@ Pocketlet is a web wallet for holding and sending digital dollars globally. It f
 | Lost-passkey recovery via recovery phrase or backup passkey | Shipped |
 | Transaction history and on-chain detail view | Shipped |
 | Admin dashboard (`/admin`, token-gated) | Shipped |
-| USDC ↔ XLM swaps | **Deferred** — the API returns `410` and `/swap` is a placeholder while the DEX integration is rebuilt |
+| USDC ↔ XLM swaps | **Deferred to V3** — the placeholder page and the `410` route were removed; the DEX integration has to be rebuilt for passkey-kit smart accounts ([roadmap](./docs/roadmap.md#cross-asset-swaps)) |
 
 Feature status lives in this table only. Other docs link here rather than restating it.
 
