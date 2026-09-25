@@ -1,6 +1,12 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db, schema } from '@/lib/db';
+import { constantTimeEquals } from '@/lib/constant-time';
 import { hashPin, verifyPin } from './pin';
+import {
+  VERIFICATION_CODE_MAX_ATTEMPTS,
+  createVerificationCodeExpiry,
+  isVerificationCodeExpired,
+} from './verification-code';
 
 const { users } = schema;
 
@@ -15,6 +21,8 @@ export interface User {
   email: string;
   emailVerified: boolean;
   verificationCode?: string;
+  verificationCodeExpiresAt?: string;
+  verificationCodeAttempts?: number;
   pendingChallenge?: string;
   passkeyChallenge?: string;
   passkeyChallengeExpiresAt?: Date;
@@ -28,6 +36,8 @@ export interface User {
   backupCredential?: Credential;
   pinHash?: string;
   pinResetCode?: string;
+  pinResetCodeExpiresAt?: string;
+  pinResetCodeAttempts?: number;
   recoveryInitiatedAt?: string;
   recoveryInitiationHistory?: string[];
   recoveryCode?: string;
@@ -69,6 +79,8 @@ function mapUser(row: typeof schema.users.$inferSelect): User {
     email: row.email,
     emailVerified: row.emailVerified,
     verificationCode: row.verificationCode ?? undefined,
+    verificationCodeExpiresAt: row.verificationCodeExpiresAt?.toISOString(),
+    verificationCodeAttempts: row.verificationCodeAttempts ?? undefined,
     pendingChallenge: row.pendingChallenge ?? undefined,
     passkeyChallenge: row.passkeyChallenge ?? undefined,
     passkeyChallengeExpiresAt: row.passkeyChallengeExpiresAt ?? undefined,
@@ -82,6 +94,8 @@ function mapUser(row: typeof schema.users.$inferSelect): User {
     backupCredential: toCredential(row.backupCredential),
     pinHash: row.pinHash ?? undefined,
     pinResetCode: row.pinResetCode ?? undefined,
+    pinResetCodeExpiresAt: row.pinResetCodeExpiresAt?.toISOString(),
+    pinResetCodeAttempts: row.pinResetCodeAttempts ?? undefined,
     recoveryInitiatedAt: row.recoveryInitiatedAt?.toISOString(),
     recoveryInitiationHistory: row.recoveryInitiationHistory ?? undefined,
     recoveryCode: row.recoveryCode ?? undefined,
@@ -226,6 +240,17 @@ export async function setProfile(
   return mapUser(updated);
 }
 
+/**
+ * The outcome of checking a one-time code.
+ *
+ * Not a boolean, because the callers need to tell an expired code from a wrong
+ * one from a spent attempt budget, and answering all three with 401 "invalid"
+ * leaves a user who waited 20 minutes retyping a code that can never work.
+ */
+export type CodeCheck =
+  | { ok: true }
+  | { ok: false; reason: 'no-code' | 'expired' | 'invalid' | 'too-many-attempts' };
+
 export async function createUser(
   email: string,
   verificationCode: string
@@ -244,17 +269,184 @@ export async function createUser(
       email: normalized,
       emailVerified: false,
       verificationCode,
+      verificationCodeExpiresAt: createVerificationCodeExpiry(),
+      verificationCodeAttempts: 0,
     })
     .returning();
 
   return mapUser(row);
 }
 
+/**
+ * Issue a fresh signup verification code for an existing, unverified user.
+ *
+ * The resend path. It exists because of issue #18: while the code came back in
+ * the response there was nothing to resend, but now that it is emailed and
+ * expires in 15 minutes, a user whose mail is slow, filtered or simply never
+ * arrives has no other way forward — and once the attempt cap destroys a code,
+ * no way at all. Resets the attempt counter along with the code, so a new code
+ * always gets a full budget.
+ */
+export async function setVerificationCode(
+  email: string,
+  verificationCode: string
+): Promise<User> {
+  const normalized = normalizeEmail(email);
+  const [updated] = await db
+    .update(users)
+    .set({
+      verificationCode,
+      verificationCodeExpiresAt: createVerificationCodeExpiry(),
+      verificationCodeAttempts: 0,
+    })
+    .where(eq(users.email, normalized))
+    .returning();
+
+  if (!updated) {
+    throw new Error('User not found');
+  }
+
+  return mapUser(updated);
+}
+
+/**
+ * A database handle that may be the pool or an open transaction.
+ *
+ * Drizzle does not export the transaction type, so it is read back off
+ * `db.transaction`'s own callback signature rather than re-declared.
+ */
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * One of the two emailed codes that share the expiry/cap/constant-time rules,
+ * named by the three columns it lives in. `verifyOneTimeCode` is the rules;
+ * this is the columns they apply to.
+ */
+interface OneTimeCodeSlot {
+  codeField: 'verificationCode' | 'pinResetCode';
+  expiryField: 'verificationCodeExpiresAt' | 'pinResetCodeExpiresAt';
+  attemptsField: 'verificationCodeAttempts' | 'pinResetCodeAttempts';
+}
+
+const SIGNUP_CODE_SLOT: OneTimeCodeSlot = {
+  codeField: 'verificationCode',
+  expiryField: 'verificationCodeExpiresAt',
+  attemptsField: 'verificationCodeAttempts',
+};
+
+const PIN_RESET_CODE_SLOT: OneTimeCodeSlot = {
+  codeField: 'pinResetCode',
+  expiryField: 'pinResetCodeExpiresAt',
+  attemptsField: 'pinResetCodeAttempts',
+};
+
+/**
+ * Check an emailed one-time code: expiry, attempt cap, constant-time compare.
+ *
+ * **The whole check runs under `SELECT … FOR UPDATE` in one transaction**, and
+ * that is the point of it. It used to be a read through `getUserByEmail`, a
+ * comparison, and then `attempts = (attempts ?? 0) + 1` written blindly back —
+ * three steps with nothing serialising them, on an endpoint where the attacker
+ * picks the concurrency. Twenty wrong guesses issued in parallel all read
+ * `attempts = 0`, all wrote 1, the cap was never reached and the code was
+ * never destroyed; the same twenty issued one after another killed it on the
+ * fifth. `POST /api/auth/verify-email` had no rate limit at all, so the whole
+ * 10^6 space was open for the code's fifteen-minute life.
+ *
+ * An atomic `set attempts = coalesce(attempts, 0) + 1 … returning attempts`
+ * fixes the counter but not the check: the comparison happens in JavaScript,
+ * because a constant-time comparison cannot be written as SQL `=`, so every
+ * request that read the row before the cap landed still got its guess
+ * evaluated against a live code. Only the row lock makes "five guesses" mean
+ * five. The lock is held for one round trip on a low-traffic endpoint, and the
+ * cost of getting this wrong is the code itself.
+ *
+ * Nothing inside the transaction may touch `db` — `getUserByEmail` and friends
+ * take their own pool client, which would wait on a lock this transaction
+ * holds. Everything below goes through `tx`.
+ *
+ * Exceeding the cap destroys the code rather than setting a lockout timestamp
+ * the way recovery does; see `VERIFICATION_CODE_MAX_ATTEMPTS`. A success does
+ * NOT clear the code — the caller's own success path does, so the two writes
+ * stay in one place and a caller cannot verify without clearing.
+ */
+async function verifyOneTimeCode(
+  email: string,
+  code: string,
+  slot: OneTimeCodeSlot
+): Promise<CodeCheck> {
+  const normalized = normalizeEmail(email);
+  const cleared = {
+    [slot.codeField]: null,
+    [slot.expiryField]: null,
+    [slot.attemptsField]: null,
+  };
+
+  return db.transaction(async (tx): Promise<CodeCheck> => {
+    const [row] = await tx
+      .select({
+        code: users[slot.codeField],
+        expiresAt: users[slot.expiryField],
+        attempts: users[slot.attemptsField],
+      })
+      .from(users)
+      .where(eq(users.email, normalized))
+      // 'no key update', not 'update': neither transaction touches
+      // users.email, and the weaker mode does not conflict with the
+      // FOR KEY SHARE that an insert into claim_links or user_devices takes
+      // on its parent row. Still exclusive against another verifier.
+      .for('no key update');
+
+    // A missing row answers exactly as a missing code does. Callers map both
+    // to the same 401, so looking the user up separately only added a query
+    // and an enumeration oracle.
+    if (!row?.code || !row.expiresAt) {
+      return { ok: false, reason: 'no-code' };
+    }
+
+    if (isVerificationCodeExpired(row.expiresAt)) {
+      await tx.update(users).set(cleared).where(eq(users.email, normalized));
+      return { ok: false, reason: 'expired' };
+    }
+
+    if (constantTimeEquals(row.code, code)) {
+      return { ok: true };
+    }
+
+    const attempts = (row.attempts ?? 0) + 1;
+    if (attempts >= VERIFICATION_CODE_MAX_ATTEMPTS) {
+      // The budget is spent: the code stops working even for whoever knows it.
+      await tx.update(users).set(cleared).where(eq(users.email, normalized));
+      return { ok: false, reason: 'too-many-attempts' };
+    }
+
+    await tx
+      .update(users)
+      .set({ [slot.attemptsField]: attempts })
+      .where(eq(users.email, normalized));
+
+    return { ok: false, reason: 'invalid' };
+  });
+}
+
+/** {@link verifyOneTimeCode} for the signup code. */
+export async function verifyEmailVerificationCode(
+  email: string,
+  code: string
+): Promise<CodeCheck> {
+  return verifyOneTimeCode(email, code, SIGNUP_CODE_SLOT);
+}
+
 export async function setEmailVerified(email: string): Promise<User> {
   const normalized = normalizeEmail(email);
   const [updated] = await db
     .update(users)
-    .set({ emailVerified: true, verificationCode: null })
+    .set({
+      emailVerified: true,
+      verificationCode: null,
+      verificationCodeExpiresAt: null,
+      verificationCodeAttempts: null,
+    })
     .where(eq(users.email, normalized))
     .returning();
 
@@ -659,7 +851,11 @@ export async function setPinResetCode(
   const normalized = normalizeEmail(email);
   const [updated] = await db
     .update(users)
-    .set({ pinResetCode: code })
+    .set({
+      pinResetCode: code,
+      pinResetCodeExpiresAt: createVerificationCodeExpiry(),
+      pinResetCodeAttempts: 0,
+    })
     .where(eq(users.email, normalized))
     .returning();
 
@@ -670,19 +866,32 @@ export async function setPinResetCode(
   return mapUser(updated);
 }
 
+/**
+ * Check a PIN reset code. The signup code's rules exactly — expiry, a capped
+ * attempt budget, constant-time comparison — see
+ * {@link verifyEmailVerificationCode}.
+ *
+ * Returned as a {@link CodeCheck} rather than the boolean this used to be: the
+ * boolean could not distinguish "wrong" from "expired" from "you are out of
+ * attempts", and the last of those has to be a 429 rather than another 401 or
+ * the client loops forever on a code that can no longer work.
+ */
 export async function verifyPinResetCode(
   email: string,
   code: string
-): Promise<boolean> {
-  const user = await getUserByEmail(email);
-  return user?.pinResetCode === code;
+): Promise<CodeCheck> {
+  return verifyOneTimeCode(email, code, PIN_RESET_CODE_SLOT);
 }
 
 export async function clearPinResetCode(email: string): Promise<User> {
   const normalized = normalizeEmail(email);
   const [updated] = await db
     .update(users)
-    .set({ pinResetCode: null })
+    .set({
+      pinResetCode: null,
+      pinResetCodeExpiresAt: null,
+      pinResetCodeAttempts: null,
+    })
     .where(eq(users.email, normalized))
     .returning();
 
@@ -739,33 +948,82 @@ export async function setRecoveryInitiated(
   return mapUser(updated);
 }
 
-export async function recordRecoveryAttempt(email: string): Promise<User> {
-  const normalized = normalizeEmail(email);
-  const user = await getUserByEmail(normalized);
-  if (!user) {
-    throw new Error('User not found');
-  }
-
-  const attempts = (user.recoveryAttempts ?? 0) + 1;
-  const updates: Partial<typeof schema.users.$inferInsert> = {
-    recoveryAttempts: attempts,
-  };
-
-  if (attempts >= 3) {
-    updates.recoveryLockedUntil = new Date(Date.now() + 60 * 60 * 1000);
-  }
-
-  const [updated] = await db
+/**
+ * Undo the initiation `setRecoveryInitiated` just recorded, after the code
+ * could not be delivered.
+ *
+ * Only the history entry — the hourly `countRecentInitiations` budget — is
+ * given back. The initiation has to be written before the mail is attempted
+ * (the code must be readable by the time it can be in anybody's inbox), so on
+ * a 502 the user has paid for something they never received: a five-minute
+ * mail outage would otherwise spend all five of their hourly initiations and
+ * lock them out of recovery for an hour, which is exactly the situation the
+ * 502 exists to say is recoverable.
+ *
+ * `recoveryInitiatedAt` is deliberately left alone. That one is a 60-second
+ * retry floor rather than a budget; the 502 tells the user to try again in a
+ * minute, and clearing it would let a client loop on a failing provider.
+ *
+ * One statement. jsonb `- <int>` removes the element at that index, and the
+ * entry just appended is the last one, so this removes exactly it.
+ */
+export async function rollbackRecoveryInitiation(email: string): Promise<void> {
+  const history = users.recoveryInitiationHistory;
+  await db
     .update(users)
-    .set(updates)
-    .where(eq(users.email, normalized))
+    .set({
+      recoveryInitiationHistory: sql`case when jsonb_array_length(coalesce(${history}, '[]'::jsonb)) > 0 then ${history} - (jsonb_array_length(${history}) - 1) else ${history} end`,
+    })
+    .where(eq(users.email, normalizeEmail(email)));
+}
+
+/**
+ * Wrong recovery codes allowed before the hour-long lockout.
+ *
+ * Three, not the five `VERIFICATION_CODE_MAX_ATTEMPTS` allows the signup and
+ * PIN reset codes: recovery re-keys the wallet, so it is the strictest flow in
+ * the app. It is also the one flow that answers with a timed lockout rather
+ * than by destroying the code, because there is no cheap "ask for another" —
+ * re-initiating recovery restarts the whole waiting period.
+ */
+export const RECOVERY_MAX_ATTEMPTS = 3;
+
+/** How long the lockout lasts once {@link RECOVERY_MAX_ATTEMPTS} is reached. */
+export const RECOVERY_LOCKOUT_MS = 60 * 60 * 1000;
+
+/**
+ * Count one wrong recovery code, arming the lockout in the same statement.
+ *
+ * Both writes are one `UPDATE`: the counter through `coalesce(x, 0) + 1`, and
+ * the lockout through a `case` over that same new value. Every `SET`
+ * expression in an `UPDATE` reads the row as it was before the statement, so
+ * the two `coalesce` expressions agree.
+ *
+ * It was previously a read-modify-write — read the count through
+ * `getUserByEmail`, add one in JavaScript, write the sum back — so the
+ * stricter 3-attempt cap and the hour-long lockout were both bypassable by
+ * issuing the guesses in parallel: every one of them read the same stale count
+ * and wrote the same number. The two verifiers above were explicitly modelled
+ * on this function and inherited the flaw; all three were fixed together.
+ *
+ * Takes an executor so `verifyRecoveryCode` can run it on its own transaction.
+ * Calling it on `db` from inside that transaction would take a second pool
+ * client and wait forever on a row lock the transaction itself holds.
+ */
+function recordRecoveryAttemptOn(
+  executor: Executor,
+  normalizedEmail: string
+): Promise<Array<typeof schema.users.$inferSelect>> {
+  const lockedUntil = new Date(Date.now() + RECOVERY_LOCKOUT_MS);
+
+  return executor
+    .update(users)
+    .set({
+      recoveryAttempts: sql`coalesce(${users.recoveryAttempts}, 0) + 1`,
+      recoveryLockedUntil: sql`case when coalesce(${users.recoveryAttempts}, 0) + 1 >= ${RECOVERY_MAX_ATTEMPTS} then ${lockedUntil}::timestamptz else ${users.recoveryLockedUntil} end`,
+    })
+    .where(eq(users.email, normalizedEmail))
     .returning();
-
-  if (!updated) {
-    throw new Error('User not found');
-  }
-
-  return mapUser(updated);
 }
 
 export async function isRecoveryLocked(email: string): Promise<boolean> {
@@ -776,46 +1034,91 @@ export async function isRecoveryLocked(email: string): Promise<boolean> {
   return new Date(user.recoveryLockedUntil).getTime() > Date.now();
 }
 
+/**
+ * Spend a recovery code: lockout, expiry, attempt cap, constant-time compare.
+ *
+ * Under `SELECT … FOR UPDATE` in one transaction, for the reason spelled out
+ * on {@link verifyOneTimeCode}: the comparison happens in JavaScript, so an
+ * atomic counter alone still lets every guess that read the row before the cap
+ * landed be evaluated against a live code. Recovery re-keys the wallet and has
+ * the strictest budget in the app — three guesses — so it is the last place
+ * that should mean "three, unless you ask in parallel".
+ *
+ * The failure paths therefore cannot `throw` from inside the callback: that
+ * would roll the transaction back and discard the attempt that was just
+ * counted, handing an attacker unlimited free guesses. The outcome is returned
+ * and the error raised outside, so the write commits.
+ *
+ * Nothing in the callback may touch `db`; see {@link recordRecoveryAttemptOn}.
+ */
 export async function verifyRecoveryCode(
   email: string,
   code: string
 ): Promise<User> {
   const normalized = normalizeEmail(email);
-  const user = await getUserByEmail(normalized);
-  if (!user) {
-    throw new Error('User not found');
-  }
-  if (await isRecoveryLocked(email)) {
-    throw new Error('Recovery is locked. Try again later.');
-  }
-  if (!user.recoveryCode || !user.recoveryCodeExpiresAt) {
-    throw new Error('No active recovery request');
-  }
-  if (new Date(user.recoveryCodeExpiresAt).getTime() <= Date.now()) {
-    await recordRecoveryAttempt(email);
-    throw new Error('Recovery code expired');
-  }
-  if (user.recoveryCode !== code) {
-    await recordRecoveryAttempt(email);
-    throw new Error('Invalid recovery code');
+
+  type Outcome = { ok: true; user: User } | { ok: false; error: string };
+
+  const outcome = await db.transaction(async (tx): Promise<Outcome> => {
+    const [row] = await tx
+      .select()
+      .from(users)
+      .where(eq(users.email, normalized))
+      // 'no key update', not 'update': neither transaction touches
+      // users.email, and the weaker mode does not conflict with the
+      // FOR KEY SHARE that an insert into claim_links or user_devices takes
+      // on its parent row. Still exclusive against another verifier.
+      .for('no key update');
+
+    if (!row) {
+      return { ok: false, error: 'User not found' };
+    }
+    if (
+      row.recoveryLockedUntil &&
+      row.recoveryLockedUntil.getTime() > Date.now()
+    ) {
+      return { ok: false, error: 'Recovery is locked. Try again later.' };
+    }
+    if (!row.recoveryCode || !row.recoveryCodeExpiresAt) {
+      return { ok: false, error: 'No active recovery request' };
+    }
+
+    if (row.recoveryCodeExpiresAt.getTime() <= Date.now()) {
+      await recordRecoveryAttemptOn(tx, normalized);
+      return { ok: false, error: 'Recovery code expired' };
+    }
+
+    // `constantTimeEquals`, not `!==`. Recovery is the highest-stakes code in
+    // the app and was the last one still compared with a short-circuiting
+    // operator; there is one implementation of that comparison on purpose.
+    if (!constantTimeEquals(row.recoveryCode, code)) {
+      await recordRecoveryAttemptOn(tx, normalized);
+      return { ok: false, error: 'Invalid recovery code' };
+    }
+
+    const [updated] = await tx
+      .update(users)
+      .set({
+        recoveryVerifiedAt: new Date(),
+        recoveryCode: null,
+        recoveryCodeExpiresAt: null,
+        recoveryAttempts: null,
+      })
+      .where(eq(users.email, normalized))
+      .returning();
+
+    if (!updated) {
+      return { ok: false, error: 'User not found' };
+    }
+
+    return { ok: true, user: mapUser(updated) };
+  });
+
+  if (!outcome.ok) {
+    throw new Error(outcome.error);
   }
 
-  const [updated] = await db
-    .update(users)
-    .set({
-      recoveryVerifiedAt: new Date(),
-      recoveryCode: null,
-      recoveryCodeExpiresAt: null,
-      recoveryAttempts: null,
-    })
-    .where(eq(users.email, normalized))
-    .returning();
-
-  if (!updated) {
-    throw new Error('User not found');
-  }
-
-  return mapUser(updated);
+  return outcome.user;
 }
 
 export async function clearRecoveryState(email: string): Promise<User> {

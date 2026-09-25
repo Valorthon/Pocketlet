@@ -92,10 +92,35 @@ You also need a separate testnet wallet funded with XLM and USDC to act as an ex
 
 Inspect state with `pnpm --filter web db:studio` at any point.
 
+#### Finding an emailed code
+
+Signup verification, PIN reset and recovery all email a one-time code and
+return nothing but a confirmation (issue #18). Three places to read it,
+depending on where the app is running — no extra tooling, and deliberately no
+"reveal the code" endpoint, which would be the same leak wearing a hat:
+
+- **Locally**, with `RESEND_API_KEY` unset, `logMailer` prints the whole
+  message to stdout. It is in the `pnpm run dev:web` terminal, tagged
+  `[MAIL:log]`.
+- **In the database**, `pnpm --filter web db:studio` → `users` →
+  `verification_code`, `pin_reset_code` or `recovery_code`, each beside its
+  `*_expires_at` and attempt counter.
+- **On a deployed service**, the same `[MAIL:log]` line is in the Railway logs
+  when no provider is configured; with `RESEND_API_KEY` set the mail actually
+  arrives, and a delivery failure shows as an `[AUTH] … not delivered` line
+  with the route answering **502** rather than pretending it sent.
+
+Sending a code is rate limited per address and per IP
+(`RATE_LIMIT_AUTH_CODE_*` in `.env.example`); a testing session that hits a 429
+should raise those locally rather than work around them.
+
 ### 1. Sign up
 
 1. Open http://localhost:3000 → **Sign up**, enter an email.
-2. The verification code comes back in the API response (a testnet shortcut). Enter it.
+2. Read the 6-digit code out of the mail and enter it. The code is **never** in
+   the API response (issue #18) — see [Finding an emailed
+   code](#finding-an-emailed-code) below. It expires in 15 minutes and dies
+   after five wrong guesses; submitting the email again sends a fresh one.
 3. Register a passkey when prompted.
 4. Save the 12-word recovery phrase — recovery testing needs it.
 5. `/home` loads and shows the balance card.
@@ -151,7 +176,8 @@ Log out and back in on the same device. A `user_devices` row should exist with a
 ### 9. Passkey recovery
 
 1. Open `/recover`, enter the email, submit.
-2. The recovery code is returned in the response. Enter it.
+2. Read the recovery code out of the mail — same three places as step 1.2 — and
+   enter it.
 3. Wait out `RECOVERY_WAITING_PERIOD_MS` (60s if set above).
 4. Enter the 12-word phrase and register a new passkey.
 5. Log in with the new passkey.

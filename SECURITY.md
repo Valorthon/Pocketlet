@@ -1,6 +1,6 @@
 # Security Policy
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-25
 
 ## Scope
 
@@ -34,7 +34,7 @@ Worth understanding before you report, because several of these look alarming an
 
 These are deliberate testnet shortcuts, not findings:
 
-- Email and recovery verification codes are returned in API responses, because there is no mail provider wired up.
+- One-time codes (signup verification, PIN reset, recovery) are emailed and never returned in an API response. With no `RESEND_API_KEY` set, testnet delivers them through the log mailer, which prints the message to stdout — so on a testnet deploy anyone with log access can read a code. They expire in 15 minutes, allow five wrong guesses, and are rate limited per address and per IP.
 - `FEE_PAYER_SECRET_KEY` is auto-generated and Friendbot-funded on testnet when unset. It is required on the public network, and the app refuses to start without it.
 - `.env.example` ships placeholder secrets. On the Stellar public network the app fails fast if `SESSION_SECRET` is default or short, if `WEBAUTHN_ORIGIN` is not HTTPS, or if `WEBAUTHN_RP_ID` is `localhost`.
 - WebAuthn registration challenges are server-generated, single-use and expire after five minutes; wallet deploy, backup passkey and recovery submit all require one. Authentication challenges are bound to the transaction payload and verified on-chain by the smart wallet.

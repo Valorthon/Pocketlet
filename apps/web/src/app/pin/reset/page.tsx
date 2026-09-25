@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 export default function PinResetPage() {
   const router = useRouter();
   const [code, setCode] = useState('');
-  const [showCode, setShowCode] = useState(false);
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -32,15 +31,13 @@ export default function PinResetPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'request' }),
       });
-      const data = (await res.json()) as { error?: string; code?: string };
+      const data = (await res.json()) as { error?: string };
       if (!res.ok) {
         setError(data.error ?? 'Failed to send reset code');
         return;
       }
-      if (data.code) {
-        setCode(data.code);
-        setShowCode(true);
-      }
+      // Emailed only (issue #18); the user types it in below.
+      setCode('');
       setStep('reset');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send reset code');
@@ -106,13 +103,8 @@ export default function PinResetPage() {
 
         {step === 'reset' && (
           <div className="space-y-4">
-            {showCode && (
-              <div className="rounded-lg bg-slate-100 p-3 text-center font-mono text-lg tracking-widest text-slate-900">
-                {code}
-              </div>
-            )}
-            <p className="text-xs text-amber-700">
-              Testnet mode: the code is shown above for easy testing.
+            <p className="text-sm text-slate-600">
+              Enter the 6-digit reset code sent to your email, then choose a new PIN.
             </p>
             <input
               type="text"

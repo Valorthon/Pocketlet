@@ -1,5 +1,5 @@
-import { randomInt } from 'node:crypto';
 import type { User } from './store';
+import { generateVerificationCode } from './verification-code';
 
 export const RECOVERY_CODE_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 export const RECOVERY_MAX_ATTEMPTS = 3;
@@ -21,8 +21,13 @@ export function getRecoveryWaitingPeriodMs(): number {
   return parsed;
 }
 
+/**
+ * The recovery code. One generator for every one-time code in the app
+ * (issue #121) — this is `generateVerificationCode` under the name the
+ * recovery flow uses, not a second implementation.
+ */
 export function generateRecoveryCode(): string {
-  return randomInt(100000, 1000000).toString();
+  return generateVerificationCode();
 }
 
 export function createRecoveryCodeExpiry(): string {

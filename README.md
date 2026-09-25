@@ -118,7 +118,7 @@ The web app runs on [Railway](https://railway.app/) from `Dockerfile` + `railway
 
 V1 is a testnet technology interface. It does not custody funds, perform KYC, or process fiat. User funds live in each user's own smart wallet, and the platform never holds signing keys.
 
-Known testnet shortcuts that must be closed before mainnet — including email verification codes returned in API responses and an unbound WebAuthn challenge — are tracked in [`docs/production-readiness.md`](./docs/production-readiness.md). Reporting policy is in [`SECURITY.md`](./SECURITY.md).
+Known testnet shortcuts that must be closed before mainnet — including the file-backed testnet fee-payer key — are tracked in [`docs/production-readiness.md`](./docs/production-readiness.md). Reporting policy is in [`SECURITY.md`](./SECURITY.md).
 
 ## Screenshots
 

@@ -89,10 +89,18 @@ describe('auth store', () => {
   it('manages PIN reset codes', async () => {
     await createUser('reset@example.com', '000000');
     await setPinResetCode('reset@example.com', '987654');
-    expect(await verifyPinResetCode('reset@example.com', '987654')).toBe(true);
-    expect(await verifyPinResetCode('reset@example.com', '111111')).toBe(false);
+    expect(await verifyPinResetCode('reset@example.com', '987654')).toEqual({
+      ok: true,
+    });
+    expect(await verifyPinResetCode('reset@example.com', '111111')).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
     await clearPinResetCode('reset@example.com');
-    expect(await verifyPinResetCode('reset@example.com', '987654')).toBe(false);
+    expect(await verifyPinResetCode('reset@example.com', '987654')).toEqual({
+      ok: false,
+      reason: 'no-code',
+    });
   });
 
   it('stores wallet info including passkey key id', async () => {
