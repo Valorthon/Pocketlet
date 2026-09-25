@@ -120,7 +120,7 @@ The dotenv call moved to `apps/web/vitest.env.ts`, listed ahead of `vitest.setup
 
 ### Test coverage gaps — Open
 
-**Issue #63.** No component or page tests exist at all, and all five `api/wallet/claim-links/*` routes — the newest, most intricate feature — are untested. Contract tests use bare `#[should_panic]` with no `expected =` string, so a test can pass on the wrong panic. No coverage tooling is configured. Full inventory in [testing.md](./testing.md).
+**Issue #63.** All five `api/wallet/claim-links/*` routes and `src/lib/wallet/claim-secrets.ts` now have colocated tests, and the eight bare `#[should_panic]` attributes in `contracts/escrow` carry `expected =` strings (#123 tracks replacing the asserts with typed errors). Still open: no component or page tests exist at all — `vitest.config.ts` runs in the `node` environment, so `@vitejs/plugin-react` only supplies the JSX transform and nothing can render; standing them up needs jsdom or happy-dom plus a testing library. No coverage tooling is configured either. Also untested: `admin.ts`, `notifications.ts` (being rewritten by #60), `auth/session.ts` and `wallet/{assets,network,token,recipient,device-key,claim-link-client}.ts`. Full inventory in [testing.md](./testing.md).
 
 ### Lint cannot catch React bugs — Closed
 
