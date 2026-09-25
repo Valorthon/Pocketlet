@@ -186,7 +186,7 @@ export default function HomePage() {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
 
-  const fetchBalance = async () => {
+  const fetchBalance = useCallback(async () => {
     const res = await fetch('/api/wallet/balance');
     if (res.status === 401) {
       router.push('/login');
@@ -201,9 +201,9 @@ export default function HomePage() {
     setData(await res.json());
     setError(null);
     setLoading(false);
-  };
+  }, [router]);
 
-  const fetchRecent = async () => {
+  const fetchRecent = useCallback(async () => {
     try {
       const res = await fetch('/api/wallet/transactions');
       if (res.status === 401) {
@@ -216,7 +216,7 @@ export default function HomePage() {
     } catch {
       setRecent([]);
     }
-  };
+  }, [router]);
 
   const fetchPendingClaims = async () => {
     try {
@@ -235,7 +235,7 @@ export default function HomePage() {
     fetchPendingClaims();
     const id = setInterval(() => fetchBalance(), 15000);
     return () => clearInterval(id);
-  }, []);
+  }, [fetchBalance, fetchRecent]);
 
   if (loading) {
     return (

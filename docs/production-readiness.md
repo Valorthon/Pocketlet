@@ -122,9 +122,13 @@ The dotenv call moved to `apps/web/vitest.env.ts`, listed ahead of `vitest.setup
 
 **Issue #63.** No component or page tests exist at all, and all five `api/wallet/claim-links/*` routes — the newest, most intricate feature — are untested. Contract tests use bare `#[should_panic]` with no `expected =` string, so a test can pass on the wrong panic. No coverage tooling is configured. Full inventory in [testing.md](./testing.md).
 
-### Lint cannot catch React bugs — Open
+### Lint cannot catch React bugs — Closed
 
-The shared ESLint config is base + `typescript-eslint` only: no `eslint-config-next`, no `react-hooks` plugin, across 25 `'use client'` files. Hook-dependency mistakes ship silently.
+**Issue #105.** The shared ESLint config was base + `typescript-eslint` only, across 24 `'use client'` files, so hook-dependency mistakes and conditional hooks shipped silently.
+
+`packages/config/eslint/index.mjs` now adds `eslint-plugin-react-hooks` 7 (flat `recommended`, with `exhaustive-deps` raised from `warn` to `error`) and `@next/eslint-plugin-next` 15.5.25 (`recommended` + `core-web-vitals`). `eslint-config-next` is deliberately not used: the 15.x line excludes ESLint 10, which this repo already runs, and the 16.x line belongs to the Next 16 migration (#90). The plugins are registered directly instead, which is why the `next-env.d.ts` ignore stays in that file.
+
+No `rules-of-hooks` violations existed. The sweep fixed five `exhaustive-deps` findings and hoisted `StatCard` out of `admin/page.tsx`'s render body (`react-hooks/static-components`). One rule remains off: `react-hooks/set-state-in-effect` flags 12 pre-existing effects, each needing its own behaviour-preserving restructure with no component tests behind it (#63). That is tracked separately, not with this issue.
 
 ### No observability — Open
 

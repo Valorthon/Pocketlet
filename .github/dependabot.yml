@@ -26,12 +26,17 @@ version: 2
 # with a passkey — so a green check on these PRs means "typechecks and builds",
 # not "login still works". Run the manual checklist in docs/testing.md.
 #
-# Two more rules exist because a GREEN check was wrong:
+# Three more rules exist because a GREEN check was wrong, or would be:
 #
 #   eslint       eslint and @eslint/js are versioned in lockstep (@eslint/js@10
 #                peers eslint ^10). PR #103 bumped eslint to 10 alone, left
 #                @eslint/js on 9 and still passed. Majors are INCLUDED so the
 #                set arrives as one PR, as with webauthn.
+#   @next/eslint-plugin-next
+#                is pinned to an exact version that must equal the `next`
+#                version in apps/web/package.json — it is Next's own lint rules,
+#                shipped per Next release. It rides in the eslint group so the
+#                bump is visible, but reject one that moves it away from `next`.
 #   @types/node  must track the Node runtime major (22 — ci.yml, cd.yml and the
 #                Dockerfile), not the latest release. PR #100 offered 26 and
 #                passed, which would let code typecheck against APIs that do
@@ -64,6 +69,8 @@ updates:
           - "eslint"
           - "@eslint/js"
           - "typescript-eslint"
+          - "eslint-plugin-react-hooks"
+          - "@next/eslint-plugin-next"
       production-dependencies:
         dependency-type: production
         exclude-patterns:

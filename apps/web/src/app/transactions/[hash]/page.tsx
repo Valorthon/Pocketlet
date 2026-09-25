@@ -45,7 +45,7 @@ export default function TransactionDetailsPage() {
     };
 
     fetchDetails();
-  }, [hash]);
+  }, [hash, router]);
 
   const formatDate = (value: string) => {
     return new Date(value).toLocaleString();

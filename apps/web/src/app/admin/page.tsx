@@ -18,6 +18,21 @@ interface Stats {
   feePayerBalance: string;
 }
 
+function StatCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}): JSX.Element {
+  return (
+    <div className="rounded-xl bg-white p-4 shadow">
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
+    </div>
+  );
+}
+
 export default function AdminPage(): JSX.Element {
   const [token, setToken] = useState('');
   const [authenticated, setAuthenticated] = useState(false);
@@ -96,19 +111,6 @@ export default function AdminPage(): JSX.Element {
       </div>
     );
   }
-
-  const StatCard = ({
-    label,
-    value,
-  }: {
-    label: string;
-    value: string | number;
-  }): JSX.Element => (
-    <div className="rounded-xl bg-white p-4 shadow">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
-    </div>
-  );
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8">
