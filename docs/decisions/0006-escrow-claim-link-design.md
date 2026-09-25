@@ -27,7 +27,7 @@ Anyone holding the link holds the funds. That is inherent to a bearer instrument
 Two rough edges to be aware of:
 
 - **The `expiry` unit changes across the boundary.** The contract takes a **ledger sequence**; `claim_links.expiry` in Postgres is a **timestamp**. Conversion happens ad hoc in `api/wallet/claim-links/create/route.ts`.
-- **The contract panics with strings** via `assert!` and `expect` rather than a `#[contracterror]` enum, so callers get panic messages instead of typed error codes. The unit tests use bare `#[should_panic]` with no `expected =` string, so a test can pass on the wrong panic.
+- **The contract panics with strings** via `assert!` and `expect` rather than a `#[contracterror]` enum, so callers get panic messages instead of typed error codes. The unit tests now pin each panic with an `expected =` string, so a test can no longer pass on the wrong panic.
 
 This contract is also, since [0001](./0001-passkey-kit-smart-accounts.md), the only first-party Soroban code in the repo.
 

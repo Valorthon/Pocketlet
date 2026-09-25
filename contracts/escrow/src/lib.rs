@@ -215,7 +215,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Deposit with this claim_hash already exists")]
     fn test_deposit_duplicate_fails() {
         let env = setup_env();
         let contract_id = env.register(EscrowContract, ());
@@ -235,7 +235,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Amount must be positive")]
     fn test_deposit_zero_amount_fails() {
         let env = setup_env();
         let contract_id = env.register(EscrowContract, ());
@@ -254,7 +254,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Expiry must be in the future")]
     fn test_deposit_expiry_not_future_fails() {
         let env = setup_env();
         let contract_id = env.register(EscrowContract, ());
@@ -303,7 +303,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Deposit not found")]
     fn test_claim_wrong_secret_fails() {
         let env = setup_env();
         let contract_id = env.register(EscrowContract, ());
@@ -326,7 +326,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Deposit already claimed")]
     fn test_claim_already_claimed_fails() {
         let env = setup_env();
         let contract_id = env.register(EscrowContract, ());
@@ -349,7 +349,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Deposit has expired")]
     fn test_claim_expired_fails() {
         let env = setup_env();
         let contract_id = env.register(EscrowContract, ());
@@ -405,7 +405,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Deposit has not expired yet")]
     fn test_refund_before_expiry_fails() {
         let env = setup_env();
         let contract_id = env.register(EscrowContract, ());
@@ -426,7 +426,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Deposit already claimed")]
     fn test_refund_already_claimed_fails() {
         let env = setup_env();
         let contract_id = env.register(EscrowContract, ());

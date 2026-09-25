@@ -103,7 +103,7 @@ The `/swap` page, `api/wallet/swap`, and `submitSignedTransactionFast` were dele
 
 ## Testing expectations
 
-Colocate `*.test.ts` next to the source. Coverage is uneven — the gaps and their tracking issues are in [`docs/production-readiness.md`](./docs/production-readiness.md). Prefer closing those over deepening areas already covered. Rust panics in `contracts/escrow` use bare `#[should_panic]` with no `expected =` string, so a test can pass on the wrong panic; add the string when you touch one. See [`docs/testing.md`](./docs/testing.md).
+Colocate `*.test.ts` next to the source. Coverage is uneven — the gaps and their tracking issues are in [`docs/production-readiness.md`](./docs/production-readiness.md). Prefer closing those over deepening areas already covered. Rust panics in `contracts/escrow` carry `#[should_panic(expected = "...")]`, so a test fails on the wrong panic rather than passing on an unrelated setup failure; keep the string when you add or change one (#123 tracks converting the asserts to typed errors). See [`docs/testing.md`](./docs/testing.md).
 
 ## Keeping docs true
 
