@@ -91,6 +91,19 @@ describe('buildClaimLinkEmail', () => {
     expect(message.text).not.toMatch(/\/claim/);
   });
 
+  // Nothing sweeps expired escrows: contracts/escrow/src/lib.rs `refund()`
+  // calls `sender.require_auth()`, so the money only moves when the sender
+  // signs a refund via api/wallet/claim-links/refund. Copy promising an
+  // automatic return would be telling the recipient — and, by implication,
+  // the sender — that ignoring this is safe when it strands the funds.
+  it('does not promise that an unclaimed payment comes back on its own', () => {
+    expect(message.text).toContain(
+      'the sender\ncan refund the payment themselves once the claim expires.'
+    );
+    expect(message.text).not.toMatch(/automatic/i);
+    expect(message.text).not.toMatch(/gets the money back/i);
+  });
+
   it('carries no claim secret', () => {
     // The secret is the on-chain preimage; anyone holding it could claim the
     // escrow regardless of who they are. It must never leave the database.
@@ -123,6 +136,46 @@ describe('deliverClaimLinkNotification — email', () => {
     expect(row.error).toBeNull();
     expect(row.sentAt).not.toBeNull();
     expect(row.lastAttemptAt).not.toBeNull();
+  });
+
+  // ORIGIN falls back to http://localhost:3000 when WEBAUTHN_ORIGIN is unset,
+  // and the guardrails only demand that variable on the public network — so a
+  // testnet deploy with a real provider can mail a stranger step 1 pointing at
+  // their own machine. It still sends (the deposit is already on chain), but
+  // it says so.
+  it('warns when a real provider is about to mail a localhost origin', async () => {
+    const claimLinkId = await seedClaimLink();
+    mailer = stubMailer({ ok: true, provider: 'resend' });
+
+    await deliverClaimLinkNotification({
+      claimLinkId,
+      channel: 'email',
+      recipient: RECIPIENT_EMAIL,
+      amount: '25',
+      asset: 'USDC',
+    });
+
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('set WEBAUTHN_ORIGIN')
+    );
+    expect(await notificationFor(claimLinkId)).toMatchObject({
+      status: 'sent',
+    });
+  });
+
+  it('does not warn about the origin when the log mailer is in use', async () => {
+    const claimLinkId = await seedClaimLink();
+    mailer = stubMailer({ ok: true, provider: 'log' });
+
+    await deliverClaimLinkNotification({
+      claimLinkId,
+      channel: 'email',
+      recipient: RECIPIENT_EMAIL,
+      amount: '25',
+      asset: 'USDC',
+    });
+
+    expect(console.warn).not.toHaveBeenCalled();
   });
 
   it('records a failed notification, with the error, when the mailer reports failure', async () => {

@@ -62,7 +62,11 @@ function truncate(message: string): string {
  * The claim-link email.
  *
  * Exported for the tests, which assert on the copy — specifically that it
- * never acquires a "click here" and never carries the claim secret.
+ * never acquires a "click here", never carries the claim secret, and never
+ * promises that an unclaimed payment comes back on its own. There is no
+ * sweeper and no scheduler: `escrow.refund()` calls `sender.require_auth()`,
+ * so the sender has to sign and submit a refund through
+ * `api/wallet/claim-links/refund`. Ignoring the mail strands the money.
  */
 export function buildClaimLinkEmail(
   recipient: string,
@@ -85,16 +89,39 @@ export function buildClaimLinkEmail(
       'Signing up with a different address will not find it.',
       '',
       'If you were not expecting this, you can ignore this email — the sender',
-      'gets the money back automatically when the claim expires.',
+      'can refund the payment themselves once the claim expires.',
       '',
       '— Pocketlet',
     ].join('\n'),
   };
 }
 
+/**
+ * A localhost `ORIGIN` in mail that is actually leaving the process is a
+ * misconfiguration, not a choice.
+ *
+ * `ORIGIN` falls back to `http://localhost:3000` when `WEBAUTHN_ORIGIN` is
+ * unset, and `production-guardrails.mjs` only demands that variable on the
+ * public network — so a testnet deploy with a real mail provider can send step
+ * 1 of this email pointing at a machine the recipient does not have. Nothing
+ * here can safely refuse to send (the escrow deposit is already on chain), but
+ * it can be loud about it. The log mailer is exempt: locally that value is
+ * correct.
+ */
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i;
+
+function warnIfOriginIsLocal(mailerName: string): void {
+  if (mailerName === 'log' || !LOCAL_ORIGIN.test(ORIGIN)) return;
+  console.warn(
+    `[NOTIFICATION] sending mail via ${mailerName} with ORIGIN=${ORIGIN} — ` +
+      'recipients cannot reach that address; set WEBAUTHN_ORIGIN'
+  );
+}
+
 /** Call the mailer, treating a thrown error as a failed result. */
 async function sendGuarded(message: MailMessage): Promise<MailResult> {
   const mailer = getMailer();
+  warnIfOriginIsLocal(mailer.name);
   try {
     return await mailer.send(message);
   } catch (err) {
