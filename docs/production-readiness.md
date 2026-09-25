@@ -136,7 +136,7 @@ Around 23 raw `console.*` calls with no logging abstraction, no alerting, and no
 
 ### Deploy logic is duplicated — Closed
 
-**Issue #106.** `.github/workflows/cd.yml` now runs `bash ./deploy.sh` instead of re-implementing build, key setup, and deploy inline. The script is the only copy; it writes the deployed address to `$GITHUB_OUTPUT` and the job summary when those variables are set, so the CI log is unchanged.
+**Issue #106.** `.github/workflows/cd.yml` now runs `bash ./deploy.sh` instead of re-implementing build, key setup, and deploy inline. The script is the only copy; it writes the deployed address to `$GITHUB_OUTPUT` and the job summary when those variables are set, so the step output and job summary are unchanged.
 
 ---
 

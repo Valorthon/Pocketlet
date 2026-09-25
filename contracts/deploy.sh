@@ -25,7 +25,11 @@ else
   echo "==> Generating deployer key..."
   stellar keys generate "$DEPLOYER_KEY_NAME" || true
   echo "==> Funding deployer key..."
-  stellar keys fund "$DEPLOYER_KEY_NAME" --network "$NETWORK" || true
+  # Non-fatal: the key may already be funded. A genuine friendbot failure still
+  # surfaces a few seconds later as a deploy error, so say so here rather than
+  # letting the cause disappear.
+  stellar keys fund "$DEPLOYER_KEY_NAME" --network "$NETWORK" \
+    || echo "    Warning: funding failed; continuing (deploy will fail if the account is unfunded)"
 fi
 
 echo "==> Deploying to $NETWORK..."

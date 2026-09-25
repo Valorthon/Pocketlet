@@ -76,7 +76,7 @@ Sponsorship via OpenZeppelin Channels was evaluated and deferred; see [ADR 0003]
 
 **Transfers** are SAC token transfers, authorized by the user's passkey, then submitted by the fee payer. A PIN check gates the flow at the application layer before anything is signed; on-chain authorization is enforced by the smart wallet's `__check_auth`.
 
-**Recipients** resolve in this order (`src/lib/wallet/recipient.ts`): raw Stellar address (`G…` or `C…`) → phone number → email → username. Email lookup normalizes to lowercase, so case does not matter. If nothing resolves and the app has contact details, the send becomes a claimable link instead — which is still what genuinely unregistered emails, and registered users whose wallet is not deployed yet, fall through to.
+**Recipients** resolve in this order (`src/lib/wallet/recipient.ts`): raw Stellar address (`G…` or `C…`) → phone number → username → email. Email lookup normalizes to lowercase, so case does not matter. If nothing resolves and the app has contact details, the send becomes a claimable link instead — which is still what genuinely unregistered emails, and registered users whose wallet is not deployed yet, fall through to.
 
 **Transaction history** is read from Horizon and classified into receive, send, and claim-link activity. Swap classification was removed with the swap feature.
 

@@ -72,7 +72,7 @@ Before opening a PR: `pnpm run lint && pnpm run typecheck && pnpm --filter web t
 
 ## Landmines
 
-Verified against the code on 2026-09-20. These are the things that look wrong, are wrong, or will waste your time.
+Verified against the code on 2026-09-25. These are the things that look wrong, are wrong, or will waste your time.
 
 **Tests need a live database.** `apps/web/vitest.setup.ts` runs `migrate()` at module load and clears tables in `beforeEach`, so without Postgres the whole suite fails at import rather than with a useful message. `DATABASE_URL` is honoured from `apps/web/.env.local` — `apps/web/vitest.env.ts` is listed first in `setupFiles` so dotenv runs before `./src/lib/db` constructs the `pg` Pool at module scope. Keep it first; putting the dotenv call inside `vitest.setup.ts` is always too late, because ES module imports are evaluated before any statement body. (That was issue #58.) `drizzle.config.ts` loads `.env.local` for the same reason.
 
