@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST } from './route';
+import { exhaustFeePayerBudget } from '@/lib/rate-limit.test-support';
 import {
   createUser,
   setEmailVerified,
@@ -43,6 +44,10 @@ vi.mock('@/lib/wallet/submit', () => ({
 
 beforeEach(() => {
   cookieJar = {};
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 function createDeployRequest(body: unknown, token?: string) {
@@ -168,5 +173,60 @@ describe('POST /api/wallet/deploy', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain('response, keyIdBase64, contractId, and signedTx are required');
+  });
+});
+
+/**
+ * Rate-limit wiring (issue #36).
+ *
+ * The limiter itself is tested in `src/lib/rate-limit.test.ts`. What matters
+ * here is that this handler charges it, and charges it *before*
+ * `takePasskeyChallenge` — that call clears a single-use nonce as it reads it,
+ * so a throttled attempt that got past it would force the user to restart the
+ * whole passkey ceremony for a request the server never performed.
+ */
+describe('POST /api/wallet/deploy rate limiting', () => {
+  const EMAIL = 'alice@example.com';
+
+  async function seedPendingDeploy() {
+    await createUser(EMAIL, '000000');
+    await setEmailVerified(EMAIL);
+    await setPasskeyChallenge(EMAIL, CHALLENGE);
+    return createSessionToken({ email: EMAIL });
+  }
+
+  function validDeploy(token: string) {
+    return createDeployRequest(
+      {
+        response: { id: 'test-key-id' },
+        keyIdBase64: 'test-key-id',
+        contractId: 'CABC',
+        signedTx: 'AAAA...',
+      },
+      token
+    );
+  }
+
+  it('returns 429 once the fee-payer budget is spent', async () => {
+    const token = await seedPendingDeploy();
+    await exhaustFeePayerBudget('wallet.deploy', EMAIL);
+
+    const res = await POST(validDeploy(token));
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('does not burn the passkey challenge on a throttled attempt', async () => {
+    const token = await seedPendingDeploy();
+    await exhaustFeePayerBudget('wallet.deploy', EMAIL);
+
+    expect((await POST(validDeploy(token))).status).toBe(429);
+
+    // Same challenge, budget restored: the ceremony is still valid, which it
+    // would not be if takePasskeyChallenge had run first.
+    vi.unstubAllEnvs();
+    const retry = await POST(validDeploy(token));
+    expect(retry.status).toBe(200);
+    expect((await getUserByEmail(EMAIL))?.walletContractId).toBe('CABC');
   });
 });

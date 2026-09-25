@@ -8,16 +8,16 @@ import { getUserByEmail, type User } from './store';
  * The session preamble every authenticated wallet route repeats.
  *
  * Read the cookie, verify the JWT, load the user, check the user is in a state
- * that allows the operation. It was copy-pasted into a dozen route handlers,
- * which is how the fee-payer routes ended up with no single place to hang a
- * rate limit (issue #36).
+ * that allows the operation. The same block was hand-rolled in every
+ * authenticated route, which is how the fee-payer routes ended up with no
+ * single place to hang a rate limit (issue #36). Nine route files were
+ * migrated here while wiring those limits; the rest still duplicate it, so
+ * this is the thing to reach for when you touch one.
  *
- * This is deliberately *not* `src/middleware.ts`. Next 15 middleware runs on
- * the Edge runtime by default, where `pg` and `drizzle-orm` cannot run, and it
- * runs before the handler, so it cannot know whether a request will actually
- * reach `submitSignedTransaction`. Rate limiting is therefore an explicit call
- * inside each handler (see `src/lib/rate-limit.ts`), and this file only removes
- * the duplication that made that hard to see.
+ * This is deliberately *not* `src/middleware.ts`, and rate limiting is
+ * deliberately not done here either — it is an explicit call inside each
+ * handler (`src/lib/rate-limit.ts`). Why:
+ * [ADR 0008](../../../../../docs/decisions/0008-fee-payer-rate-limiting.md).
  *
  * The 404 messages differ per route on purpose — 'Wallet not deployed' vs
  * 'Wallet not found' vs 'User not found or email not verified' — so each caller

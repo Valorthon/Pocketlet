@@ -21,7 +21,7 @@ Users never need XLM, and the UX goal holds.
 
 The security property that makes this acceptable: **the fee payer is not a signer on any user wallet.** It cannot originate a transfer or move user funds — it only pays for the inclusion of operations users have already signed. Rotating it requires no user action; drain the old account and retire it.
 
-The costs are operational. The fee payer is a live key that must be funded and monitored, and it is a spend vector: the submission endpoints have no rate limiting (issue #36), so on a public network an attacker could drain it through volume. On testnet an unset key is auto-generated and Friendbot-funded, which is convenient locally but means the secret sits on local disk under `POCKETLET_DATA_DIR`.
+The costs are operational. The fee payer is a live key that must be funded and monitored, and it is a spend vector: the submission endpoints are rate-limited per user and per IP as of issue #36 ([ADR 0008](./0008-fee-payer-rate-limiting.md)), but the budget those limits permit is still real spend that has to be funded and watched. On testnet an unset key is auto-generated and Friendbot-funded, which is convenient locally but means the secret sits on local disk under `POCKETLET_DATA_DIR`.
 
 Re-simulating on every submission costs an extra RPC round trip but avoids failures from stale resource-fee estimates.
 

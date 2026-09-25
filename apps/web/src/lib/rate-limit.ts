@@ -13,24 +13,13 @@ const { rateLimits } = schema;
  * ones or deliberate on-chain failures — drains `FEE_PAYER_SECRET_KEY` at the
  * platform's expense (issue #36).
  *
- * Three design points worth knowing before changing anything here:
- *
- * 1. **The counter lives in Postgres.** An in-memory `Map` resets on every
- *    deploy and every restart of the single Railway container, so it cannot
- *    bound spend over any interesting period.
- *
- * 2. **Time comes from JS `Date.now()`, never SQL `now()`.** `vi.useFakeTimers`
- *    controls the former and not the database clock; a SQL-clock limiter is
- *    untestable, and untestable rate limiting is indistinguishable from none.
- *
- * 3. **Enforcement is an explicit call, not middleware.** Next 15 middleware is
- *    Edge-by-default, where `pg` and `drizzle-orm` cannot run (they are already
- *    `serverExternalPackages` in `next.config.mjs`), and — more importantly —
- *    middleware runs before the handler and so cannot tell whether a request
- *    will actually reach the fee payer. Routes call `enforceFeePayerRateLimit`
- *    immediately before `submitSignedTransaction`, so a request rejected by
- *    validation costs the caller nothing: we count the expensive thing, not
- *    merely the request.
+ * Four things here are deliberate and easy to undo by accident: the counter
+ * lives in Postgres rather than an in-memory `Map`, the window clock is JS
+ * `Date.now()` and never SQL `now()`, enforcement is an explicit call in each
+ * handler rather than Edge middleware, and the client IP is the *rightmost*
+ * `X-Forwarded-For` entry. The reasoning for all four is in
+ * [ADR 0008](../../../../docs/decisions/0008-fee-payer-rate-limiting.md) — read it
+ * before changing any of them.
  */
 
 /** One route that spends fee-payer funds. Used as the bucket's first segment. */
@@ -75,10 +64,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * config change) see the current value. A missing, unparseable or non-positive
  * value falls back to the default: a limit of 0 would lock every user out of
  * their own wallet, which is a worse failure than a limit that is too high.
+ *
+ * `Number`, not `Number.parseInt`. `parseInt` stops at the first character it
+ * cannot use, so it turns '1e4' into 1 and '100x' into 100 — silently
+ * producing the near-total lockout this function exists to prevent. `Number`
+ * rejects both spellings of nonsense outright ('100x' is NaN) while still
+ * reading '1e4' as the 10000 the operator meant.
  */
 function positiveIntFromEnv(raw: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(raw ?? '', 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  if (raw === undefined || raw.trim() === '') {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
     return fallback;
   }
   return parsed;
@@ -116,12 +114,20 @@ export function feePayerPolicies(): Array<{
         windowMs: DAY_MS,
       },
     },
+    // The per-IP defaults are ~5x the per-user ones. The per-user cap is the
+    // real bound on spend; this is only a backstop against one actor working
+    // several accounts. At 2x, three ordinary users behind one household,
+    // office or CGNAT egress exhausted the shared budget before any of them
+    // reached their own entitlement — and one abuser on that egress could 429
+    // everybody else behind it for the day. Widening is safe because
+    // `normalizeIpForBucket` keys IPv6 on the /64, so an attacker cannot
+    // rotate addresses into fresh buckets.
     {
       kind: 'ip',
       policy: {
         limit: positiveIntFromEnv(
           process.env.RATE_LIMIT_FEE_PAYER_PER_IP_PER_MINUTE,
-          20
+          50
         ),
         windowMs: MINUTE_MS,
       },
@@ -131,7 +137,7 @@ export function feePayerPolicies(): Array<{
       policy: {
         limit: positiveIntFromEnv(
           process.env.RATE_LIMIT_FEE_PAYER_PER_IP_PER_DAY,
-          200
+          500
         ),
         windowMs: DAY_MS,
       },
@@ -178,11 +184,12 @@ export function resolvePolicies(): Array<{
 /**
  * Build a bucket key.
  *
- * Three segments joined by '|': the route, the subject kind, and the subject
- * itself. The window length is appended so that the two windows of the same
- * subject keep separate counters. No segment can contain '|' — route names are
- * literals from the unions above, kinds are 'user' or 'ip', emails and IPs
- * cannot contain it — so distinct inputs cannot collide on one key.
+ * Four segments joined by '|': the route, the subject kind, the subject itself
+ * and the window length in milliseconds. The window is part of the key so that
+ * the per-minute and per-day budgets of one subject keep separate counters. No
+ * segment can contain '|' — route names are literals from the unions above,
+ * kinds are 'user' or 'ip', emails and IP bucket keys cannot contain it — so
+ * distinct inputs cannot collide on one key.
  */
 export function rateLimitBucket(
   route: RateLimitedRoute,
@@ -239,14 +246,22 @@ export async function consumeRateLimit(
   return { allowed: Number(row.count) <= policy.limit, retryAfterSeconds };
 }
 
-/** The 429 body and headers, identical for every limited route. */
+/**
+ * The 429 body and headers, identical for every limited route.
+ *
+ * The message branches on how long the caller actually has to wait. "Please
+ * wait a moment" alongside a `Retry-After` of 86400 is a lie, and the client
+ * has nothing else to go on: the minute window can never ask for more than 60
+ * seconds, so anything above that is the daily budget talking.
+ */
 function tooManyRequests(retryAfterSeconds: number): NextResponse {
+  const error =
+    retryAfterSeconds > 60
+      ? 'Too many requests. You have reached the daily limit for this action; please try again later.'
+      : 'Too many requests. Please wait a moment and try again.';
+
   return NextResponse.json(
-    {
-      error:
-        'Too many requests. Please wait a moment and try again.',
-      retryAfterSeconds,
-    },
+    { error, retryAfterSeconds },
     { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } }
   );
 }
@@ -294,8 +309,11 @@ async function enforce({
 
 /**
  * Charge one fee-payer submission against the caller's per-user and per-IP
- * budgets. Call this immediately before `submitSignedTransaction`, never at the
- * top of the handler — everything the route rejects first must stay free.
+ * budgets. Call it at the last point before the request gets expensive —
+ * immediately before `submitSignedTransaction`, or before `takePasskeyChallenge`
+ * where a route has one, since that burns a single-use nonce as it reads it.
+ * Never at the top of the handler: everything the route rejects first must stay
+ * free.
  *
  * Returns a ready-to-return 429 `NextResponse`, or `null` to proceed.
  */

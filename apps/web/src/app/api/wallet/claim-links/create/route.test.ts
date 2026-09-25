@@ -12,6 +12,7 @@ import {
   xdr,
 } from '@stellar/stellar-sdk';
 import { POST } from './route';
+import { exhaustFeePayerBudget } from '@/lib/rate-limit.test-support';
 import { createUser, setEmailVerified, setWallet } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
@@ -115,6 +116,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID;
   delete process.env.CLAIM_SECRET_ENCRYPTION_KEY;
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -752,5 +754,21 @@ describe('POST /api/wallet/claim-links/create — notification failures never fa
     expect(attempts).toBe(0);
     const [notification] = await db.select().from(schema.notifications);
     expect(notification.status).toBe('unsupported');
+  });
+});
+
+/**
+ * Rate-limit wiring (issue #36). The limiter itself is tested in
+ * `src/lib/rate-limit.test.ts`; this only proves the handler charges it, which
+ * nothing else would catch if the call were removed from this route alone.
+ */
+describe('POST /api/wallet/claim-links/create — rate limiting', () => {
+  it('returns 429 once the fee-payer budget is spent', async () => {
+    const token = await seedSender();
+    await exhaustFeePayerBudget('wallet.claim-links.create', SENDER_EMAIL);
+
+    const res = await POST(createCreateRequest(validBody(), token));
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
   });
 });

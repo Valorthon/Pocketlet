@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { Keypair, xdr } from '@stellar/stellar-sdk';
 import { POST } from './route';
+import { exhaustFeePayerBudget } from '@/lib/rate-limit.test-support';
 import {
   createUser,
   setEmailVerified,
@@ -208,5 +209,31 @@ describe('POST /api/wallet/recovery-signer', () => {
     );
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+/**
+ * Rate-limit wiring (issue #36). The limiter itself is tested in
+ * `src/lib/rate-limit.test.ts`; this only proves the handler charges it, which
+ * nothing else would catch if the call were removed from this route alone.
+ */
+describe('POST /api/wallet/recovery-signer rate limiting', () => {
+  it('returns 429 once the fee-payer budget is spent', async () => {
+    const token = await createUserWithWallet('alice@example.com');
+    await exhaustFeePayerBudget('wallet.recovery-signer', 'alice@example.com');
+
+    const res = await POST(
+      createRequest(
+        { signedXdr: 'AAAA...', recoveryPublicKey: RECOVERY_PUBLIC_KEY },
+        token
+      )
+    );
+
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
   });
 });

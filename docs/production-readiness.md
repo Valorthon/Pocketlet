@@ -142,39 +142,30 @@ limited too, on much looser numbers: it spends nothing, but since #110 its
 account, so the concern there is enumeration rather than cost.
 
 Counters live in the `rate_limits` table (`src/lib/rate-limit.ts`), one row per
-bucket, keyed `"<route>|user|<email>|<window>"` or `"<route>|ip|<address>|<window>"`
-so per-user, per-IP, per-route and per-window budgets cannot collide. Each
-subject gets two fixed windows: a per-minute one that stops a tight loop and a
-per-day one that is what actually bounds the spend. All six limits and the proxy
-hop count are environment variables, documented in
+bucket, keyed `"<route>|<kind>|<subject>|<windowMs>"` so per-user, per-IP,
+per-route and per-window budgets cannot collide. Each subject gets two fixed
+windows: a per-minute one that stops a tight loop and a per-day one that is what
+actually bounds the spend. All six limits and the proxy hop count are
+environment variables, documented in
 [`apps/web/.env.example`](../apps/web/.env.example). Exceeding one returns 429
 with a `Retry-After` header.
 
-Four decisions are load-bearing and are the things to preserve:
+The four load-bearing decisions — Postgres over an in-memory `Map`, JS
+`Date.now()` over SQL `now()`, explicit `enforce()` calls over Edge middleware,
+and the rightmost `X-Forwarded-For` entry normalised to a /64 — are recorded
+once in [ADR 0008](./decisions/0008-fee-payer-rate-limiting.md). Every limited
+route carries its own enforcement test, because the wiring is per route and
+deleting one call is otherwise invisible to CI.
 
-- **Postgres, not an in-memory `Map`.** The app is a single Railway container;
-  an in-memory counter resets on every deploy and every `ON_FAILURE` restart,
-  which is theatre for something whose job is preventing a cost drain.
-- **Window timestamps come from JS `Date.now()`, never SQL `now()`.**
-  `vi.useFakeTimers` controls the former and not the database clock, so a
-  SQL-clock limiter cannot be tested — and untested rate limiting is
-  indistinguishable from none.
-- **Enforcement is an explicit call immediately before `submitSignedTransaction`,
-  not `src/middleware.ts`.** Next 15 middleware is Edge-by-default, where `pg`
-  and `drizzle-orm` cannot run, and it runs before the handler, so it cannot
-  know whether a request will actually reach the fee payer. Charging late means
-  a request rejected by validation costs the caller nothing: the limiter counts
-  the expensive thing, not merely the request.
-- **The client IP is the *rightmost* `X-Forwarded-For` entry.** Railway's edge
-  appends the socket peer address to whatever the client sent, so
-  `split(',')[0]` reads an attacker-controlled value and hands out a fresh
-  bucket per request. `TRUSTED_PROXY_HOP_COUNT` (default 0) counts back from the
-  right for additional proxies.
+Still open, and deliberately out of scope: nothing prunes `rate_limits`, so
+expired buckets accumulate. `rate_limits_updated_at_idx` makes a cleanup a cheap
+ranged scan; the cleanup itself is **issue #141**.
 
 The session preamble those routes duplicated moved to
-`src/lib/auth/route-guard.ts` in the same change; the differing 404 bodies
-(`Wallet not deployed` / `Wallet not found` / `User not found or email not
-verified`) are passed per route and unchanged.
+`src/lib/auth/route-guard.ts` in the same change — 9 route files were migrated,
+15 others still hand-roll it. The differing 404 bodies (`Wallet not deployed` /
+`Wallet not found` / `User not found or email not verified`) are passed per
+route and unchanged.
 
 `isRecoveryInitiationRateLimited` in `src/lib/auth/recovery.ts` stays as it was.
 It is a pure function over a user row with no store behind it, encoding

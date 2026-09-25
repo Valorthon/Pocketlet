@@ -123,6 +123,38 @@ describe('policy configuration', () => {
     }
   );
 
+  /**
+   * The parser must not turn a fat-fingered value into a near-total lockout.
+   * `Number.parseInt('1e4', 10)` is 1, and a per-user limit of 1 locks every
+   * user out of their own wallet after a single transaction — the exact
+   * failure the fallback exists to prevent.
+   */
+  it.each([
+    ['1e4', 10000],
+    [' 50 ', 50],
+    ['100x', 10],
+    ['0', 10],
+    ['-5', 10],
+    ['', 10],
+    ['1.5', 10],
+    ['Infinity', 10],
+    [undefined, 10],
+  ])('reads %o as a limit of %i', (raw, expected) => {
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_MINUTE', raw);
+    expect(feePayerPolicies()[0].policy.limit).toBe(expected);
+  });
+
+  it('gives the per-IP windows real headroom over the per-user ones', () => {
+    // A household, office or CGNAT egress carries several accounts. At only 2x
+    // the per-user value, three ordinary users behind one address exhausted the
+    // shared budget before any of them reached their own entitlement.
+    const [userMinute, userDay, ipMinute, ipDay] = feePayerPolicies();
+    expect(ipMinute.policy.limit).toBeGreaterThanOrEqual(
+      userMinute.policy.limit * 4
+    );
+    expect(ipDay.policy.limit).toBeGreaterThanOrEqual(userDay.policy.limit * 4);
+  });
+
   it('gives resolve a looser per-user limit than the fee-payer routes', () => {
     expect(resolvePolicies()[0].policy.limit).toBeGreaterThan(
       feePayerPolicies()[0].policy.limit
@@ -147,6 +179,36 @@ describe('enforceFeePayerRateLimit', () => {
     expect(Number(limited?.headers.get('Retry-After'))).toBeGreaterThan(0);
     const body = (await limited?.json()) as { error: string };
     expect(body.error).toContain('Too many requests');
+  });
+
+  it('says which limit was hit, so the client can say something true', async () => {
+    // "Please wait a moment" alongside Retry-After: 86400 is a lie. The minute
+    // window can never ask for more than 60 seconds, so anything longer is the
+    // daily budget.
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_MINUTE', '1');
+    await enforceFeePayerRateLimit(req(), 'wallet.submit', 'short@b.com');
+    const short = await enforceFeePayerRateLimit(
+      req(),
+      'wallet.submit',
+      'short@b.com'
+    );
+    expect(Number(short?.headers.get('Retry-After'))).toBeLessThanOrEqual(60);
+    expect(((await short?.json()) as { error: string }).error).toContain(
+      'wait a moment'
+    );
+
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_MINUTE', '50');
+    vi.stubEnv('RATE_LIMIT_FEE_PAYER_PER_USER_PER_DAY', '1');
+    await enforceFeePayerRateLimit(req(), 'wallet.submit', 'daily@b.com');
+    const daily = await enforceFeePayerRateLimit(
+      req(),
+      'wallet.submit',
+      'daily@b.com'
+    );
+    expect(Number(daily?.headers.get('Retry-After'))).toBeGreaterThan(60);
+    expect(((await daily?.json()) as { error: string }).error).toContain(
+      'daily limit'
+    );
   });
 
   it('budgets each route separately', async () => {

@@ -76,6 +76,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Charged here, not at the top of the handler and not further down: every
+  // check above is validation and must stay free, and this is the last point
+  // before the request starts consuming state — `takePasskeyChallenge` clears
+  // the single-use nonce as it reads it, so a throttled attempt must not get
+  // that far or the caller has to restart the ceremony. Same ordering as
+  // `api/wallet/recovery/submit` (issue #36).
+  const limited = await enforceFeePayerRateLimit(
+    request,
+    'wallet.deploy',
+    user.email
+  );
+  if (limited) {
+    return limited;
+  }
+
   const expectedChallenge = await takePasskeyChallenge(user.email);
   if (!expectedChallenge) {
     return NextResponse.json(
@@ -103,19 +118,6 @@ export async function POST(request: NextRequest) {
         { error: 'Credential id does not match wallet key id' },
         { status: 400 }
       );
-    }
-
-    // Charged here rather than at the top of the handler: everything above
-    // this line is validation, and a request the server refuses must not cost
-    // the caller part of their fee-payer budget. It also sits before
-    // setCredential so a throttled attempt leaves no half-applied state.
-    const limited = await enforceFeePayerRateLimit(
-      request,
-      'wallet.deploy',
-      user.email
-    );
-    if (limited) {
-      return limited;
     }
 
     await setCredential(user.email, {

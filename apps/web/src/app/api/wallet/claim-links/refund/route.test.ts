@@ -7,6 +7,7 @@ import {
   nativeToScVal,
 } from '@stellar/stellar-sdk';
 import { POST } from './route';
+import { exhaustFeePayerBudget } from '@/lib/rate-limit.test-support';
 import { createUser, setEmailVerified, setWallet } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
@@ -55,6 +56,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID;
+  vi.unstubAllEnvs();
 });
 
 function bytesScVal(hex: string) {
@@ -369,5 +371,27 @@ describe('POST /api/wallet/claim-links/refund — validateSignedRefund', () => {
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe('NEXT_PUBLIC_ESCROW_CONTRACT_ID is not configured');
+  });
+});
+
+/**
+ * Rate-limit wiring (issue #36). The limiter itself is tested in
+ * `src/lib/rate-limit.test.ts`; this only proves the handler charges it, which
+ * nothing else would catch if the call were removed from this route alone.
+ */
+describe('POST /api/wallet/claim-links/refund — rate limiting', () => {
+  it('returns 429 once the fee-payer budget is spent', async () => {
+    const token = await seedSender();
+    const link = await seedClaimLink();
+    await exhaustFeePayerBudget('wallet.claim-links.refund', SENDER_EMAIL);
+
+    const res = await POST(
+      createRefundRequest(
+        { claimLinkId: link.id, signedXdr: buildRefundXdr() },
+        token
+      )
+    );
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
   });
 });

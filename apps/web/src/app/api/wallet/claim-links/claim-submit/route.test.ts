@@ -9,6 +9,7 @@ import {
   xdr,
 } from '@stellar/stellar-sdk';
 import { POST } from './route';
+import { exhaustFeePayerBudget } from '@/lib/rate-limit.test-support';
 import {
   createUser,
   setEmailVerified,
@@ -73,6 +74,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID;
+  vi.unstubAllEnvs();
 });
 
 function bytesScVal(hex: string): xdr.ScVal {
@@ -516,5 +518,31 @@ describe('POST /api/wallet/claim-links/claim-submit — validateSignedClaim', ()
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe('NEXT_PUBLIC_ESCROW_CONTRACT_ID is not configured');
+  });
+});
+
+/**
+ * Rate-limit wiring (issue #36). The limiter itself is tested in
+ * `src/lib/rate-limit.test.ts`; this only proves the handler charges it, which
+ * nothing else would catch if the call were removed from this route alone.
+ */
+describe('POST /api/wallet/claim-links/claim-submit — rate limiting', () => {
+  it('returns 429 once the fee-payer budget is spent', async () => {
+    await seedSender();
+    const token = await seedRecipient();
+    const link = await seedClaimLink();
+    await exhaustFeePayerBudget(
+      'wallet.claim-links.claim-submit',
+      RECIPIENT_EMAIL
+    );
+
+    const res = await POST(
+      createClaimSubmitRequest(
+        { claimLinkId: link.id, signedXdr: buildClaimXdr() },
+        token
+      )
+    );
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
   });
 });

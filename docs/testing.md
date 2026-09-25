@@ -45,7 +45,11 @@ counter would make the suite order-dependent.
 Tests that exercise rate limiting set the limits with `vi.stubEnv` (the limits
 are read from `process.env` per call, never cached at module load) and move the
 clock with `vi.useFakeTimers({ toFake: ['Date'] })` — Date only, because faking
-the timer queue as well stalls the `pg` driver.
+the timer queue as well stalls the `pg` driver. The limiter's own behaviour is
+covered once in `src/lib/rate-limit.test.ts`; each limited route additionally
+carries a small enforcement test that only proves the route is wired to it,
+because that wiring differs per route and nothing else would catch its removal
+([ADR 0008](./decisions/0008-fee-payer-rate-limiting.md)).
 
 `apps/web/.env.example` is the only home for configuration, kept honest by
 `src/lib/env-parity.test.ts`. If you add a `process.env` read, add it there too
