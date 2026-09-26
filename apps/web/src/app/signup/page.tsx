@@ -104,12 +104,47 @@ export default function SignupPage() {
         error?: string;
         contractId?: string;
         stellarAddress?: string;
+        hash?: string;
       };
       if (!deployRes.ok) {
         setError(deployData.error ?? 'Wallet deployment failed');
         setCreating(false);
         return;
       }
+
+      // passkey-kit 0.19 leaves the kit disconnected after `createWallet` until
+      // the wallet's birth is recorded. `confirmWalletCreation` re-reads the
+      // submission from the network, checks the deployed code against
+      // `acceptedBirthWasmHashes`, and writes the verified birth record
+      // (contract id, birth WASM hash, creation tx and ledger) into the kit's
+      // IndexedDB store. Every later `connectWallet({ keyId })` resolves its
+      // candidate from that record, so without this call login on this device
+      // fails with WALLET_NOT_FOUND.
+      //
+      // It runs HERE, in the browser, rather than server-side, for two reasons:
+      // the record it writes lives in the browser's IndexedDB, which the server
+      // cannot reach; and it needs the `CreateWalletResult` the ceremony
+      // produced, which never leaves the client in full. The route already
+      // returns the submission hash, so nothing about `api/wallet/deploy`
+      // changes — in particular its rate-limit charge still lands before
+      // `takePasskeyChallenge` (issue #36), untouched.
+      if (!deployData.hash) {
+        // The route short-circuits with no hash when the user already has a
+        // wallet, which means this ceremony's passkey was never submitted as a
+        // signer. There is nothing to confirm and nothing to connect to.
+        setError(
+          'This account already has a wallet. Sign in with its passkey instead.'
+        );
+        setCreating(false);
+        return;
+      }
+      // A failure here means the wallet IS deployed but this device has no
+      // birth record, so it is reported rather than swallowed. NOTE FOR A
+      // HUMAN: retrying the button re-runs `createWallet`, and the deploy route
+      // then short-circuits on the branch above — there is no in-app way out of
+      // that state yet. Needs testnet verification and, if it is reachable, its
+      // own issue.
+      await kit.confirmWalletCreation(result, deployData.hash);
 
       router.push('/pin/setup');
     } catch (err) {
