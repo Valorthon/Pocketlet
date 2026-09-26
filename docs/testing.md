@@ -172,7 +172,8 @@ for a URL; there isn't one.
    `require_auth()` on the escrow contract, which the device key's signer
    limits do not cover (issue #148), so it is signed by the passkey.
 3. Check the `claim_links` row: `status = pending`, `secret_ciphertext`
-   populated, `claim_hash` set.
+   populated, `claim_hash` set, and `expiry_ledger` populated with `expiry`
+   derived from it (they must agree — issue #137).
 4. In a private window, sign up with **that same email address** and verify it.
 5. On `/home`, the pending claim appears. Claim it.
 

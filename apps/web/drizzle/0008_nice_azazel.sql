@@ -1,0 +1,1 @@
+ALTER TABLE "claim_links" ADD COLUMN "expiry_ledger" integer;

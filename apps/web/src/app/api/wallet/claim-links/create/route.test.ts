@@ -17,6 +17,7 @@ import { createUser, setEmailVerified, setWallet } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
+import { LEDGERS_PER_DAY, expiryLedgerFor } from '@/lib/wallet/ledger';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import { addressScVal, amountToBaseUnits, i128ScVal } from '@/lib/wallet/amount';
 import { decryptSecret } from '@/lib/wallet/claim-secrets';
@@ -77,11 +78,14 @@ const SECRET = 'deadbeef'.repeat(8);
 // actually correspond; do not copy this pairing into a test that does.
 const CLAIM_HASH = createHash('sha256').update(SECRET).digest('hex');
 const CURRENT_LEDGER = 1_000_000;
-const LEDGERS_PER_DAY = (24 * 60 * 60) / 5;
-
-/** The ledger the client is expected to derive for a given expiry in days. */
+/**
+ * The ledger the client derives for a given expiry, using the SAME helper the
+ * page uses. Re-implementing the arithmetic here would let the route and the
+ * tests agree with each other while disagreeing with `send/page.tsx`, which
+ * is a silent 400 on every claim-link creation.
+ */
 function ledgerFor(days: number): number {
-  return CURRENT_LEDGER + Math.floor(days * LEDGERS_PER_DAY);
+  return expiryLedgerFor(CURRENT_LEDGER, days);
 }
 
 function hashRecipientId(id: string): string {
@@ -374,19 +378,160 @@ describe('POST /api/wallet/claim-links/create — ledger range', () => {
     );
   });
 
-  it('accepts an expiry ledger a day either side of the nominal value', async () => {
+  /**
+   * The window used to be +/- one DAY around the nominal value, which is far
+   * wider than the gap it has to tolerate: the only legitimate drift is the
+   * few seconds between the client reading a ledger at prepare time and the
+   * server reading one when the request lands. A day of slack meant a badly
+   * stale transaction was accepted and then stored with an expiry derived
+   * from `expiryDays`, disagreeing with the ledger the contract enforces by
+   * up to a day (issue #137). It is now ~20 minutes of staleness, plus a
+   * small allowance for the two sides reading different RPC nodes.
+   */
+  it('accepts a transaction prepared a few minutes ago', async () => {
     const token = await seedSender();
-    for (const days of [6, 8]) {
-      await db.delete(schema.claimLinks);
-      const expiryLedger = ledgerFor(days);
-      const res = await POST(
-        createCreateRequest(
-          validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
-          token
-        )
-      );
-      expect(res.status).toBe(200);
-    }
+    // 60 ledgers ~ 5 minutes of the user thinking about it.
+    const expiryLedger = ledgerFor(7) - 60;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('tolerates the client reading a slightly newer ledger than the server', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7) + 6;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 400 for a transaction prepared hours ago', async () => {
+    const token = await seedSender();
+    // Signed, then left sitting for two hours. Under the old day-wide window
+    // this was accepted and silently stored with the wrong expiry.
+    const expiryLedger = ledgerFor(7) - 1440;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(400);
+    expect(await errorOf(res)).toBe(
+      'Expiry ledger is out of expected range for the given days'
+    );
+  });
+});
+
+describe('POST /api/wallet/claim-links/create — window boundaries', () => {
+  /**
+   * Both bounds were silently mutable without these: the reject case sat far
+   * outside the window, so widening MAX_PREPARE_AGE_LEDGERS four-fold, or
+   * halving MAX_LEDGER_SKEW, left every test green.
+   */
+  it('accepts a prepare exactly at the staleness limit', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7) - 240;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a prepare one ledger past the staleness limit', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7) - 241;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts a client ledger exactly at the skew limit', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7) + 60;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a client ledger one past the skew limit', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7) + 61;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/wallet/claim-links/create — stored expiry', () => {
+  /**
+   * The contract enforces a ledger; the database holds a timestamp. Issue
+   * #137: the timestamp was computed from `expiryDays` and never from the
+   * ledger that was signed, so the two answers to "when does this expire?"
+   * could differ by up to a day -- a sender refused a refund the chain would
+   * have allowed, or a claim refused with 410 that the contract would honour.
+   */
+  it('derives the stored timestamp from the signed ledger, not from expiryDays', async () => {
+    const token = await seedSender();
+    // Prepared 10 minutes (120 ledgers) ago, so a timestamp derived from
+    // `expiryDays` alone would sit 10 minutes later than the chain's.
+    const expiryLedger = ledgerFor(7) - 120;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(200);
+
+    const [link] = await db.select().from(schema.claimLinks);
+    expect(link.expiryLedger).toBe(expiryLedger);
+
+    const expectedMs =
+      Date.now() + (expiryLedger - CURRENT_LEDGER) * 5 * 1000;
+    // Generous tolerance -- this pins the derivation, not the clock.
+    expect(Math.abs(link.expiry.getTime() - expectedMs)).toBeLessThan(30_000);
+
+    // And it is NOT the naive value, which is what the bug produced.
+    const naiveMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    expect(link.expiry.getTime()).toBeLessThan(naiveMs - 60_000);
+  });
+
+  it('records the ledger the contract will enforce', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7);
+    await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+
+    const [link] = await db.select().from(schema.claimLinks);
+    expect(link.expiryLedger).toBe(expiryLedger);
   });
 });
 
