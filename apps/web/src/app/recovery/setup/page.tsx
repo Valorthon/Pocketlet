@@ -65,7 +65,7 @@ export default function RecoverySetupPage() {
         undefined,
         SignerStore.Persistent
       );
-      await kit.sign(recoveryTx);
+      await kit.signAdmin(recoveryTx);
       const recoveryXdr = recoveryTx.toXDR();
 
       // 6. Submit recovery tx to server and wait for confirmation
@@ -98,7 +98,7 @@ export default function RecoverySetupPage() {
         SignerStore.Temporary,
         expirationSeconds
       );
-      await kit.sign(deviceTx, recoverySigner);
+      await kit.signAdmin(deviceTx, recoverySigner);
       const deviceXdr = deviceTx.toXDR();
 
       // 8. Submit device tx to server and wait for confirmation

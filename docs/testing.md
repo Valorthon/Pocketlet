@@ -1,6 +1,6 @@
 # Testing
 
-Last reviewed: 2026-09-25
+Last reviewed: 2026-09-26
 
 How to run the suites, and a manual end-to-end checklist for the testnet flows.
 
@@ -133,6 +133,20 @@ From `/home` → **Receive**. The app calls `POST /api/wallet/deploy`.
 
 **Expect:** a `contractId` in the response, and `wallet_contract_id` set on the user row. The fee payer funds itself via Friendbot if needed.
 
+Since passkey-kit 0.19 the browser must also record the wallet's birth:
+`signup/page.tsx` calls `kit.confirmWalletCreation(result, hash)` with the hash
+the deploy route returns. It writes the verified birth record (contract id,
+birth WASM hash, creation transaction and ledger) into the kit's IndexedDB
+store under the `passkey-kit` database. Check it in DevTools →
+**Application → IndexedDB → passkey-kit → credentials**; without that row every
+later `connectWallet` fails with `WALLET_NOT_FOUND`.
+
+**Same-device only.** `connectWallet({ keyId })` no longer derives the wallet
+address from the credential, so a login in a second browser profile or on a
+second device currently fails even though the passkey itself syncs. That is a
+known open decision, written up in the comment block in
+`src/lib/wallet/passkey-kit.ts` — not a bug to chase here.
+
 ### 3. Receive USDC and XLM
 
 1. Copy the address from `/home` or `/receive`.
@@ -194,7 +208,12 @@ Log out and back in on the same device. A `user_devices` row should exist with a
 
 **Claim links throw.** See [operations.md](./operations.md#common-production-problems); the cause is the same locally.
 
-**Wallet deployment fails.** Check that `NEXT_PUBLIC_WALLET_WASM_HASH` is installed on testnet, that the RPC URL is reachable, and that Friendbot can fund the fee payer.
+**Wallet deployment fails.** Check that `NEXT_PUBLIC_WALLET_WASM_HASH` is installed on testnet, that the RPC URL is reachable, and that Friendbot can fund the fee payer. The hash comes from passkey-kit's own deployment manifest and nowhere else — never derive or guess one; `apps/web/.env.example` records where the current value came from.
+
+**A signer write fails at signing time.** `kit.sign()` refuses transactions that
+re-enter the connected wallet. Wallet-admin writes (`add_signer`,
+`remove_signer`, `upgrade`) must go through `kit.signAdmin()`. The two have
+identical signatures, so the compiler will not tell you.
 
 **Balance doesn't update.** Tap Refresh or wait 15s. Confirm `wallet_contract_id` is set on the user row and that Soroban RPC is reachable.
 

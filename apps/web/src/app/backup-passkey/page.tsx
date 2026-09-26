@@ -79,7 +79,7 @@ export default function BackupPasskeyPage() {
         undefined,
         SignerStore.Persistent
       );
-      await kit.sign(addBackupTx);
+      await kit.signAdmin(addBackupTx);
       const signedXdr = addBackupTx.toXDR();
 
       const submitRes = await fetch('/api/wallet/submit', {
