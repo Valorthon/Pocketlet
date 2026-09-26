@@ -1,6 +1,6 @@
 # Agent & Developer Operating Manual
 
-Last reviewed: 2026-09-25
+Last reviewed: 2026-09-26
 
 Read this file first. It is the working manual for coding agents and new developers: what the system actually is, which commands work, what the conventions are, and which traps have already cost someone a day.
 
@@ -15,7 +15,7 @@ A deployed passkey-based USDC/XLM wallet on Stellar Testnet. Not a scaffold: ~37
 | Layer | Choice |
 | --- | --- |
 | Monorepo | pnpm workspaces (`apps/*`, `packages/*`), `pnpm@11.13.1`, Node 22+ |
-| Frontend + API | Next.js 15.5.25 App Router, React 18, TypeScript 5.9 |
+| Frontend + API | Next.js 15.5.25 App Router, React 18, TypeScript 6.0 |
 | Styling | Tailwind 3.4 |
 | Database | PostgreSQL + Drizzle ORM (`drizzle-orm`, `drizzle-kit`, `pg`) |
 | Stellar | `@stellar/stellar-sdk` 16.3, `passkey-kit` 0.16, `sac-sdk` 0.4 |
@@ -106,6 +106,8 @@ The `/swap` page, `api/wallet/swap`, and `submitSignedTransactionFast` were dele
 **There is no claim URL and no claim page.** `apps/web/src/app/` has no `claim` route: `api/wallet/claim-links/pending` matches pending links where `recipient_email` or `recipient_phone` equals the logged-in user's. The "claim link" in `send/page.tsx` is a share *message*, not a URL, and the notification email tells the recipient to sign up with that exact address rather than to click anything. Don't write copy, or docs, that imply a link.
 
 **The React lint rules come from the plugins, not `eslint-config-next`.** `packages/config/eslint/index.mjs` registers `eslint-plugin-react-hooks` and `@next/eslint-plugin-next` by hand. `eslint-config-next` is *not* installed and cannot be: its 15.x line pins `eslint: ^7 || ^8 || ^9` and this repo is on ESLint 10, while its 16.x line targets Next 16 (issue #90). Two consequences. `next-env.d.ts` has to be ignored explicitly in that file — Next writes triple-slash references into it and `@typescript-eslint/triple-slash-reference` rejects them, and `eslint-config-next` would otherwise have ignored it for us. And `react-hooks/set-state-in-effect` is switched off there: it flags 12 pre-existing effects that each need their own behaviour-preserving restructure, and there are no component tests behind them yet (issue #63) — tracked in issue #131. It is the only rule of the react-hooks v7 preset that is off; the other 15, including the React Compiler rules, are all at `error` (the preset ships `exhaustive-deps`, `incompatible-library` and `unsupported-syntax` at `warn`, and the config raises all three).
+
+**TypeScript is pinned at 6, and 7 is blocked outside this repo.** `typescript-eslint` 8.70.0 declares `typescript: >=4.8.4 <6.1.0`, so TS 7 fails at *lint*, not typecheck (issue #107, still open). Two things the 6.0 upgrade left behind that look droppable and are not. `apps/web/tsconfig.json` no longer sets `baseUrl` — it is deprecated in 6 (TS5101) and stops working in 7; `paths` resolves relative to the tsconfig that declares it, so re-adding `baseUrl` only re-breaks the build. And `apps/web/src/types/css.d.ts` declares `*.css` as an export-less module, because 6 reports TS2882 for a side-effect import it cannot resolve and Next ships no ambient declaration for stylesheets; `import './globals.css'` in `src/app/layout.tsx` is the only such import. Note the specifier is `^6.0.3`: a 6.1 release would land outside typescript-eslint's range on its own.
 
 **`next build` rewrites a tracked file, after lint has already run.** It regenerates `apps/web/next-env.d.ts`. CI's order is lint → typecheck → test → build, so a lint error introduced by the build only shows up on the *next* run. If you change the Next version, run `pnpm run lint` again after `pnpm --filter web build`. Separately, `tsc` caches to `apps/web/tsconfig.tsbuildinfo` (gitignored) and `.next/types` is generated: after switching branches, a typecheck error naming a route that doesn't exist on your branch means a stale artifact, not a real failure — `rm -rf apps/web/.next apps/web/tsconfig.tsbuildinfo`.
 

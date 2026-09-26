@@ -26,7 +26,7 @@ version: 2
 # with a passkey — so a green check on these PRs means "typechecks and builds",
 # not "login still works". Run the manual checklist in docs/testing.md.
 #
-# Three more rules exist because a GREEN check was wrong, or would be:
+# Four more rules exist because a GREEN check was wrong, or would be:
 #
 #   eslint       eslint and @eslint/js are versioned in lockstep (@eslint/js@10
 #                peers eslint ^10). PR #103 bumped eslint to 10 alone, left
@@ -41,6 +41,12 @@ version: 2
 #                production-dependencies, so the two arrive in separate PRs.
 #                Whichever one Dependabot bumps, move the other to match in the
 #                same PR, or the lint rules drift from the framework they check.
+#   typescript   has a CEILING, not just a floor: typescript-eslint 8.70.0
+#                declares `typescript: >=4.8.4 <6.1.0`, so 6.1 and 7 are both
+#                out of range and fail at LINT, not typecheck. The specifier is
+#                ^6.0.3, which permits 6.1 on its own — reject any bump past
+#                6.0.x until typescript-eslint widens its peer range. That is
+#                issue #107, which stays open for exactly this.
 #   @types/node  must track the Node runtime major (22 — ci.yml, cd.yml and the
 #                Dockerfile), not the latest release. PR #100 offered 26 and
 #                passed, which would let code typecheck against APIs that do
