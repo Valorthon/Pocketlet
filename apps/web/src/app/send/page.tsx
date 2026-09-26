@@ -361,6 +361,12 @@ export default function SendPage() {
   }, [step, unregistered, walletInfo, form.asset, form.amount, expiryDays]);
 
   const confirmTransfer = () => {
+    if (step === 'claim-link-review') {
+      // No PIN step: the deposit is authorized by a passkey ceremony (#148),
+      // which is itself the user-present confirmation.
+      void executeClaimLink();
+      return;
+    }
     setPinModalOpen(true);
   };
 
@@ -415,8 +421,7 @@ export default function SendPage() {
     }
   };
 
-  const executeClaimLink = async (pin: string) => {
-    setPinModalOpen(false);
+  const executeClaimLink = async () => {
     setStep('confirming');
     setError(null);
 
@@ -437,12 +442,15 @@ export default function SendPage() {
         throw new Error('Recipient info missing');
       }
 
-      if (!(await hasUsableDeviceKey())) {
-        throw new Error('Device key expired. Please log in again.');
-      }
-
-      const signer = await getDeviceSigner(pin);
-      await kit.sign(tx, signer);
+      // Signed with the passkey, not the device key. The escrow `deposit`
+      // calls `sender.require_auth()`, which produces an auth context for the
+      // escrow contract -- and the device signer's SignerLimits name only the
+      // two SAC token contracts, so `__check_auth` rejects it with
+      // MissingContext (issue #148). Widening those limits would hand a
+      // PIN-protected 90-day Temporary signer rights over a third contract, so
+      // the passkey signs escrow operations instead. Routine SAC transfers are
+      // unaffected and still use the device key -- see executeTransfer above.
+      await kit.sign(tx);
       const signedXdr = tx.toXDR();
 
       const currentLedger = await getCurrentLedger();
@@ -741,22 +749,14 @@ export default function SendPage() {
 
       <PinModal
         isOpen={pinModalOpen}
-        title={step === 'claim-link-review' ? 'Confirm claimable link' : 'Confirm transfer'}
+        title="Confirm transfer"
         subtitle="Enter your 6-digit PIN to authorize."
         onConfirm={(pin) => {
-          if (step === 'claim-link-review') {
-            void executeClaimLink(pin);
-          } else {
-            void executeTransfer(pin);
-          }
+          void executeTransfer(pin);
         }}
         onCancel={() => {
           setPinModalOpen(false);
-          if (step === 'claim-link-review') {
-            setStep('claim-link-review');
-          } else {
-            setStep('review');
-          }
+          setStep('review');
         }}
       />
     </main>
