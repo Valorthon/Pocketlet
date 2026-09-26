@@ -38,7 +38,7 @@ apps/web/src/lib/
   contracts/escrow.ts      TypeScript mirror of the Soroban contract
 apps/web/drizzle/          SQL migrations (applied at boot by instrumentation.ts)
 packages/config/           shared tsconfig / eslint / tailwind
-contracts/escrow/src/      the Soroban contract + its 12 unit tests
+contracts/escrow/src/      the Soroban contract + its 13 unit tests
 docs/                      project documentation, index at docs/README.md
 .opencode/skills/          vendored Stellar reference docs — consult before designing Stellar work
 ```
