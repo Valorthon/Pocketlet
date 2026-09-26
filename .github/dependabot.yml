@@ -43,10 +43,15 @@ version: 2
 #                same PR, or the lint rules drift from the framework they check.
 #   typescript   has a CEILING, not just a floor: typescript-eslint 8.70.0
 #                declares `typescript: >=4.8.4 <6.1.0`, so 6.1 and 7 are both
-#                out of range and fail at LINT, not typecheck. The specifier is
-#                ^6.0.3, which permits 6.1 on its own — reject any bump past
-#                6.0.x until typescript-eslint widens its peer range. That is
-#                issue #107, which stays open for exactly this.
+#                out of range. Out of the box that is SILENT — typescript-eslint
+#                defaults to 'warn', which is a console.log guarded by
+#                `process.stdout.isTTY`, so CI prints nothing and exits 0, and
+#                pnpm does not enforce peer ranges either. The eslint config
+#                therefore sets `onUnsupportedTypeScriptVersion: 'error'`, which
+#                makes the parser throw; verified by faking ts.version to 6.1.0
+#                (lint exits 0 without it, 1 with it). Keep that option, and
+#                reject any bump past 6.0.x until typescript-eslint widens its
+#                range. That is issue #107, which stays open for exactly this.
 #   @types/node  must track the Node runtime major (22 — ci.yml, cd.yml and the
 #                Dockerfile), not the latest release. PR #100 offered 26 and
 #                passed, which would let code typecheck against APIs that do
