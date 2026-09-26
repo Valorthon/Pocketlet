@@ -119,8 +119,12 @@ describe('the signed transaction is the one described to the server', () => {
     ]) {
       expect(beforeAwait, `${ref} must be read before the first await`).toContain(ref);
     }
-    // ...and nowhere after it.
-    expect(body.slice(firstAwait)).not.toContain('Ref.current');
+    // ...and none is READ after it. Matching the bare substring would also
+    // ban a write such as `preparedTxRef.current = null`, which is a
+    // perfectly good double-submit guard once the value is in a local.
+    const afterAwait = body.slice(firstAwait);
+    expect(afterAwait).not.toMatch(/=\s*\w+Ref\.current/);
+    expect(afterAwait).not.toMatch(/\w+Ref\.current\s*[,)]/);
   });
 });
 

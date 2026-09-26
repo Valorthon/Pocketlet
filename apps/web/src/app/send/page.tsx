@@ -7,6 +7,7 @@ import type { AssembledTransaction } from '@stellar/stellar-sdk/contract';
 import type { PasskeyKit } from 'passkey-kit';
 import { CheckCircle2, Copy } from 'lucide-react';
 import PinModal from '@/components/PinModal';
+import { expiryLedgerFor } from '@/lib/wallet/ledger';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/utils';
@@ -318,7 +319,7 @@ export default function SendPage() {
         const { secret, claimHash } = await generateSecretAndHash();
         const recipientIdHash = await hashRecipientId(recipientInfo.identifier);
         const currentLedger = await getCurrentLedger();
-        const expiryLedger = currentLedger + Math.floor(expiryDays * 24 * 60 * 60 / 5);
+        const expiryLedger = expiryLedgerFor(currentLedger, expiryDays);
         const baseAmount = amountToBaseUnits(form.amount);
 
         const tx = await prepareEscrowDepositTx(

@@ -17,6 +17,7 @@ import { createUser, setEmailVerified, setWallet } from '@/lib/auth/store';
 import { createSessionToken } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/config';
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
+import { LEDGERS_PER_DAY, expiryLedgerFor } from '@/lib/wallet/ledger';
 import { getUsdcContractId, getXlmContractId } from '@/lib/wallet/assets';
 import { addressScVal, amountToBaseUnits, i128ScVal } from '@/lib/wallet/amount';
 import { decryptSecret } from '@/lib/wallet/claim-secrets';
@@ -77,11 +78,14 @@ const SECRET = 'deadbeef'.repeat(8);
 // actually correspond; do not copy this pairing into a test that does.
 const CLAIM_HASH = createHash('sha256').update(SECRET).digest('hex');
 const CURRENT_LEDGER = 1_000_000;
-const LEDGERS_PER_DAY = (24 * 60 * 60) / 5;
-
-/** The ledger the client is expected to derive for a given expiry in days. */
+/**
+ * The ledger the client derives for a given expiry, using the SAME helper the
+ * page uses. Re-implementing the arithmetic here would let the route and the
+ * tests agree with each other while disagreeing with `send/page.tsx`, which
+ * is a silent 400 on every claim-link creation.
+ */
 function ledgerFor(days: number): number {
-  return CURRENT_LEDGER + Math.floor(days * LEDGERS_PER_DAY);
+  return expiryLedgerFor(CURRENT_LEDGER, days);
 }
 
 function hashRecipientId(id: string): string {
@@ -424,6 +428,61 @@ describe('POST /api/wallet/claim-links/create — ledger range', () => {
     expect(await errorOf(res)).toBe(
       'Expiry ledger is out of expected range for the given days'
     );
+  });
+});
+
+describe('POST /api/wallet/claim-links/create — window boundaries', () => {
+  /**
+   * Both bounds were silently mutable without these: the reject case sat far
+   * outside the window, so widening MAX_PREPARE_AGE_LEDGERS four-fold, or
+   * halving MAX_LEDGER_SKEW, left every test green.
+   */
+  it('accepts a prepare exactly at the staleness limit', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7) - 240;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a prepare one ledger past the staleness limit', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7) - 241;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts a client ledger exactly at the skew limit', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7) + 60;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a client ledger one past the skew limit', async () => {
+    const token = await seedSender();
+    const expiryLedger = ledgerFor(7) + 61;
+    const res = await POST(
+      createCreateRequest(
+        validBody({ expiryLedger, signedXdr: buildDepositXdr({ expiryLedger }) }),
+        token
+      )
+    );
+    expect(res.status).toBe(400);
   });
 });
 

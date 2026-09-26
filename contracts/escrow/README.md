@@ -38,7 +38,7 @@ Horizon operation parameters, not events.
 
 **There is no TTL extension.** Persistent storage entries can be archived. A deposit left unclaimed long enough would need its entry restored before it could be claimed or refunded. This is the classic Soroban escrow footgun and nothing in the source hints at it.
 
-**`expiry` changes units at the boundary.** A **ledger sequence** here; a **timestamp** in `claim_links.expiry` in Postgres. The conversion is ad hoc in `api/wallet/claim-links/create/route.ts` — change one side and you must change the other.
+**`expiry` changes units at the boundary, and the ledger is the source of truth.** A **ledger sequence** here; a **timestamp** in `claim_links.expiry` in Postgres. Both are stored — `claim_links.expiry_ledger` is what this contract enforces, and the timestamp is *derived from it* by `apps/web/src/lib/wallet/ledger.ts` at insert time. It used to be computed independently from the requested number of days, which let the two drift by up to a day (issue #137). The conversion still assumes a 5-second ledger, so the timestamp remains approximate over long expiries — issue #154 tracks comparing ledgers at read time instead.
 
 **Errors are string panics, not error codes.** The contract uses `assert!` and `expect` rather than a `#[contracterror]` enum, so callers get panic messages instead of typed codes. Worth migrating.
 

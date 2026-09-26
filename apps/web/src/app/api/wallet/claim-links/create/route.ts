@@ -15,6 +15,7 @@ import {
   scValToU64,
 } from '@/lib/wallet/submit';
 import { NETWORK_PASSPHRASE } from '@/lib/wallet/network';
+import { LEDGERS_PER_DAY, ledgerDeltaToMs } from '@/lib/wallet/ledger';
 import { encryptSecret } from '@/lib/wallet/claim-secrets';
 import { db, schema } from '@/lib/db';
 import { deliverClaimLinkNotification } from '@/lib/notifications';
@@ -27,25 +28,17 @@ function getTokenContractId(asset: 'USDC' | 'XLM'): string {
   return asset === 'USDC' ? getUsdcContractId() : getXlmContractId();
 }
 
-/**
- * Stellar closes a ledger roughly every 5 seconds. The escrow contract counts
- * in ledgers; everything the app shows the user counts in time, so one of
- * these conversions is unavoidable. Keep it in one place.
- *
- * "Roughly" is load-bearing, and the error compounds over the window: at an
- * actual 5.5s close time a 30-day link's stored timestamp lands three days
- * before the ledger the contract enforces, and the routes that gate on the
- * timestamp would answer 410 for a deposit that is still claimable. That is
- * issue #154 -- the fix is to compare `expiry_ledger` against the current
- * ledger at read time and leave this timestamp for display only. Until then,
- * do not tighten anything else against `expiry`.
- */
-const LEDGER_SECONDS = 5;
-const LEDGERS_PER_DAY = Math.floor((24 * 60 * 60) / LEDGER_SECONDS);
 /** How stale a prepared deposit may be when it arrives: ~20 minutes. */
 const MAX_PREPARE_AGE_LEDGERS = 240;
-/** Slack for the client and the server reading different RPC nodes. */
-const MAX_LEDGER_SKEW = 12;
+/**
+ * How far AHEAD of us the client's ledger read may be: ~5 minutes. Both sides
+ * read the same public RPC URL, which is load balanced, so one of them can
+ * legitimately be served by a lagging replica. Accepting a slightly future
+ * ledger only means the escrow locks marginally longer than advertised, and
+ * that is bounded by this constant; rejecting one means the user cannot send
+ * at all, so the allowance is deliberately generous.
+ */
+const MAX_LEDGER_SKEW = 60;
 
 function getEscrowContractId(): string {
   const id = process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID;
@@ -238,6 +231,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const currentLedger = await getCurrentLedger();
+    // Anchor the expiry to the instant we read the ledger, not to whenever
+    // the submit finishes. Submitting involves funding, simulation, send and
+    // up to 20s of polling, and measuring the offset from one instant while
+    // adding it to a later one pushed every stored expiry seconds into the
+    // future -- enough for refund to refuse a refund the contract already
+    // allows.
+    const ledgerReadAt = Date.now();
 
     // `expiryLedger` was computed by the client at prepare time and signed
     // into the transaction, so it encodes the ledger the client saw:
@@ -290,7 +290,7 @@ export async function POST(request: NextRequest) {
     // #137). Going through the ledger keeps the two answers to "when does
     // this expire?" the same one.
     const expiryDate = new Date(
-      now.getTime() + (expiryLedger - currentLedger) * LEDGER_SECONDS * 1000
+      ledgerReadAt + ledgerDeltaToMs(currentLedger, expiryLedger)
     );
 
     const [link] = await db
