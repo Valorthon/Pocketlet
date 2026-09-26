@@ -1,6 +1,6 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, Address, Bytes, BytesN, Env,
+    contract, contractevent, contractimpl, contracttype, token, Address, Bytes, BytesN, Env,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -17,6 +17,43 @@ pub struct Deposit {
 #[contracttype]
 pub enum DataKey {
     Deposit(BytesN<32>),
+}
+
+/// Emitted by [`EscrowContract::deposit`].
+///
+/// One fixed topic, `deposit`, and the six fields below as a positional vec —
+/// byte-for-byte the shape the pre-`#[contractevent]` `publish` call emitted.
+#[contractevent(topics = ["deposit"], data_format = "vec")]
+#[derive(Clone, PartialEq, Debug)]
+pub struct DepositEvent {
+    pub claim_hash: BytesN<32>,
+    pub sender: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient_id_hash: BytesN<32>,
+    pub expiry: u64,
+}
+
+/// Emitted by [`EscrowContract::claim`].
+///
+/// One fixed topic, `claim`, and the three fields below as a positional vec.
+#[contractevent(topics = ["claim"], data_format = "vec")]
+#[derive(Clone, PartialEq, Debug)]
+pub struct ClaimEvent {
+    pub claim_hash: BytesN<32>,
+    pub recipient_wallet: Address,
+    pub amount: i128,
+}
+
+/// Emitted by [`EscrowContract::refund`].
+///
+/// One fixed topic, `refund`, and the three fields below as a positional vec.
+#[contractevent(topics = ["refund"], data_format = "vec")]
+#[derive(Clone, PartialEq, Debug)]
+pub struct RefundEvent {
+    pub claim_hash: BytesN<32>,
+    pub sender: Address,
+    pub amount: i128,
 }
 
 #[contract]
@@ -69,17 +106,15 @@ impl EscrowContract {
             .persistent()
             .set(&DataKey::Deposit(claim_hash.clone()), &deposit);
 
-        env.events().publish(
-            (symbol_short!("deposit"),),
-            (
-                claim_hash,
-                deposit.sender,
-                deposit.token,
-                deposit.amount,
-                deposit.recipient_id_hash,
-                deposit.expiry,
-            ),
-        );
+        DepositEvent {
+            claim_hash,
+            sender: deposit.sender,
+            token: deposit.token,
+            amount: deposit.amount,
+            recipient_id_hash: deposit.recipient_id_hash,
+            expiry: deposit.expiry,
+        }
+        .publish(&env);
     }
 
     /// Claim a deposit by providing the secret.
@@ -114,10 +149,12 @@ impl EscrowContract {
         deposit.claimed = true;
         env.storage().persistent().set(&key, &deposit);
 
-        env.events().publish(
-            (symbol_short!("claim"),),
-            (claim_hash, recipient_wallet, deposit.amount),
-        );
+        ClaimEvent {
+            claim_hash,
+            recipient_wallet,
+            amount: deposit.amount,
+        }
+        .publish(&env);
     }
 
     /// Refund an expired deposit to the original sender.
@@ -149,10 +186,12 @@ impl EscrowContract {
 
         env.storage().persistent().remove(&key);
 
-        env.events().publish(
-            (symbol_short!("refund"),),
-            (claim_hash, deposit.sender, deposit.amount),
-        );
+        RefundEvent {
+            claim_hash,
+            sender: deposit.sender,
+            amount: deposit.amount,
+        }
+        .publish(&env);
     }
 
     /// Read a deposit's metadata without claiming or refunding.
@@ -165,8 +204,9 @@ impl EscrowContract {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::testutils::{Address as _, Ledger};
-    use soroban_sdk::{token, Address, Bytes, BytesN, Env};
+    use soroban_sdk::testutils::{Address as _, Events as _, Ledger};
+    use soroban_sdk::xdr::{ContractEventBody, ScVal, ScVec};
+    use soroban_sdk::{symbol_short, token, Address, Bytes, BytesN, Env, IntoVal, TryFromVal, Val};
 
     fn setup_env() -> Env {
         let env = Env::default();
@@ -174,8 +214,14 @@ mod test {
         env
     }
 
+    /// Register a Stellar Asset Contract and hand back its address.
+    ///
+    /// `register_stellar_asset_contract_v2` returns a `StellarAssetContract`
+    /// handle bundling the address with the issuer and the classic asset. No
+    /// test here needs either of those, so the handle is unwrapped once here
+    /// rather than at every call site.
     fn create_token(env: &Env, admin: &Address) -> Address {
-        env.register_stellar_asset_contract(admin.clone())
+        env.register_stellar_asset_contract_v2(admin.clone()).address()
     }
 
     fn mint(env: &Env, token: &Address, to: &Address, amount: i128) {
@@ -186,6 +232,35 @@ mod test {
     fn compute_claim_hash(env: &Env, secret: &BytesN<32>) -> BytesN<32> {
         let bytes = Bytes::from_slice(env, &secret.to_array());
         env.crypto().sha256(&bytes).into()
+    }
+
+    /// Convert any contract value into its XDR form, for comparing against an
+    /// event's topics or data.
+    fn to_scval<V: IntoVal<Env, Val>>(env: &Env, value: V) -> ScVal {
+        ScVal::try_from_val(env, &value.into_val(env)).unwrap()
+    }
+
+    /// The topics and data, in XDR form, of the single event the escrow
+    /// contract emitted during the most recent invocation.
+    ///
+    /// `env.events().all()` covers only the last invocation and includes the
+    /// SAC's own transfer event, hence the filter; call this immediately after
+    /// the call under test.
+    fn escrow_event(env: &Env, contract_id: &Address) -> (ScVal, ScVal) {
+        let all = env.events().all();
+        let mine = all.filter_by_contract(contract_id);
+        let events = mine.events();
+        assert_eq!(
+            events.len(),
+            1,
+            "expected exactly one event from the escrow contract"
+        );
+        match &events[0].body {
+            ContractEventBody::V0(body) => (
+                ScVal::Vec(Some(ScVec(body.topics.clone()))),
+                body.data.clone(),
+            ),
+        }
     }
 
     #[test]
@@ -460,5 +535,98 @@ mod test {
         let client = EscrowContractClient::new(&env, &contract_id);
         let claim_hash = BytesN::from_array(&env, &[99u8; 32]);
         assert_eq!(client.get_deposit(&claim_hash), None);
+    }
+
+    /// Pin the wire shape of all three events.
+    ///
+    /// The escrow events are declared with `data_format = "vec"` and explicit
+    /// `topics`, rather than the `#[contractevent]` defaults of map data and a
+    /// topic named after the struct, so that the bytes on chain stay what the
+    /// contract emitted before the macro existed. Nothing off chain reads them
+    /// today, so without this test that choice could be "simplified" away to
+    /// the defaults and the wire format would change in silence.
+    ///
+    /// The expected values are built from a plain tuple and a literal symbol on
+    /// purpose. Comparing against `Event::to_xdr` would be worthless here: that
+    /// builds the expected value with the same codegen that produced the actual
+    /// one, so both sides would move together and the change would still pass.
+    #[test]
+    fn test_event_shapes_are_stable() {
+        let env = setup_env();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let sender = Address::generate(&env);
+        let recipient_wallet = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = create_token(&env, &admin);
+        mint(&env, &token, &sender, 1500);
+
+        let secret = BytesN::from_array(&env, &[21u8; 32]);
+        let claim_hash = compute_claim_hash(&env, &secret);
+        let recipient_id_hash = BytesN::from_array(&env, &[22u8; 32]);
+        let expiry = env.ledger().sequence() as u64 + 100;
+
+        // deposit: topic `deposit`, data a positional vec of the six fields.
+        client.deposit(&sender, &token, &1000, &claim_hash, &recipient_id_hash, &expiry);
+        let (topics, data) = escrow_event(&env, &contract_id);
+        assert_eq!(
+            topics,
+            to_scval(&env, soroban_sdk::vec![&env, symbol_short!("deposit")]),
+            "deposit topics"
+        );
+        assert_eq!(
+            data,
+            to_scval(
+                &env,
+                (
+                    claim_hash.clone(),
+                    sender.clone(),
+                    token.clone(),
+                    1000i128,
+                    recipient_id_hash.clone(),
+                    expiry,
+                )
+            ),
+            "deposit data"
+        );
+
+        // claim: topic `claim`, data a positional vec of the three fields.
+        client.claim(&secret, &recipient_wallet);
+        let (topics, data) = escrow_event(&env, &contract_id);
+        assert_eq!(
+            topics,
+            to_scval(&env, soroban_sdk::vec![&env, symbol_short!("claim")]),
+            "claim topics"
+        );
+        assert_eq!(
+            data,
+            to_scval(
+                &env,
+                (claim_hash.clone(), recipient_wallet.clone(), 1000i128)
+            ),
+            "claim data"
+        );
+
+        // refund: topic `refund`, data a positional vec of the three fields.
+        let refund_secret = BytesN::from_array(&env, &[23u8; 32]);
+        let refund_hash = compute_claim_hash(&env, &refund_secret);
+        client.deposit(&sender, &token, &500, &refund_hash, &recipient_id_hash, &expiry);
+
+        let mut info = env.ledger().get();
+        info.sequence_number = 500; // past expiry
+        env.ledger().set(info);
+
+        client.refund(&refund_hash);
+        let (topics, data) = escrow_event(&env, &contract_id);
+        assert_eq!(
+            topics,
+            to_scval(&env, soroban_sdk::vec![&env, symbol_short!("refund")]),
+            "refund topics"
+        );
+        assert_eq!(
+            data,
+            to_scval(&env, (refund_hash.clone(), sender.clone(), 500i128)),
+            "refund data"
+        );
     }
 }
