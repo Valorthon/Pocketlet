@@ -100,8 +100,8 @@ importers:
         specifier: ^10.6.1
         version: 10.6.1(postcss@8.5.28)
       dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
+        specifier: ^18.0.2
+        version: 18.0.2
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
@@ -1584,9 +1584,10 @@ packages:
   dlv@1.1.3:
     resolution: {integrity: sha512-+HlytyjlPKnIG8XuRG8WvmBP8xs8P71y+SKKS6ZXWoEgLuePxtDoUEiH7WkdePWrQ5JBpE6aoVqfZfJUQkjXwA==}
 
-  dotenv@17.4.2:
-    resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
+  dotenv@18.0.2:
+    resolution: {integrity: sha512-wl0U3CxC0iobaryqEKpFJxzyp4AxQFYAKj/WWszXZr87vVHLi2yJv2syax5Vxt+u02xqNgE277rsc3lOKg9sPg==}
     engines: {node: '>=12'}
+    hasBin: true
 
   drizzle-kit@0.31.10:
     resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
@@ -4019,7 +4020,7 @@ snapshots:
 
   dlv@1.1.3: {}
 
-  dotenv@17.4.2: {}
+  dotenv@18.0.2: {}
 
   drizzle-kit@0.31.10:
     dependencies:
