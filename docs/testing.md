@@ -1,6 +1,6 @@
 # Testing
 
-Last reviewed: 2026-09-25
+Last reviewed: 2026-09-26
 
 How to run the suites, and a manual end-to-end checklist for the testnet flows.
 
@@ -162,12 +162,32 @@ From `/home` → **Send**, with a raw testnet address, amount `0.5`, asset USDC 
 
 ### 7. Claimable link to an unregistered recipient
 
-1. From **Send**, enter a phone number or email that belongs to no account.
-2. Confirm — the app creates an escrow deposit and returns a claim link.
-3. Check the `claim_links` row: `status = pending`, `secret_ciphertext` populated, `claim_hash` set.
-4. Open the link in a private window, sign up, and claim.
+There is **no claim URL and no claim page** — the "claim link" the send flow
+produces is a share *message*, not a link. A recipient claims by signing up
+with the same address and finding the deposit waiting on `/home`. Don't test
+for a URL; there isn't one.
 
-**Expect:** funds move from escrow to the new user's wallet; `status` becomes claimed; `claimed_at` is set. Refunding before expiry must fail — the contract rejects it.
+1. From **Send**, enter an email address that belongs to no account.
+2. Confirm. This prompts for a **passkey**, not a PIN — the deposit calls
+   `require_auth()` on the escrow contract, which the device key's signer
+   limits do not cover (issue #148), so it is signed by the passkey.
+3. Check the `claim_links` row: `status = pending`, `secret_ciphertext`
+   populated, `claim_hash` set.
+4. In a private window, sign up with **that same email address** and verify it.
+5. On `/home`, the pending claim appears. Claim it.
+
+**Expect:** funds move from escrow to the new user's wallet; `status` becomes
+`claimed`; `claimed_at` is set.
+
+### 7b. Refunding an expired claim link — **not testable yet**
+
+There is no refund UI. `api/wallet/claim-links/refund` exists and is correct,
+but nothing in `apps/web/src/app/` calls it, so a sender whose recipient never
+signs up cannot recover the money from within the app. Skip this step until
+that UI is built, and add here then: create a link with the shortest expiry,
+wait past it, refund as the sender (a passkey prompt, for the same reason as
+step 2), and expect the balance to return with `status` becoming `refunded`.
+Refunding *before* expiry must fail — the contract rejects it.
 
 ### 8. Device-key login
 

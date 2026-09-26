@@ -16,10 +16,10 @@ Pocketlet is a web wallet for holding and sending digital dollars globally. It f
 | Passkey-controlled Soroban smart wallet (one per user) | Shipped |
 | Receive USDC/XLM via address or QR code | Shipped |
 | P2P transfers by username, phone, or raw Stellar address | Shipped |
-| Claimable links — send to someone who has no wallet yet, via an escrow contract | Shipped |
+| Claimable links — send to someone who has no wallet yet, via an escrow contract | **Broken** — creation returns 400 ([#149](https://github.com/Valorthon/Pocketlet/issues/149)), claiming returns 500 ([#135](https://github.com/Valorthon/Pocketlet/issues/135)), and there is no refund UI. Being fixed; the whole cluster is written up in [production-readiness](./docs/production-readiness.md#claimable-links-do-not-work-end-to-end--open) |
 | Email notification to a claim-link recipient | Shipped |
 | SMS notification to a claim-link recipient | **Not shipped** — the row is recorded as `unsupported` and nothing is sent; needs an SMS provider ([production-readiness](./docs/production-readiness.md)) |
-| PIN confirmation on all payments | Shipped |
+| PIN confirmation on all payments | Shipped — except claimable links, which take a passkey prompt instead, because the device key the PIN unlocks cannot authorize an escrow call ([#148](https://github.com/Valorthon/Pocketlet/issues/148)) |
 | Device-key login (a short-lived Ed25519 signer, so routine sends need only a PIN) | Shipped |
 | Lost-passkey recovery via recovery phrase or backup passkey | Shipped |
 | Transaction history and on-chain detail view | Shipped |

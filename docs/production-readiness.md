@@ -1,6 +1,6 @@
 # Production readiness
 
-Last reviewed: 2026-09-25
+Last reviewed: 2026-09-26
 
 Everything that stands between the current testnet build and something deployable to the Stellar public network. These are deliberate shortcuts and known defects, not surprises — [`SECURITY.md`](../SECURITY.md) points here so researchers don't re-report them.
 
@@ -99,6 +99,18 @@ The notification call was not the only way that route could 500 after submitting
 On the public network a mailer is no longer optional: `production-guardrails.mjs` requires `RESEND_API_KEY` and an `@`-shaped `MAIL_FROM`, because shipping notifications to a console log in production is exactly what that file exists to prevent. Both deploys run the testnet passphrase, so the check does not fire on them.
 
 There is no claim URL, and the email says so. Claiming works by *matching* — `api/wallet/claim-links/pending` selects pending links whose `recipient_email` or `recipient_phone` equals the logged-in user's — so the mail tells the recipient to sign up **with that exact address** rather than to click anything, and it never contains the claim secret.
+
+### Claimable links do not work end to end — Open
+
+**Issues #148 (fixed here), #149 and #135.** The README marked this feature "Shipped" from the day it landed. It has never worked, for three independent reasons, none of which any test could see — there are no component tests, and nothing in the suite deploys a wallet or evaluates `__check_auth`.
+
+- **The deposit could not be authorized (#148).** The device key is registered with a passkey-kit `SignerLimits` map naming only the two SAC token contracts, and `api/wallet/device-key/submit` enforces that allowlist server-side. The escrow contract's `deposit` calls `sender.require_auth()`, so it asks for an auth context on the *escrow* contract, which that map does not cover — `__check_auth` answers `MissingContext` (error 110). Escrow operations are now signed by the passkey instead; see the landmine in [`AGENTS.md`](../AGENTS.md). The same applies to `refund`. `claim` is unaffected, having no `require_auth` at all.
+- **Creation returns 400 (#149).** `send/page.tsx` derives `expiryLedger` twice, from two separate `getCurrentLedger()` calls straddling the signing ceremony, and `create/route.ts` demands strict equality with the value in the signed XDR. Ledgers close every ~5s, so the two agree only if none closed while the user was confirming. A second instance of the same shape — `claimHash` read from a ref *after* the ceremony, by which point the prepare effect had nulled it, sending `claimHash: null` and earning a 400 "Missing required fields" — was fixed alongside #148. #149 also covers #137, the stored `expiry` timestamp being derived from `expiryDays` rather than from the ledger actually signed.
+- **Claiming returns 500 (#135).** `claim-submit/route.ts` compares `args[0]` against the stored claim hash, but the contract's `claim(secret, recipient_wallet)` takes the raw **secret** and hashes it itself, so `args[0]` is the secret and `claimHash = sha256(secret)`. The comparison can never pass. It is a copy of `refund`'s validator, which is correct because `refund(claim_hash)` really does take the hash.
+
+**There is also no refund UI at all.** `prepareEscrowRefundTx` and `api/wallet/claim-links/refund` both exist and are correct, but nothing in `apps/web/src/app/` calls either, and no route lists a sender's outgoing links — `pending` is recipient-side only. Until that is built, a sender whose recipient never signs up cannot recover the money from within the app, and `docs/testing.md` step 7b is marked not-yet-testable for that reason.
+
+The README row stays **Broken** until all of the above are closed and step 7 has been run on testnet.
 
 ### A claim link can 500 after its deposit is on chain — Open
 
