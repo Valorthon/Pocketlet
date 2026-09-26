@@ -145,7 +145,6 @@ async function seedClaimLink(overrides?: {
   recipientPhone?: string | null;
   status?: string;
   expiry?: Date;
-  claimHash?: string;
 }) {
   const [row] = await db
     .insert(schema.claimLinks)
@@ -158,7 +157,7 @@ async function seedClaimLink(overrides?: {
       recipientPhone: overrides?.recipientPhone ?? null,
       tokenContractId: OTHER_CONTRACT,
       amount: '5000000',
-      claimHash: overrides?.claimHash ?? CLAIM_HASH,
+      claimHash: CLAIM_HASH,
       secretCiphertext: 'iv:tag:ciphertext',
       expiry: overrides?.expiry ?? new Date(Date.now() + 86_400_000),
       status: overrides?.status ?? 'pending',
@@ -310,6 +309,11 @@ describe('POST /api/wallet/claim-links/claim-submit', () => {
     expect(body.error).toBe('Claim link has expired');
   });
 
+  // Overlaps with the #135 regression test below, deliberately. This one is
+  // the happy path through the shared fixture; that one spells the transaction
+  // out by hand so it still describes the real client shape if the fixture is
+  // ever changed again. Before #135 was fixed they differed -- this one was
+  // hash-shaped and passed, that one was secret-shaped and asserted the bug.
   it('marks the link claimed and counts a success', async () => {
     await seedSender();
     const token = await seedRecipient();

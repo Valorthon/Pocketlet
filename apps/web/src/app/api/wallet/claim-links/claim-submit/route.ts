@@ -57,9 +57,9 @@ function validateSignedClaim(
   // `args[0]` directly against the stored hash -- which is what this did --
   // can never match, so every genuine claim was rejected.
   //
-  // `refund` below looks almost identical and is correct as written, because
-  // `refund(claim_hash)` really does take the hash. That is where this bug
-  // came from; keep the two straight.
+  // `validateSignedRefund` in `refund/route.ts` looks almost identical and is
+  // correct as written, because `refund(claim_hash)` really does take the
+  // hash. That is where this bug came from; keep the two straight.
   const secret = scValToBytes(args[0]);
   const claimHash = createHash('sha256').update(secret).digest('hex');
   const recipientWallet = scValToAddress(args[1]);
