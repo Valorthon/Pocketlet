@@ -1,6 +1,6 @@
 # Product Spec — V1
 
-Last reviewed: 2026-09-25
+Last reviewed: 2026-09-26
 
 What Pocketlet V1 is for and what it does. Implementation detail lives in [architecture.md](./architecture.md); current feature status lives in the [README table](../README.md#features); deferred work lives in [roadmap.md](./roadmap.md).
 
@@ -41,7 +41,7 @@ Pocketlet is a web-based wallet designed for anyone who earns and moves money ac
 
 ### 3.4. Claimable Links (Send to Non-Users)
 * **What:** If the recipient has no Pocketlet account, the sender can still send. Funds go into a Soroban escrow contract against a hashed secret, recorded against the recipient's email or phone number. There is no claim URL and no claim page: what the app returns is a share *message* the sender can pass along.
-* **Claiming:** The recipient signs up with the same email address or phone number the payment was sent to. Pocketlet matches the pending escrow deposit to that account and shows it to them — the address is the claim credential, so there is nothing to click and no secret for them to type. Releasing the matched deposit on chain does not work yet (issue #135).
+* **Claiming:** The recipient signs up with the same email address or phone number the payment was sent to. Pocketlet matches the pending escrow deposit to that account and shows it to them — the address is the claim credential, so there is nothing to click and no secret for them to type. Releasing the matched deposit on chain is fixed (issue #135) but not yet confirmed against testnet; creating a link still fails (issue #149), so the flow does not work end to end yet.
 * **Refund:** If nobody claims before expiry, the sender can refund the deposit.
 * **Privacy:** The contract only ever sees hashes — never the secret, never a phone number or email.
 * **Note:** An email recipient is notified automatically (issue #60) — the mail asks them to sign up with that exact address, since there is nothing to click. A phone recipient is not: there is no SMS provider, so the sender still passes the message along by hand.

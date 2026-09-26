@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { TransactionBuilder } from '@stellar/stellar-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireWalletUser } from '@/lib/auth/route-guard';
@@ -49,11 +50,22 @@ function validateSignedClaim(
     throw new Error('claim argument count is malformed');
   }
 
-  const claimHash = scValToBytes(args[0]).toString('hex');
+  // args[0] is the **secret**, not the claim hash. The contract's
+  // `claim(secret, recipient_wallet)` takes the 32-byte preimage and derives
+  // `sha256(secret)` itself to find the deposit, so the hash has to be
+  // computed here too before it can be compared (issue #135). Comparing
+  // `args[0]` directly against the stored hash -- which is what this did --
+  // can never match, so every genuine claim was rejected.
+  //
+  // `validateSignedRefund` in `refund/route.ts` looks almost identical and is
+  // correct as written, because `refund(claim_hash)` really does take the
+  // hash. That is where this bug came from; keep the two straight.
+  const secret = scValToBytes(args[0]);
+  const claimHash = createHash('sha256').update(secret).digest('hex');
   const recipientWallet = scValToAddress(args[1]);
 
   if (claimHash !== expectedClaimHash) {
-    throw new Error('Claim hash does not match');
+    throw new Error('Claim secret does not match this link');
   }
   if (recipientWallet !== expectedRecipientWallet) {
     throw new Error('Recipient wallet does not match');

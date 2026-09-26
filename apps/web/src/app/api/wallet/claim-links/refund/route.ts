@@ -44,6 +44,11 @@ function validateSignedRefund(signedXdr: string, expectedClaimHash: string) {
     throw new Error('refund argument count is malformed');
   }
 
+  // args[0] really is the claim hash here: the contract's `refund(claim_hash)`
+  // takes the hash directly, so unlike `claim` there is nothing to derive.
+  // `claim-submit/route.ts` used to share these five lines verbatim, which is
+  // how issue #135 happened -- `claim(secret, ...)` takes the preimage and
+  // hashes it itself. Don't re-unify the two.
   const claimHash = scValToBytes(args[0]).toString('hex');
   if (claimHash !== expectedClaimHash) {
     throw new Error('Claim hash does not match');
