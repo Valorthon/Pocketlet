@@ -550,6 +550,17 @@ mod test {
     /// purpose. Comparing against `Event::to_xdr` would be worthless here: that
     /// builds the expected value with the same codegen that produced the actual
     /// one, so both sides would move together and the change would still pass.
+    ///
+    /// Every field is given a distinct value so that swapping two same-typed
+    /// fields (the two `Address`es, the two `BytesN<32>`s) fails rather than
+    /// comparing equal. Keep it that way.
+    ///
+    /// Two things this deliberately does not pin. Field *names* are absent from
+    /// `data_format = "vec"` bytes, so a rename passes here — it changes the
+    /// contract spec and generated bindings, not the wire data. And the
+    /// expected data still goes through the SDK's generic tuple-to-`ScVec`
+    /// conversion, the same one the macro uses, so it is independent of
+    /// `#[contractevent]` but not of a future SDK changing that conversion.
     #[test]
     fn test_event_shapes_are_stable() {
         let env = setup_env();
