@@ -6,6 +6,17 @@ import nextPlugin from '@next/eslint-plugin-next';
 export default tseslint.config(
   js.configs.recommended,
   tseslint.configs.recommended,
+  {
+    // Make an out-of-range TypeScript fail the lint gate. typescript-eslint
+    // 8.70.0 supports `>=4.8.4 <6.1.0`; its default for anything outside that
+    // is 'warn', which is a console.log guarded by `process.stdout.isTTY` —
+    // so in CI it prints nothing and exits 0, and a TypeScript 6.1 or 7 bump
+    // would land completely green. 'error' makes the parser throw instead,
+    // which is the only thing that actually defends the ceiling. See #107.
+    languageOptions: {
+      parserOptions: { onUnsupportedTypeScriptVersion: 'error' },
+    },
+  },
   // eslint-plugin-react-hooks v7 ships the classic hook rules plus the React
   // Compiler rule set. We take the whole preset (see the override below for the
   // one exception) so hook bugs fail CI rather than shipping.
