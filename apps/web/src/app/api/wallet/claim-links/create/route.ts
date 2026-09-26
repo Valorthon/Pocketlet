@@ -31,6 +31,14 @@ function getTokenContractId(asset: 'USDC' | 'XLM'): string {
  * Stellar closes a ledger roughly every 5 seconds. The escrow contract counts
  * in ledgers; everything the app shows the user counts in time, so one of
  * these conversions is unavoidable. Keep it in one place.
+ *
+ * "Roughly" is load-bearing, and the error compounds over the window: at an
+ * actual 5.5s close time a 30-day link's stored timestamp lands three days
+ * before the ledger the contract enforces, and the routes that gate on the
+ * timestamp would answer 410 for a deposit that is still claimable. That is
+ * issue #154 -- the fix is to compare `expiry_ledger` against the current
+ * ledger at read time and leave this timestamp for display only. Until then,
+ * do not tighten anything else against `expiry`.
  */
 const LEDGER_SECONDS = 5;
 const LEDGERS_PER_DAY = Math.floor((24 * 60 * 60) / LEDGER_SECONDS);
