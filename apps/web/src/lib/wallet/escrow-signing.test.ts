@@ -11,7 +11,7 @@ import { join } from 'node:path';
  * `SignerLimits` map naming only the two SAC token contracts, and passkey-kit's
  * `__check_auth` requires every requested context to be covered by some
  * permitted signer — so a device-signed deposit is rejected on chain with
- * `MissingContext` (issue #148).
+ * `MissingContext` (error 110, issue #148).
  *
  * Nothing else can catch a regression here. `kit.sign(tx)` and
  * `kit.sign(tx, signer)` both typecheck and both lint; the difference only
@@ -19,23 +19,41 @@ import { join } from 'node:path';
  * evaluates `__check_auth`. There are also no component tests, so the calling
  * code in `send/page.tsx` is otherwise entirely unexercised.
  *
- * This is the same shape as the `signAdmin` source scan in
- * `passkey-kit.test.ts`, and for the same reason.
+ * These are therefore source scans, which have an obvious weakness: they match
+ * exact strings. Renaming a local, reformatting, or wrapping a handler in
+ * `useCallback` will fail them. That is the intended direction of failure —
+ * they go red and someone re-reads this file, rather than green on a wallet
+ * that no longer works. If one fails after a harmless refactor, update the
+ * expected string; do not delete the assertion.
  */
 
-const SEND_PAGE = join(__dirname, '../../app/send/page.tsx');
+const WALLET_DIR = __dirname;
+const SEND_PAGE = join(WALLET_DIR, '../../app/send/page.tsx');
+const SUBMIT_ROUTE = join(
+  WALLET_DIR,
+  '../../app/api/wallet/device-key/submit/route.ts'
+);
 
 /**
- * The body of a top-level `const <name> = async (...) => {` in a component,
- * up to the next declaration at the same indentation.
+ * The body of a top-level `const <name> = async (` in a component, up to the
+ * next declaration at the same two-space indentation.
  */
 function functionBody(source: string, name: string): string {
   const start = source.indexOf(`  const ${name} = async (`);
-  expect(start, `${name} not found — was it renamed?`).toBeGreaterThan(-1);
+  expect(
+    start,
+    `${name} not found in send/page.tsx — renamed, reformatted, or wrapped?`
+  ).toBeGreaterThan(-1);
   const rest = source.slice(start + 1);
   const end = rest.indexOf('\n  const ');
-  return end === -1 ? rest : rest.slice(0, end);
+  expect(
+    end,
+    `could not find the end of ${name} — is it still at two-space indent?`
+  ).toBeGreaterThan(-1);
+  return rest.slice(0, end);
 }
+
+const collapse = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 describe('escrow operations are signed with the passkey', () => {
   const source = readFileSync(SEND_PAGE, 'utf8');
@@ -64,23 +82,33 @@ describe('escrow operations are signed with the passkey', () => {
 });
 
 describe('the device signer stays scoped to the token contracts', () => {
-  it('does not grant the device key rights over the escrow contract', () => {
-    const deviceKey = readFileSync(join(__dirname, 'device-key.ts'), 'utf8');
-    const submitRoute = readFileSync(
-      join(__dirname, '../../app/api/wallet/device-key/submit/route.ts'),
-      'utf8'
-    );
+  // Widening these is the other way to make #148 "work", and the one we
+  // rejected: it hands a PIN-protected, 90-day, Temporary signer authority
+  // over a third contract, and it silently does nothing for every user whose
+  // signer is already on chain, because their limits are fixed until an
+  // updateEd25519. Asserting the exact contents catches a third entry however
+  // it is spelled — a getter, a hardcoded C-address, or a new helper.
 
-    // Widening these to include the escrow contract is the other way to make
-    // #148 "work", and it is the one we rejected: it hands a PIN-protected,
-    // 90-day, Temporary signer authority over a third contract, and it would
-    // silently do nothing for every user whose signer is already on chain.
-    for (const [name, source] of [
-      ['device-key.ts', deviceKey],
-      ['device-key/submit/route.ts', submitRoute],
-    ] as const) {
-      expect(source, name).not.toContain('getEscrowContractId');
-      expect(source, name).not.toContain('NEXT_PUBLIC_ESCROW_CONTRACT_ID');
-    }
+  it('asks for exactly the two token contracts when registering', () => {
+    const source = readFileSync(join(WALLET_DIR, 'device-key.ts'), 'utf8');
+    const block = /const limits = new Map\(\[([\s\S]*?)\]\);/.exec(source);
+    expect(block, 'the device-key limits map moved or was renamed').not.toBeNull();
+
+    expect(collapse(block![1])).toBe(
+      '[getUsdcContractId(), undefined], [getXlmContractId(), undefined],'
+    );
+  });
+
+  it('accepts exactly the two token contracts server-side', () => {
+    // This is the assertion that actually holds the line: the route rejects
+    // any add_signer naming a contract outside this set, so it constrains
+    // every client, not just ours.
+    const source = readFileSync(SUBMIT_ROUTE, 'utf8');
+    const block = /const allowed = new Set\(\[([\s\S]*?)\]\);/.exec(source);
+    expect(block, 'the device-key allowlist moved or was renamed').not.toBeNull();
+
+    expect(collapse(block![1])).toBe(
+      'getUsdcContractId(), getXlmContractId()'
+    );
   });
 });

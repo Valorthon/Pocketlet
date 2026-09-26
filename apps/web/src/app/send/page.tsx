@@ -79,6 +79,7 @@ export default function SendPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TransferResult | null>(null);
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [signing, setSigning] = useState(false);
   const [resolved, setResolved] = useState<ResolvedRecipient | null>(null);
   const [unregistered, setUnregistered] = useState<UnregisteredRecipient | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -422,15 +423,20 @@ export default function SendPage() {
   };
 
   const executeClaimLink = async () => {
-    setStep('confirming');
     setError(null);
 
     try {
       const kit = preparedKitRef.current;
       const tx = preparedTxRef.current;
       const secret = claimSecretRef.current;
+      // Read into a local with the others, before anything awaits. The
+      // prepare effect below nulls all four refs whenever `step` leaves
+      // 'claim-link-review', so a ref still read after the signing ceremony
+      // is read as null -- which used to send `claimHash: null` and earn a
+      // 400 "Missing required fields" from the create route.
+      const claimHash = claimHashRef.current;
 
-      if (!kit || !tx || !secret) {
+      if (!kit || !tx || !secret || !claimHash) {
         throw new Error('Claim link not prepared');
       }
 
@@ -450,8 +456,22 @@ export default function SendPage() {
       // PIN-protected 90-day Temporary signer rights over a third contract, so
       // the passkey signs escrow operations instead. Routine SAC transfers are
       // unaffected and still use the device key -- see executeTransfer above.
-      await kit.sign(tx);
+      //
+      // Deliberately still on 'claim-link-review' here. Moving to 'confirming'
+      // first re-runs the prepare effect (it keys on `step`), which discards
+      // the prepared transaction and mints a fresh secret underneath us -- so
+      // dismissing the passkey sheet would silently reset the screen and wipe
+      // the error on its way past. Sign first, change step only once it is in
+      // hand.
+      setSigning(true);
+      try {
+        await kit.sign(tx);
+      } finally {
+        setSigning(false);
+      }
       const signedXdr = tx.toXDR();
+
+      setStep('confirming');
 
       const currentLedger = await getCurrentLedger();
       const expiryLedger = currentLedger + Math.floor(expiryDays * 24 * 60 * 60 / 5);
@@ -466,7 +486,7 @@ export default function SendPage() {
           recipient: unregistered.identifier,
           expiryDays,
           expiryLedger,
-          claimHash: claimHashRef.current,
+          claimHash,
           secret,
         }),
       });
@@ -680,7 +700,7 @@ export default function SendPage() {
               <Button variant="secondary" onClick={() => setStep('form')}>
                 Back
               </Button>
-              <Button onClick={confirmTransfer} disabled={preparing || fee === null}>
+              <Button onClick={confirmTransfer} disabled={preparing || signing || fee === null}>
                 Confirm
               </Button>
             </div>
@@ -732,7 +752,7 @@ export default function SendPage() {
               <Button variant="secondary" onClick={() => setStep('form')}>
                 Back
               </Button>
-              <Button onClick={confirmTransfer} disabled={preparing || fee === null}>
+              <Button onClick={confirmTransfer} disabled={preparing || signing || fee === null}>
                 Confirm
               </Button>
             </div>

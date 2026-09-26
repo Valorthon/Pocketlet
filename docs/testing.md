@@ -172,21 +172,21 @@ for a URL; there isn't one.
    `require_auth()` on the escrow contract, which the device key's signer
    limits do not cover (issue #148), so it is signed by the passkey.
 3. Check the `claim_links` row: `status = pending`, `secret_ciphertext`
-   populated, `claim_hash` set, and `expiry_ledger` consistent with `expiry`.
+   populated, `claim_hash` set.
 4. In a private window, sign up with **that same email address** and verify it.
 5. On `/home`, the pending claim appears. Claim it.
 
 **Expect:** funds move from escrow to the new user's wallet; `status` becomes
 `claimed`; `claimed_at` is set.
 
-### 7b. Refunding an expired claim link
+### 7b. Refunding an expired claim link — **not testable yet**
 
-1. Create a link as above, with the shortest expiry the UI allows.
-2. Wait past the expiry.
-3. As the **sender**, find it under unclaimed sent links and refund it. This
-   also prompts for a passkey, for the same reason as step 2.
-
-**Expect:** the sender's balance returns; `status` becomes `refunded`.
+There is no refund UI. `api/wallet/claim-links/refund` exists and is correct,
+but nothing in `apps/web/src/app/` calls it, so a sender whose recipient never
+signs up cannot recover the money from within the app. Skip this step until
+that UI is built, and add here then: create a link with the shortest expiry,
+wait past it, refund as the sender (a passkey prompt, for the same reason as
+step 2), and expect the balance to return with `status` becoming `refunded`.
 Refunding *before* expiry must fail — the contract rejects it.
 
 ### 8. Device-key login
