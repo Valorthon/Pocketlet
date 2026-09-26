@@ -95,6 +95,7 @@ export default function SendPage() {
   const preparedTxRef = useRef<AssembledTransaction<null> | null>(null);
   const claimSecretRef = useRef<string | null>(null);
   const claimHashRef = useRef<string | null>(null);
+  const expiryLedgerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -291,6 +292,7 @@ export default function SendPage() {
       preparedTxRef.current = null;
       claimSecretRef.current = null;
       claimHashRef.current = null;
+      expiryLedgerRef.current = null;
       return;
     }
 
@@ -341,6 +343,7 @@ export default function SendPage() {
           preparedTxRef.current = tx;
           claimSecretRef.current = secret;
           claimHashRef.current = claimHash;
+          expiryLedgerRef.current = expiryLedger;
           setFee(formatFee(totalFeeStroops));
         }
       } catch (err) {
@@ -435,8 +438,14 @@ export default function SendPage() {
       // is read as null -- which used to send `claimHash: null` and earn a
       // 400 "Missing required fields" from the create route.
       const claimHash = claimHashRef.current;
+      // The ledger the signed transaction actually carries. Recomputing it
+      // after the signing ceremony read a NEWER ledger than the one baked
+      // into the XDR, and the create route requires the two to match
+      // exactly -- so a claim link failed with 400 unless no ledger closed
+      // while the user was confirming (issue #149).
+      const expiryLedger = expiryLedgerRef.current;
 
-      if (!kit || !tx || !secret || !claimHash) {
+      if (!kit || !tx || !secret || !claimHash || expiryLedger === null) {
         throw new Error('Claim link not prepared');
       }
 
@@ -472,9 +481,6 @@ export default function SendPage() {
       const signedXdr = tx.toXDR();
 
       setStep('confirming');
-
-      const currentLedger = await getCurrentLedger();
-      const expiryLedger = currentLedger + Math.floor(expiryDays * 24 * 60 * 60 / 5);
 
       const res = await fetch('/api/wallet/claim-links/create', {
         method: 'POST',

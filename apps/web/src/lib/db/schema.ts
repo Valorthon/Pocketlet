@@ -142,9 +142,20 @@ export const claimLinks = pgTable('claim_links', {
   amount: text('amount').notNull(),
   claimHash: text('claim_hash').notNull().unique(),
   secretCiphertext: text('secret_ciphertext').notNull(),
-  // NOTE: a timestamp here, but the escrow contract takes expiry as a LEDGER
-  // SEQUENCE. Converted in api/wallet/claim-links/create/route.ts.
+  // Two representations of one deadline, and they must agree.
+  //
+  // `expiry` is a timestamp because everything that reads it -- pending,
+  // claim, the UI -- works in wall-clock time. `expiryLedger` is the ledger
+  // sequence the escrow contract actually enforces, and it is the one that was
+  // signed into the deposit transaction. `expiry` is DERIVED from it at
+  // insert time, never from `expiryDays`: deriving it independently let the
+  // two drift by up to a day, so a sender could be refused a refund the chain
+  // would have allowed, or vice versa (issue #137).
+  //
+  // Nullable only because rows written before that fix have no ledger
+  // recorded; every row written since has one.
   expiry: timestamp('expiry', { withTimezone: true }).notNull(),
+  expiryLedger: integer('expiry_ledger'),
   status: text('status').notNull().default('pending'),
   txHash: text('tx_hash'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

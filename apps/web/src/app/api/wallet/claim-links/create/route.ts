@@ -27,6 +27,18 @@ function getTokenContractId(asset: 'USDC' | 'XLM'): string {
   return asset === 'USDC' ? getUsdcContractId() : getXlmContractId();
 }
 
+/**
+ * Stellar closes a ledger roughly every 5 seconds. The escrow contract counts
+ * in ledgers; everything the app shows the user counts in time, so one of
+ * these conversions is unavoidable. Keep it in one place.
+ */
+const LEDGER_SECONDS = 5;
+const LEDGERS_PER_DAY = Math.floor((24 * 60 * 60) / LEDGER_SECONDS);
+/** How stale a prepared deposit may be when it arrives: ~20 minutes. */
+const MAX_PREPARE_AGE_LEDGERS = 240;
+/** Slack for the client and the server reading different RPC nodes. */
+const MAX_LEDGER_SKEW = 12;
+
 function getEscrowContractId(): string {
   const id = process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ID;
   if (!id) {
@@ -218,9 +230,23 @@ export async function POST(request: NextRequest) {
 
   try {
     const currentLedger = await getCurrentLedger();
-    const minExpected = currentLedger + Math.floor((expiryDays - 1) * 24 * 60 * 60 / 5);
-    const maxExpected = currentLedger + Math.floor((expiryDays + 1) * 24 * 60 * 60 / 5);
-    if (expiryLedger < minExpected || expiryLedger > maxExpected) {
+
+    // `expiryLedger` was computed by the client at prepare time and signed
+    // into the transaction, so it encodes the ledger the client saw:
+    //   expiryLedger = prepareLedger + expiryDays * LEDGERS_PER_DAY
+    // Recovering that and comparing it to the ledger now tells us how stale
+    // the prepared transaction is.
+    //
+    // This used to be a +/- 1 DAY window, which is far wider than the gap it
+    // needs to tolerate -- a few seconds while the user confirms -- and wide
+    // enough that a badly stale transaction was accepted and then stored with
+    // an expiry derived from `expiryDays` instead, disagreeing with the chain
+    // by up to a day (issue #137). A small negative drift is allowed because
+    // the client and the server can read the ledger from different RPC nodes.
+    const impliedPrepareLedger =
+      expiryLedger - expiryDays * LEDGERS_PER_DAY;
+    const drift = currentLedger - impliedPrepareLedger;
+    if (drift < -MAX_LEDGER_SKEW || drift > MAX_PREPARE_AGE_LEDGERS) {
       return NextResponse.json(
         { error: 'Expiry ledger is out of expected range for the given days' },
         { status: 400 }
@@ -249,7 +275,15 @@ export async function POST(request: NextRequest) {
     const result = await submitSignedTransaction(signedXdr);
 
     const now = new Date();
-    const expiryDate = new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000);
+    // Derived from the signed ledger, NOT from `expiryDays`. The contract
+    // enforces `expiryLedger`; a timestamp computed independently from the
+    // requested number of days drifts away from it by however long the user
+    // took to confirm, plus whatever the range check let through (issue
+    // #137). Going through the ledger keeps the two answers to "when does
+    // this expire?" the same one.
+    const expiryDate = new Date(
+      now.getTime() + (expiryLedger - currentLedger) * LEDGER_SECONDS * 1000
+    );
 
     const [link] = await db
       .insert(schema.claimLinks)
@@ -262,6 +296,7 @@ export async function POST(request: NextRequest) {
         claimHash,
         secretCiphertext: encryptSecret(secret),
         expiry: expiryDate,
+        expiryLedger,
         status: 'pending',
         txHash: result.hash,
         createdAt: now,

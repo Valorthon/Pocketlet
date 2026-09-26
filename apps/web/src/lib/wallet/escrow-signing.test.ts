@@ -81,6 +81,49 @@ describe('escrow operations are signed with the passkey', () => {
   });
 });
 
+describe('the signed transaction is the one described to the server', () => {
+  const source = readFileSync(SEND_PAGE, 'utf8');
+
+  it('does not re-read the ledger after signing', () => {
+    const body = functionBody(source, 'executeClaimLink');
+
+    // `expiryLedger` is baked into the signed XDR at prepare time, and
+    // `create/route.ts` requires the value in the request body to equal it
+    // exactly. Calling getCurrentLedger() again here reads a NEWER ledger --
+    // Stellar closes one every ~5s -- so the two disagreed unless the user
+    // confirmed within the same ledger, and creating a claim link answered
+    // 400 "Expiry ledger does not match request" (issue #149). Every ledger
+    // read belongs in the prepare effect; this function only echoes back what
+    // was signed.
+    expect(body).not.toContain('getCurrentLedger');
+    expect(body).toContain('expiryLedgerRef.current');
+  });
+
+  it('reads every prepared value before the first await', () => {
+    const body = functionBody(source, 'executeClaimLink');
+
+    // The prepare effect nulls all of these when `step` leaves
+    // 'claim-link-review'. Anything still read from a ref after the signing
+    // ceremony has awaited comes back null -- which is how `claimHash: null`
+    // reached the create route and earned a 400 "Missing required fields".
+    const firstAwait = body.indexOf('await ');
+    expect(firstAwait).toBeGreaterThan(-1);
+    const beforeAwait = body.slice(0, firstAwait);
+
+    for (const ref of [
+      'preparedKitRef.current',
+      'preparedTxRef.current',
+      'claimSecretRef.current',
+      'claimHashRef.current',
+      'expiryLedgerRef.current',
+    ]) {
+      expect(beforeAwait, `${ref} must be read before the first await`).toContain(ref);
+    }
+    // ...and nowhere after it.
+    expect(body.slice(firstAwait)).not.toContain('Ref.current');
+  });
+});
+
 describe('the device signer stays scoped to the token contracts', () => {
   // Widening these is the other way to make #148 "work", and the one we
   // rejected: it hands a PIN-protected, 90-day, Temporary signer authority
