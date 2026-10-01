@@ -58,7 +58,7 @@ jobs:
           targets: wasm32v1-none
 
       - name: Install Stellar CLI
-        uses: stellar/stellar-cli@v28.0.0
+        uses: stellar/stellar-cli@v28.1.0
 
       # Build, key setup, and deploy all live in contracts/deploy.sh so the
       # workflow and a manual `pnpm run deploy:contract` cannot drift. The
