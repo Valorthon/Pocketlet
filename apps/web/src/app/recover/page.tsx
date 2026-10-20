@@ -214,7 +214,7 @@ export default function RecoverPage() {
         undefined,
         SignerStore.Persistent
       );
-      await kit.sign(addSignerTx, new Ed25519Signer(recoveryKeypair));
+      await kit.signAdmin(addSignerTx, new Ed25519Signer(recoveryKeypair));
       const signedXdr = addSignerTx.toXDR();
 
       const submitRes = await fetch('/api/wallet/recovery/submit', {
@@ -266,7 +266,7 @@ export default function RecoverPage() {
       connectPasskeyKitByContractId(kit, status.contractId);
 
       const removeSignerTx = await kit.remove(SignerKey.Secp256r1(keyId));
-      await kit.sign(removeSignerTx, new Ed25519Signer(recoveryKeypair));
+      await kit.signAdmin(removeSignerTx, new Ed25519Signer(recoveryKeypair));
       const removeSignedXdr = removeSignerTx.toXDR();
 
       const removeRes = await fetch('/api/wallet/submit', {

@@ -241,9 +241,9 @@ export async function ensureDeviceKey(
 
   const addSignerTx = await kit.addEd25519(publicKey, limits, SignerStore.Temporary, expirationSeconds);
   if (authSigner) {
-    await kit.sign(addSignerTx, authSigner);
+    await kit.signAdmin(addSignerTx, authSigner);
   } else {
-    await kit.sign(addSignerTx);
+    await kit.signAdmin(addSignerTx);
   }
   const signedXdr = addSignerTx.toXDR();
 
